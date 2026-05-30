@@ -40,15 +40,15 @@
     },
     {
       "stage": "check",
-      "question": "Which of the following is a correct implementation detail?",
+      "question": "Why does plateau detection require two consecutive flat rounds instead of one?",
       "options": [
-        "Option A (placeholder)",
-        "Option B (placeholder)",
-        "Option C (placeholder)",
-        "Option D (placeholder)"
+        "To reduce the total number of revision rounds and save compute",
+        "Because the first round always produces unreliable scores",
+        "A single-round plateau may be noise from scoring variance; two consecutive rounds confirms the draft has genuinely stopped improving",
+        "To give the reviser time to apply complex edit instructions across rounds"
       ],
-      "correct": 0,
-      "explanation": ""
+      "correct": 2,
+      "explanation": "Deterministic scoring still varies based on which suggestions were applied and in what order. Requiring two consecutive plateau rounds filters out that noise."
     },
     {
       "stage": "post",
