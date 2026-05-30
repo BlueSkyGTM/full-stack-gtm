@@ -192,8 +192,8 @@ def check_quiz(audit: Audit, lesson: Path, strict_quiz: bool = False) -> None:
                 f"question[{idx}] correct={correct!r} not a valid index in options[0..{len(options) - 1}]",
             )
             continue
-        # L011: placeholder text in options
-        if isinstance(options, list):
+        # L011: placeholder text in options (strict mode only)
+        if strict_quiz and isinstance(options, list):
             for opt_idx, opt in enumerate(options):
                 if isinstance(opt, str) and re.search(r"placeholder", opt, re.IGNORECASE):
                     audit.add(
