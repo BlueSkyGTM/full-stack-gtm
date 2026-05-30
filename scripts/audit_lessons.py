@@ -2,7 +2,7 @@
 """Invariant checks across every lesson directory.
 
 Usage:
-    python scripts/audit_lessons.py [--phase N] [--json] [--strict]
+    python scripts/audit_lessons.py [--phase N] [--json] [--strict] [--strict-quiz]
 
 Exit codes:
     0 — clean
@@ -126,7 +126,7 @@ def check_code_main(audit: Audit, lesson: Path) -> None:
     audit.add("L005", lesson, code_dir, "code/ is empty (no source or config files)")
 
 
-def check_quiz(audit: Audit, lesson: Path) -> None:
+def check_quiz(audit: Audit, lesson: Path, strict_quiz: bool = False) -> None:
     quiz = lesson / "quiz.json"
     if not quiz.is_file():
         return
@@ -191,6 +191,27 @@ def check_quiz(audit: Audit, lesson: Path) -> None:
                 quiz,
                 f"question[{idx}] correct={correct!r} not a valid index in options[0..{len(options) - 1}]",
             )
+            continue
+        # L011: placeholder text in options
+        if isinstance(options, list):
+            for opt_idx, opt in enumerate(options):
+                if isinstance(opt, str) and re.search(r"placeholder", opt, re.IGNORECASE):
+                    audit.add(
+                        "L011",
+                        lesson,
+                        quiz,
+                        f"question[{idx}] option[{opt_idx}] contains 'placeholder'",
+                    )
+        # L012: empty or whitespace-only explanation (strict mode only)
+        if strict_quiz:
+            explanation = q.get("explanation", "")
+            if not isinstance(explanation, str) or not explanation.strip():
+                audit.add(
+                    "L012",
+                    lesson,
+                    quiz,
+                    f"question[{idx}] explanation is empty or whitespace-only",
+                )
 
 
 def check_internal_links(audit: Audit, lesson: Path, text: str) -> None:
@@ -211,13 +232,13 @@ def check_internal_links(audit: Audit, lesson: Path, text: str) -> None:
             audit.add("L010", lesson, doc, f"internal link does not resolve: {href!r}")
 
 
-def audit_lesson(audit: Audit, lesson: Path) -> None:
+def audit_lesson(audit: Audit, lesson: Path, strict_quiz: bool = False) -> None:
     audit.lessons_checked += 1
     if not check_lesson_dir_pattern(audit, lesson):
         return
     text = check_docs_en_md(audit, lesson)
     check_code_main(audit, lesson)
-    check_quiz(audit, lesson)
+    check_quiz(audit, lesson, strict_quiz)
     if text is not None:
         check_internal_links(audit, lesson, text)
 
@@ -250,11 +271,16 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="treat warnings as errors (currently equivalent to default; reserved)",
     )
+    parser.add_argument(
+        "--strict-quiz",
+        action="store_true",
+        help="enable L011 (no placeholders) and L012 (non-empty explanations) checks",
+    )
     args = parser.parse_args(argv)
 
     audit = Audit()
     for lesson in iter_lesson_dirs(args.phase):
-        audit_lesson(audit, lesson)
+        audit_lesson(audit, lesson, args.strict_quiz)
 
     if args.json:
         json.dump(

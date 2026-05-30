@@ -133,6 +133,12 @@ The `**Languages:**` field must match the languages with a `main.*` file in `cod
 
 Exactly 6 questions: 1 pre + 3 check + 2 post. `correct` is zero-indexed. The site renderer only understands this shape — legacy `q/choices/answer` schemas crash silently.
 
+### Quiz quality policy
+
+- **Tier A (schema + stages)**: Required by `scripts/audit_lessons.py` default mode. Enforces correct JSON structure, 6 questions with valid stage sequence, and option count bounds.
+- **Tier B (no placeholders, non-empty explanations)**: Optional quality gate via `--strict-quiz` flag. Checks for placeholder text in options and ensures all explanations contain substantive content.
+- **Missing quiz.json**: Not a failure — lessons without quizzes are tracked separately. Do not bulk-generate quizzes; quality over volume.
+
 ### code/
 
 - Runs end-to-end and exits 0 on the canonical command for the language.
