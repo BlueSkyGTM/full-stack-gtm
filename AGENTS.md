@@ -21,7 +21,7 @@ Discipline on any topic — not engineering-only).
 
 | Role | Who | Permissions |
 |------|-----|-------------|
-| **Consultant / Navigator / Otto** | Cursor chat (Auto) | Read-only. May read files and run non-mutating commands (grep, `graphify query`). Approve/reject plans. No file edits, commit, push, install, or `graphify update`. |
+| **Consultant / Navigator / Otto** | Cursor chat (Auto) | Read-only. May read files and run non-mutating commands (grep, `scripts/query_graph.py`). Approve/reject plans. No file edits, commit, push, install, or graph refresh. |
 | **Implementer** | Cline | Same reasoning and discipline before every change. Edits, tests, commits after user request or Consultant/Otto approve. No scope creep. |
 
 **Otto** is the nickname for the Auto-mode Consultant — same role, same
@@ -29,11 +29,11 @@ permissions as Navigator.
 
 Handoff: Otto advises → user approves → Cline implements.
 
-## Graphify (local)
+## Local code graph
 
-**Rule:** `.cursor/rules/aifs-graphify.mdc` (query-first, graph refresh, freshness gate).
+**Rule:** `.cursor/rules/local-graph.mdc`. **Refresh:** `/refresh` → `scripts/refresh_graph.py`. **Verify:** `scripts/verify_graph.py`.
 
-Install: `py -3.12 -m pip install graphifyy`. Checker: `python3 scripts/check_graphify_freshness.py`.
+Package install: see `/refresh` skill (PyPI name `graphifyy`).
 
 ## Handoffs between agents
 

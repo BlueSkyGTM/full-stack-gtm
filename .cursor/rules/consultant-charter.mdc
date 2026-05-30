@@ -14,11 +14,11 @@ alwaysApply: true
   Owner: Consultant (Cursor chat / Auto). Also called Navigator or Otto
   in this project.
 
-May: read files; run non-mutating commands (grep, graphify query,
+May: read files; run non-mutating commands (grep, `scripts/query_graph.py`,
 read-only inspection); analyze, approve/reject, advise.
 
 Must not: edit files; write or apply code; run mutating commands (no
-commit, push, install, or graphify update).
+commit, push, install, or graph refresh).
 
 Hand off to: Cline for any file changes, tests that modify state, or
 commits.
@@ -75,6 +75,6 @@ Direct the user to Cline for implementation changes.
   `Cline:` for implement. When context is clear ("approve step 1" vs
   "implement step 1"), follow the matching permissions.
 
-  When exploring repo structure, follow `.cursor/rules/aifs-graphify.mdc` (query-first; never load graph.json).
+  When exploring repo structure, follow `.cursor/rules/local-graph.mdc` and `/refresh` skill (query-first; never load graph.json).
 
   When handing off to Cline, deliver the full task brief in one copy-paste code block.

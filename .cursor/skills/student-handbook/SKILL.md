@@ -40,6 +40,8 @@ You asked for a single map of **what exists and what it is for**. Present this s
 | **guidance-counselor** | Meta: doubt, pace, preference — not lesson drill | Stuck emotionally, "am I cut out for this", how to study |
 | **check-understanding** | Phase exam (8 Q) | After a phase |
 | **lesson-planning** | How quizzes should align with lessons; review quality | You or agents authoring/reviewing `quiz.json` — not daily study |
+| **housekeeping** | Post-sprint bloat audit; report before any cleanup | `/housekeeping`, reduce bloat, consolidate rules/skills |
+| **refresh** | Rebuild or check local code graph | `/refresh`, graph refresh, is the graph stale |
 
 Lesson **outputs** under `phases/**/outputs/` (hundreds of prompts/skills) are lesson artifacts — install via `scripts/install_skills.py` or README skills.sh section.
 
@@ -52,9 +54,9 @@ Lesson **outputs** under `phases/**/outputs/` (hundreds of prompts/skills) are l
 | **curriculum-chat** | Read `progress/aifs-progress.json`; office hours vs lesson quiz flow; cross-phase bridges |
 | **lesson-planning-gate** | Before editing `quiz.json`, read lesson-planning skill |
 | **consultant-charter** | Otto = advise; Cline = implement |
-| **aifs-graphify.mdc** | Query-first, graph refresh, freshness gate |
+| **local-graph.mdc** | Query-first, refresh via `/refresh`, verify gate |
+| **subagent-first.mdc** | Delegate bulk/parallel work to subagents (Cline) |
 | **terminal-hygiene** | Cline backend terminal vs editor terminals |
-| **handoff-format** | One copy-paste block Otto → Cline |
 
 ---
 
@@ -114,7 +116,7 @@ Site does not write `learning-profile.json` or `focus` yet — edit in repo or a
 | **AGENTS.md** | Lesson contract, quiz schema, CI, commit rules |
 | **ROADMAP.md** | Which lessons exist / WIP (not your personal progress) |
 | **glossary/terms.md** | Shared vocabulary |
-| **GRAPH_REPORT.md** | Optional architecture skim (agents use graphify query first) |
+| **GRAPH_REPORT.md** | Optional architecture skim (agents use `query_graph.py` first) |
 
 ---
 
@@ -151,6 +153,7 @@ When the learner asks for these, say they are on the handbook backlog; offer gui
 |----------|-----|
 | Learning | Skills table + progress files + site |
 | Fixing curriculum | lesson-planning + quiz-factory + Cline |
+| Housekeeping / bloat | `/housekeeping` (audit first, approve, then execute) |
 | Confused about tooling | This handbook |
 
 ---
