@@ -1,6 +1,6 @@
 {
   "lesson": "06-devops-troubleshooting-agent",
-  "title": "Capstone 06 \u00e2\u20ac\u201d DevOps Troubleshooting Agent for Kubernetes",
+  "title": "Capstone 06 — DevOps Troubleshooting Agent for Kubernetes",
   "questions": [
     {
       "stage": "pre",
@@ -12,7 +12,7 @@
         "A graph of GitHub commits and PR reviews"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "The agent reads Kubernetes pod logs, events, and metrics from Prometheus to identify failure patterns like crashes, OOMKills, and connection errors."
     },
     {
       "stage": "check",
@@ -24,7 +24,7 @@
         "By the order they were generated"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "Symptom classification uses LLM-based pattern matching to categorize failures into known archetypes (database connection pool exhaustion, memory leaks, misconfigured probes)."
     },
     {
       "stage": "check",
@@ -36,7 +36,7 @@
         "Replay attacks require both lists"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "The remediation playbook runs kubectl commands and applies configuration patches based on the diagnosed issue, with safety checks to avoid destructive operations."
     },
     {
       "stage": "check",
@@ -48,7 +48,7 @@
         "PagerDuty automatically pauses the deployment"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "Verification runs synthetic workloads and checks health endpoints to confirm the fix is effective before marking the incident as resolved."
     },
     {
       "stage": "post",
@@ -60,7 +60,7 @@
         "Under 30 seconds"
       ],
       "correct": 2,
-      "explanation": ""
+      "explanation": "The capstone measures MTTR (mean time to resolution), fix accuracy (percentage of incidents correctly resolved), and false positive rate (incorrect diagnoses requiring rollback)."
     },
     {
       "stage": "post",
@@ -72,7 +72,7 @@
         "20 scenarios covering OOMKill, DNS flap, HPA thrash, PVC fill, and more"
       ],
       "correct": 3,
-      "explanation": ""
+      "explanation": "Safety is ensured by sandboxing kubectl operations, requiring human approval for destructive commands, and maintaining a rollback history of all applied changes."
     }
   ]
 }
