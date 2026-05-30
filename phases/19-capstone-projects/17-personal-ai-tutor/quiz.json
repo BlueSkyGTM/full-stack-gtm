@@ -1,6 +1,6 @@
 {
   "lesson": "17-personal-ai-tutor",
-  "title": "Capstone 17 \u00e2\u20ac\u201d Personal AI Tutor (Adaptive, Multimodal, with Memory)",
+  "title": "Capstone 17 — Personal AI Tutor (Adaptive, Multimodal, with Memory)",
   "questions": [
     {
       "stage": "pre",
@@ -12,7 +12,7 @@
         "Only the most recently studied node"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "Adaptive difficulty adjusts question complexity based on user performance, increasing difficulty for correct answers and providing scaffolding hints for incorrect answers."
     },
     {
       "stage": "check",
@@ -24,7 +24,7 @@
         "Per-concept mastery probability via Bayesian knowledge tracing or a similar variant"
       ],
       "correct": 3,
-      "explanation": ""
+      "explanation": "The knowledge graph maps concepts to lessons, enabling personalized learning paths that address gaps in understanding and skip topics the user has mastered."
     },
     {
       "stage": "check",
@@ -36,7 +36,7 @@
         "Episodic holds embeddings; semantic holds raw audio"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "Multimodal input supports text questions, image uploads (for diagram analysis), and voice input (for verbal explanations), with modality-specific processing pipelines."
     },
     {
       "stage": "check",
@@ -48,7 +48,7 @@
         "COPPA-aware retention with auto-deletion after a defined window and parental access"
       ],
       "correct": 3,
-      "explanation": ""
+      "explanation": "Memory tracking records user interactions, learning progress, and concept mastery over time, enabling longitudinal learning and spaced repetition practice."
     },
     {
       "stage": "post",
@@ -60,7 +60,7 @@
         "A single one-hour session with one learner"
       ],
       "correct": 2,
-      "explanation": ""
+      "explanation": "The capstone measures learning efficacy (pre/post test score improvement), personalization quality (relevance of recommended content), and engagement metrics (session duration, return frequency)."
     },
     {
       "stage": "post",
@@ -72,7 +72,7 @@
         "Text typed, voice via LiveKit + Whisper, and photo math via dots.ocr or PaliGemma 2"
       ],
       "correct": 3,
-      "explanation": ""
+      "explanation": "Privacy is ensured by storing user data locally or in encrypted form, with clear data retention policies and user control over data deletion."
     }
   ]
 }
