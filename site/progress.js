@@ -216,4 +216,63 @@
      exportProgress: exportProgress,
      importProgress: importProgress,
    };
+
+  // Auto-bind header Export/Import buttons on all pages
+  document.addEventListener('DOMContentLoaded', function () {
+    var headerExportBtn = document.getElementById('headerExportBtn');
+    var headerImportBtn = document.getElementById('headerImportBtn');
+    
+    if (!headerExportBtn && !headerImportBtn) return;
+
+    // Create hidden file input for import if it doesn't exist
+    var importFile = document.getElementById('importFile');
+    if (!importFile && headerImportBtn) {
+      importFile = document.createElement('input');
+      importFile.type = 'file';
+      importFile.id = 'importFile';
+      importFile.accept = 'application/json';
+      importFile.style.display = 'none';
+      document.body.appendChild(importFile);
+    }
+
+    // Bind export button
+    if (headerExportBtn) {
+      headerExportBtn.addEventListener('click', function () {
+        try {
+          window.AIFSProgress.exportProgress();
+        } catch (e) {
+          console.error('Export failed:', e);
+          alert('Failed to export progress. Please try again.');
+        }
+      });
+    }
+
+    // Bind import button
+    if (headerImportBtn && importFile) {
+      headerImportBtn.addEventListener('click', function () {
+        importFile.click();
+      });
+
+      importFile.addEventListener('change', function (e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        if (!window.confirm('Importing will replace all your current progress. Continue?')) {
+          importFile.value = '';
+          return;
+        }
+
+        window.AIFSProgress.importProgress(file, function (err) {
+          if (err) {
+            console.error('Import failed:', err);
+            alert('Failed to import progress: ' + (err.message || err));
+            importFile.value = '';
+          } else {
+            alert('Progress imported successfully!');
+            importFile.value = '';
+          }
+        });
+      });
+    }
+  });
  })();
