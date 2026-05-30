@@ -150,6 +150,7 @@ ls phases/03-deep-learning-core/05-loss-functions/outputs/
 |---|---|
 | [`/find-your-level`](.cursor/skills/find-your-level/SKILL.md) | Ten-question placement quiz. Maps your knowledge to a starting phase and produces a personalized path with hour estimates. |
 | [`/check-understanding <phase>`](.cursor/skills/check-understanding/SKILL.md) | Per-phase quiz, eight questions, with feedback and specific lessons to review. |
+| [`curriculum-chat`](.cursor/rules/curriculum-chat.mdc) | Curriculum tutor — progress-aware context, office hours, lesson quiz flow. |
 | [`/lesson-planning`](.cursor/skills/lesson-planning/SKILL.md) | Plan or review lesson quizzes against doc/code; seven flagship insights for quality comparison. |
 | [`/student-handbook`](.cursor/skills/student-handbook/SKILL.md) | Index of skills, rules, progress files, and modes — iterate your setup here. |
 | [`/learning-style-setup`](.cursor/skills/learning-style-setup/SKILL.md) | Intake for how you learn; save to `progress/learning-profile.json`. |
