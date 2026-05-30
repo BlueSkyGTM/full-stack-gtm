@@ -1,19 +1,7 @@
 {
   "lesson": "16-github-issue-to-pr-agent",
-  "title": "Capstone 16 — GitHub Issue-to-PR Autonomous Agent",
+  "title": "Capstone 16 \u00e2\u20ac\u201d GitHub Issue-to-PR Autonomous Agent",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "How is the async cloud coding agent triggered in production?",
-      "options": [
-        "A long-lived SSH session into a VM",
-        "A GitHub webhook fired by an issue label or PR comment, dispatched to a sandbox worker",
-        "A scheduled cron job hitting the repo",
-        "A manual file upload"
-      ],
-      "correct": 1,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Why must the agent run with a short-lived GitHub App installation token rather than a personal access token?",

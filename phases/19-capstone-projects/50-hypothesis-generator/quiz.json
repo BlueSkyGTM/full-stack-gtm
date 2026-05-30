@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does the generator produce a ranked queue instead of a single hypothesis?",
-      "options": [
-        "Because the parser cannot read a single block",
-        "Because the runner needs depth so it can pop the next hypothesis when the first one fails",
-        "Because the mock model only emits lists",
-        "Because the embedding requires more than one input"
-      ],
-      "correct": 1,
-      "explanation": "The point of generating a queue is to amortise sampling cost across the loop. When the first hypothesis fails the runner pops the next without a fresh sampling pass."
-    },
-    {
-      "stage": "pre",
       "question": "What does the temperature ramp accomplish on each pass?",
       "options": [
         "It raises the parser tolerance",
@@ -25,18 +13,6 @@
       ],
       "correct": 1,
       "explanation": "Higher temperature widens the sampling distribution. The ramp encourages each pass to drift further so the novelty filter has something to do."
-    },
-    {
-      "stage": "check",
-      "question": "When does the novelty filter reject a draft?",
-      "options": [
-        "When its rank score is below the threshold",
-        "When its minimum cosine distance to any prior survivor falls below the novelty threshold",
-        "When its parser passes but its tag count is wrong",
-        "When its draft pass is greater than the queue length"
-      ],
-      "correct": 1,
-      "explanation": "Novelty is the minimum distance to prior survivors. If that distance is below the threshold the draft is a near duplicate and is dropped."
     },
     {
       "stage": "check",
@@ -73,6 +49,30 @@
       ],
       "correct": 1,
       "explanation": "Parser failures are recorded as logs with a parse reject reason. The queue can come back empty without crashing the loop, and the logs explain why."
+    },
+    {
+      "stage": "post",
+      "question": "Why does the hypothesis generator ramp temperature across sampling passes?",
+      "options": [
+        "To generate diverse hypotheses spanning from conservative to creative across the pass sequence",
+        "To speed up inference",
+        "To reduce compute cost",
+        "To simplify the ranking logic"
+      ],
+      "correct": 0,
+      "explanation": "Temperature controls sampling randomness. Ramping temperature across passes produces a spectrum of hypotheses: low-temperature passes yield conservative, high-probability ideas, while high-temperature passes generate creative, novel ones."
+    },
+    {
+      "stage": "post",
+      "question": "What is the purpose of novelty filtering in the hypothesis ranking pipeline?",
+      "options": [
+        "To penalize hypotheses too similar to existing ones using embedding distance thresholds",
+        "To increase the total number of hypotheses",
+        "To speed up the mock language model",
+        "To simplify scoring dimensions"
+      ],
+      "correct": 0,
+      "explanation": "Novelty filtering measures similarity between candidate hypotheses and existing ones using embedding cosine similarity. Hypotheses too close to what's already been proposed get downranked or filtered out, ensuring diversity in the output queue."
     }
   ]
 }

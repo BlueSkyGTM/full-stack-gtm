@@ -1,19 +1,7 @@
 {
   "lesson": "05-autonomous-research-agent",
-  "title": "Capstone 05 — Autonomous Research Agent (AI-Scientist Class)",
+  "title": "Capstone 05 \u00e2\u20ac\u201d Autonomous Research Agent (AI-Scientist Class)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "What search shape does the AI-Scientist-class agent use to explore experiments?",
-      "options": [
-        "Beam search over token outputs",
-        "Best-first tree search over experiment nodes with a novelty x quality x budget score",
-        "Pure reinforcement learning from human feedback",
-        "Breadth-first expansion with random scoring"
-      ],
-      "correct": 1,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Why is the sandbox configured with --network=none and bounded resource caps?",

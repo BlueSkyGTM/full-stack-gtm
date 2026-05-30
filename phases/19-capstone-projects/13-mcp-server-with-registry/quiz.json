@@ -1,19 +1,7 @@
 {
   "lesson": "13-mcp-server-with-registry",
-  "title": "Capstone 13 — MCP Server with Registry and Governance",
+  "title": "Capstone 13 \u00e2\u20ac\u201d MCP Server with Registry and Governance",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why does the 2026 MCP revision favor StreamableHTTP for production servers?",
-      "options": [
-        "It removes the need for authentication",
-        "It is the only transport that supports tool calls",
-        "It encrypts payloads automatically",
-        "It is stateless by default, so a single endpoint behind a load balancer can scale horizontally"
-      ],
-      "correct": 3,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Which authorization model gates tool calls in this capstone?",

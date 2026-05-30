@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Why must the target tensor be the input tensor shifted by one position?",
-      "options": [
-        "Cross entropy needs identical tensors",
-        "Next token prediction is the training objective: at every position the model predicts the token that comes next; forgetting the shift trains the model to predict itself, which learns nothing useful",
-        "It speeds up the optimizer",
-        "It is required by AdamW"
-      ],
-      "correct": 1,
-      "explanation": "Input is tokens 0..T-1; target is tokens 1..T; loss is computed on the flattened (batch*seq, vocab) and (batch*seq,) shapes."
-    },
-    {
-      "stage": "pre",
       "question": "What does evaluate_model do that the training step does not?",
       "options": [
         "It runs the optimizer",
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "Any crash leaves a readable artifact; resume reads the last step; tooling on top is trivial."
+    },
+    {
+      "stage": "post",
+      "question": "Why does the capstone log loss to JSONL on every training step?",
+      "options": [
+        "To enable per-step loss persistence and plotting for early divergence detection",
+        "To satisfy the checkpoint format requirement",
+        "To increase training throughput",
+        "To sync gradients across distributed devices"
+      ],
+      "correct": 0,
+      "explanation": "JSONL logging provides a persistent record of loss per step that can be plotted and analyzed post-hoc to detect training divergence early, before significant compute is wasted."
     }
   ]
 }

@@ -1,19 +1,7 @@
 {
   "lesson": "15-constitutional-safety-harness",
-  "title": "Capstone 15 — Constitutional Safety Harness + Red-Team Range",
+  "title": "Capstone 15 \u00e2\u20ac\u201d Constitutional Safety Harness + Red-Team Range",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "What does layered safety in this capstone mean?",
-      "options": [
-        "Manual review of every response",
-        "Running one strong classifier on the input only",
-        "A single rule-based regex over outputs",
-        "Defense in depth across input sanitize, policy rails, classifier gate, model, output filter, and HITL tier"
-      ],
-      "correct": 3,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Which classifier handles multilingual coverage across roughly 132 languages?",

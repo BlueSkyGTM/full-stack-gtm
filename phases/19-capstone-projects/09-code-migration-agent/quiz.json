@@ -1,19 +1,7 @@
 {
   "lesson": "09-code-migration-agent",
-  "title": "Capstone 09 — Code Migration Agent (Repo-Level Language / Runtime Upgrade)",
+  "title": "Capstone 09 \u00e2\u20ac\u201d Code Migration Agent (Repo-Level Language / Runtime Upgrade)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why does the pipeline combine a deterministic substrate with an agent layer rather than using just one?",
-      "options": [
-        "OpenRewrite or libcst handles 70-80% of mechanical rewrites safely and cheaply, leaving the agent for the ambiguous long tail",
-        "Agents alone are faster than recipes",
-        "Deterministic recipes are slower than LLMs",
-        "Determinism is needed only for the build system"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What signal does the pipeline use as ground truth for a successful migration?",

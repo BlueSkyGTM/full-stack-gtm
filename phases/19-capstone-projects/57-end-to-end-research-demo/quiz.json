@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "What is the demo's job in this lesson?",
-      "options": [
-        "To replace the earlier lessons with a single new framework",
-        "To compose the primitives from the earlier lessons through plain Python imports",
-        "To benchmark the scheduler against a baseline",
-        "To call a real language model on each branch"
-      ],
-      "correct": 1,
-      "explanation": "The demo is a composition test. Each stage exists in its own lesson. The demo imports them and wires the report. No new framework, no new abstractions."
-    },
-    {
-      "stage": "pre",
       "question": "Why does the lesson load earlier lessons via importlib instead of a normal package import?",
       "options": [
         "Because importlib is faster",
@@ -49,6 +37,18 @@
       ],
       "correct": 1,
       "explanation": "NoTriggerError is the typed failure mode. Returning None would let the writer run on a malformed input and break later with a less actionable error."
+    },
+    {
+      "stage": "check",
+      "question": "Which of the following is a correct implementation detail?",
+      "options": [
+        "Option A (placeholder)",
+        "Option B (placeholder)",
+        "Option C (placeholder)",
+        "Option D (placeholder)"
+      ],
+      "correct": 0,
+      "explanation": ""
     },
     {
       "stage": "post",

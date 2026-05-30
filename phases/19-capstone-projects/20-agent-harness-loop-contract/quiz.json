@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Why model the harness loop as an explicit state machine rather than a while loop with flags?",
-      "options": [
-        "It lets the harness reject illegal transitions in one place and replay sessions from the event log",
-        "It is faster on CPython",
-        "It avoids the need for tests",
-        "It is the only shape the model can call"
-      ],
-      "correct": 0,
-      "explanation": "A state machine puts the legality rules in one transition function. The same input sequence reproduces the same state, which is what makes session replay possible."
-    },
-    {
-      "stage": "pre",
       "question": "What does a pull point in the loop represent?",
       "options": [
         "A point where the loop yields control and waits for the caller to provide an input",
@@ -66,10 +54,10 @@
       "stage": "post",
       "question": "When the wall-clock budget is exceeded, what is the next state?",
       "options": [
-        "DONE — the session is terminated",
-        "EXECUTING — the loop retries",
-        "IDLE — a pull point is returned with a budget_exceeded reason",
-        "PLANNING — a fresh plan is drafted"
+        "DONE \u00e2\u20ac\u201d the session is terminated",
+        "EXECUTING \u00e2\u20ac\u201d the loop retries",
+        "IDLE \u00e2\u20ac\u201d a pull point is returned with a budget_exceeded reason",
+        "PLANNING \u00e2\u20ac\u201d a fresh plan is drafted"
       ],
       "correct": 2,
       "explanation": "Budget exhaustion is a yield. The harness transitions to IDLE, fires on_budget_exceeded, and returns a PullRequest so the caller can decide whether to extend or close."

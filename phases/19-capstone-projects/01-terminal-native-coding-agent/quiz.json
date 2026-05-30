@@ -1,19 +1,7 @@
 {
   "lesson": "01-terminal-native-coding-agent",
-  "title": "Capstone 01 — Terminal-Native Coding Agent",
+  "title": "Capstone 01 \u00e2\u20ac\u201d Terminal-Native Coding Agent",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Which loop shape do 2026 terminal coding agents share?",
-      "options": [
-        "Plan, act, observe, recover",
-        "Encode, decode, sample, stream",
-        "Train, evaluate, deploy, monitor",
-        "Fetch, embed, rank, synthesize"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Why does the harness run each task inside an E2B or Daytona sandbox?",

@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does timeout on a non-idempotent tool default to no retry?",
-      "options": [
-        "Because the dispatcher cannot measure non-idempotent calls",
-        "Because the tool may have partially committed; retry can duplicate the effect",
-        "Because non-idempotent handlers run faster",
-        "Because idempotency keys are slow"
-      ],
-      "correct": 1,
-      "explanation": "Retrying a db.write that timed out at 4.9s can produce a second write. The dispatcher refuses unless the handler tells it the call is safe to repeat."
-    },
-    {
-      "stage": "pre",
       "question": "What is the idempotency-key dedupe protecting against?",
       "options": [
         "Slow networks",

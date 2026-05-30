@@ -1,19 +1,7 @@
 {
   "lesson": "12-video-understanding-pipeline",
-  "title": "Capstone 12 — Video Understanding Pipeline (Scene, QA, Search)",
+  "title": "Capstone 12 \u00e2\u20ac\u201d Video Understanding Pipeline (Scene, QA, Search)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why is a scene-level index still needed even when a long-context VLM can read a 2-hour video natively?",
-      "options": [
-        "Long-context VLMs cannot stream output",
-        "Vector indexes do not support video files",
-        "Ingesting 100 hours of video into a queryable corpus needs scene-level retrieval, even when individual videos can be read whole",
-        "Scene cuts are the only thing a VLM understands"
-      ],
-      "correct": 2,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Which three vector types does each scene get in the multi-vector index?",

@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does the writer declare sections, figures, and citations as data before any prose is written?",
-      "options": [
-        "Because LaTeX requires a forward declaration",
-        "Because the structure is the contract: the harness can validate completeness before prose generation",
-        "Because the model needs a system prompt",
-        "Because BibTeX cannot resolve forward references"
-      ],
-      "correct": 1,
-      "explanation": "Structure-first lets the harness validate uniqueness, citation coverage, and figure coverage before invoking the prose generator. The skeleton is the contract."
-    },
-    {
-      "stage": "pre",
       "question": "What does the figure-injection step produce from an experiment manifest?",
       "options": [
         "A PDF compiled from artifacts",
@@ -49,6 +37,18 @@
       ],
       "correct": 1,
       "explanation": "The writer takes the prose generator as a dependency. The test substitutes MockProseGenerator. Production substitutes a model call. The writer is unchanged."
+    },
+    {
+      "stage": "check",
+      "question": "Which of the following is a correct implementation detail?",
+      "options": [
+        "Option A (placeholder)",
+        "Option B (placeholder)",
+        "Option C (placeholder)",
+        "Option D (placeholder)"
+      ],
+      "correct": 0,
+      "explanation": ""
     },
     {
       "stage": "post",

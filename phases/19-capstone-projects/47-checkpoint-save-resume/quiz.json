@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Which set best describes a complete training checkpoint?",
-      "options": [
-        "Model weights only",
-        "Model state, optimizer state, scheduler state, step counters, loss history, and RNG state for python, numpy, torch CPU, torch CUDA",
-        "Just the loss history",
-        "Anything torch.save() can serialize"
-      ],
-      "correct": 1,
-      "explanation": "Resume must walk the same trajectory. Without optimizer moments, scheduler position, and RNG state the resumed loss is a different curve."
-    },
-    {
-      "stage": "pre",
       "question": "Why does the saver write to a temporary file and then rename instead of writing the target name directly?",
       "options": [
         "Faster I/O",
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "If you forget RNG you see a different curve and a non-trivial diff. If you forget optimizer state the diff is huge. The near-zero number is the contract."
+    },
+    {
+      "stage": "post",
+      "question": "What must the checkpoint serialization format include to enable exact training resumption?",
+      "options": [
+        "Optimizer state, model weights, training step, and RNG seeds",
+        "Only model weights and training step",
+        "Only optimizer state and learning rate",
+        "Only model weights and optimizer state"
+      ],
+      "correct": 0,
+      "explanation": "Exact resumption requires the full training state: optimizer state (AdamW momentum/variance buffers), model weights, current step counter, and RNG seeds to ensure deterministic sampling behavior matches the pre-checkpoint run."
     }
   ]
 }

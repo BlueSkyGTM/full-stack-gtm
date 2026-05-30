@@ -1,19 +1,7 @@
 {
   "lesson": "17-personal-ai-tutor",
-  "title": "Capstone 17 — Personal AI Tutor (Adaptive, Multimodal, with Memory)",
+  "title": "Capstone 17 \u00e2\u20ac\u201d Personal AI Tutor (Adaptive, Multimodal, with Memory)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "What does a Socratic tutor policy do when a learner asks for the answer outright?",
-      "options": [
-        "Asks a leading question that scaffolds the learner toward the answer",
-        "Logs the request and goes silent",
-        "Provides the answer immediately and moves on",
-        "Switches to a different concept node"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Which structure does the curriculum graph encode?",

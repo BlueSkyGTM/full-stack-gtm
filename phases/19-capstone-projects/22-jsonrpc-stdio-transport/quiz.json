@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "What distinguishes a JSON-RPC notification from a request on the wire?",
-      "options": [
-        "Different jsonrpc version field",
-        "Notifications omit the id field; servers must not respond to them",
-        "Notifications use a different method namespace",
-        "Notifications are wrapped in an array"
-      ],
-      "correct": 1,
-      "explanation": "Absence of id is the only marker. Servers do not respond, because there is no id to correlate against."
-    },
-    {
-      "stage": "pre",
       "question": "Why is newline-delimited JSON sufficient for stdio framing?",
       "options": [
         "Because JSON does not allow literal newlines inside strings without escaping, so each object can be one line",
@@ -55,7 +43,7 @@
       "question": "What does the server return when a batch contains only notifications?",
       "options": [
         "An empty array",
-        "Nothing — no bytes are written",
+        "Nothing \u00e2\u20ac\u201d no bytes are written",
         "One null per notification",
         "A single null response"
       ],

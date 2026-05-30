@@ -1,19 +1,7 @@
 {
   "lesson": "11-llm-observability-dashboard",
-  "title": "Capstone 11 — LLM Observability & Eval Dashboard",
+  "title": "Capstone 11 \u00e2\u20ac\u201d LLM Observability & Eval Dashboard",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Which ingest schema do Langfuse, Phoenix, and OpenLLMetry converge on?",
-      "options": [
-        "Proprietary JSON per vendor",
-        "Prometheus exposition format",
-        "OpenTelemetry GenAI semantic conventions over OTLP HTTP",
-        "Plain CSV log files"
-      ],
-      "correct": 2,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Why separate ClickHouse and Postgres in the storage tier?",

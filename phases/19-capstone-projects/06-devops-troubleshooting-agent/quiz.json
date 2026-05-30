@@ -1,19 +1,7 @@
 {
   "lesson": "06-devops-troubleshooting-agent",
-  "title": "Capstone 06 — DevOps Troubleshooting Agent for Kubernetes",
+  "title": "Capstone 06 \u00e2\u20ac\u201d DevOps Troubleshooting Agent for Kubernetes",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "What is the default permission posture for the troubleshooting agent's RBAC surface?",
-      "options": [
-        "Read-only by default, with destructive verbs gated behind a separate server and human approval",
-        "Namespace-admin in the affected namespace only",
-        "Equivalent to the on-call engineer",
-        "Cluster-admin so it can self-heal"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What is the knowledge graph the agent walks during root cause analysis?",

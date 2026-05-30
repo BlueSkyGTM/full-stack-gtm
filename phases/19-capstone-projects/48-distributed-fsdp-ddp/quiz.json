@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Which two collective ops are the core of a from-scratch DDP wrapper?",
-      "options": [
-        "send and recv",
-        "broadcast at construction so every rank starts from the same parameters, and all_reduce after backward so every rank ends with the averaged gradient",
-        "reduce_scatter only",
-        "barrier and barrier"
-      ],
-      "correct": 1,
-      "explanation": "Broadcast at init keeps ranks in sync at step zero. All-reduce after backward keeps them in sync at every step that follows."
-    },
-    {
-      "stage": "pre",
       "question": "Why does this lesson work on CPU without CUDA?",
       "options": [
         "It is a stub",
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "DDP's invariant is parameter parity across ranks. The spread is the audit; the demo asserts it stays under 1e-3."
+    },
+    {
+      "stage": "post",
+      "question": "How does FSDP differ from DDP in how it handles model parameters across devices?",
+      "options": [
+        "FSDP shards parameters across devices; DDP replicates full parameters on each device",
+        "FSDP replicates full parameters; DDP shards them",
+        "Both shard parameters equally",
+        "Both replicate full parameters equally"
+      ],
+      "correct": 0,
+      "explanation": "DDP (DistributedDataParallel) replicates the full model on each device and syncs gradients. FSDP (Fully Sharded Data Parallel) shards parameters across devices, reducing memory footprint and enabling training of larger models on the same hardware."
     }
   ]
 }

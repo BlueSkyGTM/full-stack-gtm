@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does the runner spawn a subprocess instead of importing the experiment script in process?",
-      "options": [
-        "Because Python disallows nested imports",
-        "Because a separate process gives the runner a kill handle on timeout or memory limits and isolates crashes from the orchestrator",
-        "Because the metrics format requires it",
-        "Because subprocess is faster than import"
-      ],
-      "correct": 1,
-      "explanation": "A separate process is the simplest isolation the language ships. The parent retains a kill handle and an independent address space, so a crashing experiment cannot take the orchestrator with it."
-    },
-    {
-      "stage": "pre",
       "question": "Why is the memory cap described as soft?",
       "options": [
         "Because it only applies to the heap, not the stack",
@@ -25,18 +13,6 @@
       ],
       "correct": 1,
       "explanation": "The cap is enforced by polling, not by an in kernel limit. The poller interval is the resolution of the cap, and short spikes can briefly exceed the cap before the next observation."
-    },
-    {
-      "stage": "check",
-      "question": "Which terminal label does the runner return when stdout has the metrics but the exit code is non zero?",
-      "options": [
-        "ok",
-        "timeout",
-        "oom",
-        "crash"
-      ],
-      "correct": 3,
-      "explanation": "Terminal is ok only when exit code is zero and metrics parsed. A non zero exit code is crash even if some metrics were captured before the failure."
     },
     {
       "stage": "check",
@@ -73,6 +49,30 @@
       ],
       "correct": 2,
       "explanation": "The seed pins random initialisation in the experiment. Two runs with the same seed produce identical metrics, which is what lets the evaluator distinguish a real regression from a different draw."
+    },
+    {
+      "stage": "post",
+      "question": "What is the key abstraction that enables swapping from mock to real execution backends?",
+      "options": [
+        "A unified run() interface that accepts a config dict and returns a result dict, independent of the underlying engine",
+        "Hardcoding real API calls",
+        "Using only local execution",
+        "Skipping configuration entirely"
+      ],
+      "correct": 0,
+      "explanation": "The experiment runner defines a contract: run(experiment_config) returns experiment_results. Mock, local, and cloud backends all implement this interface, allowing seamless switching between fast testing and production runs without changing experiment code."
+    },
+    {
+      "stage": "post",
+      "question": "How does deterministic seeding support experiment reproducibility?",
+      "options": [
+        "Seeding RNGs and non-deterministic APIs ensures that re-running the same config produces identical results",
+        "Seeding increases randomness",
+        "Seeding speeds up execution",
+        "Seeding reduces memory usage"
+      ],
+      "correct": 0,
+      "explanation": "Reproducibility requires that re-running an experiment with the same configuration produces the same numbers. Seeding Python's RNG, NumPy's RNG, and any model's sampling parameters (e.g., temperature) ensures that stochastic operations (dropout, sampling, shuffling) behave identically on reruns."
     }
   ]
 }

@@ -1,19 +1,7 @@
 {
   "lesson": "14-speculative-decoding-server",
-  "title": "Capstone 14 — Speculative-Decoding Inference Server",
+  "title": "Capstone 14 \u00e2\u20ac\u201d Speculative-Decoding Inference Server",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "What is the two-layer mechanism behind speculative decoding?",
-      "options": [
-        "Two target models alternate per token",
-        "An embedding model and a synthesizer",
-        "A retrieval cache and a reranker",
-        "A draft model proposes k candidate tokens; the target model verifies them in a single pass"
-      ],
-      "correct": 3,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What does EAGLE-3 do that ngram drafts do not?",

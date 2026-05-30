@@ -1,19 +1,7 @@
 {
   "lesson": "04-multimodal-document-qa",
-  "title": "Capstone 04 — Multimodal Document QA (Vision-First PDF, Tables, Charts)",
+  "title": "Capstone 04 \u00e2\u20ac\u201d Multimodal Document QA (Vision-First PDF, Tables, Charts)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why does the 2026 frontier prefer vision-first late interaction over OCR-then-text on financial PDFs and scientific papers?",
-      "options": [
-        "Vision models are cheaper per page",
-        "OCR pipelines mangle rotated tables, dense equations, and chart imagery, losing half the signal",
-        "OCR is slower than rendering",
-        "OCR cannot run on GPUs"
-      ],
-      "correct": 1,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What does late interaction mean in ColPali-style retrieval?",

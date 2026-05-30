@@ -1,19 +1,7 @@
 {
   "lesson": "07-end-to-end-fine-tuning-pipeline",
-  "title": "Capstone 07 — End-to-End Fine-Tuning Pipeline (Data to SFT to DPO to Serve)",
+  "title": "Capstone 07 \u00e2\u20ac\u201d End-to-End Fine-Tuning Pipeline (Data to SFT to DPO to Serve)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "What does the contamination check guard against during data preparation?",
-      "options": [
-        "Tokenizer drift between SFT and DPO stages",
-        "GPU driver mismatches between training and serving",
-        "GGUF version skew across llama.cpp builds",
-        "Test-set leakage from public benchmarks such as MMLU-Pro and MT-Bench-v2 into training data"
-      ],
-      "correct": 3,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "Why does the pipeline compose SFT then DPO (or GRPO) rather than DPO alone?",

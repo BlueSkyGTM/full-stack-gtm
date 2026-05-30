@@ -1,19 +1,7 @@
 {
   "lesson": "03-realtime-voice-assistant",
-  "title": "Capstone 03 — Real-Time Voice Assistant (ASR to LLM to TTS)",
+  "title": "Capstone 03 \u00e2\u20ac\u201d Real-Time Voice Assistant (ASR to LLM to TTS)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why can a voice agent not be built by stitching three blocking REST calls?",
-      "options": [
-        "REST endpoints have a 30-second hard timeout",
-        "REST is incompatible with WebRTC",
-        "JSON serialization is too slow for audio data",
-        "End-to-end latency below 800ms requires pipelined streaming at every stage"
-      ],
-      "correct": 3,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What is the role of the turn-detector alongside VAD?",

@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "What four fields define a task example in the harness's JSONL format?",
-      "options": [
-        "name, score, payload, vendor",
-        "id, prompt, targets, metric, and an optional extras dict for side data the metric needs",
-        "input and output",
-        "weights and bias"
-      ],
-      "correct": 1,
-      "explanation": "The JSONL line is the contract. The extras field lets the code_exec metric pass io_pairs without polluting the prompt."
-    },
-    {
-      "stage": "pre",
       "question": "Why is the metric function signature (prediction, targets, extras) -> float?",
       "options": [
         "Random choice",
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "Mean of per-task means weights every task equally. Use --include-per-example to keep the prediction-level evidence next to the score so regressions are visible."
+    },
+    {
+      "stage": "post",
+      "question": "What is the primary advantage of integrating with a standardized evaluation harness?",
+      "options": [
+        "Reproducible benchmark comparisons across papers and models using consistent prompts and metrics",
+        "Faster inference during training",
+        "Reduced checkpoint file sizes",
+        "Automatic hyperparameter optimization"
+      ],
+      "correct": 0,
+      "explanation": "Evaluation harnesses provide standardized prompt templates, metric calculations, and benchmark tasks. This ensures fair, reproducible comparisons between different models and research papers, as everyone evaluates on the same exact setup."
     }
   ]
 }

@@ -1,19 +1,7 @@
 {
   "lesson": "10-multi-agent-software-team",
-  "title": "Capstone 10 — Multi-Agent Software Engineering Team",
+  "title": "Capstone 10 \u00e2\u20ac\u201d Multi-Agent Software Engineering Team",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why does a single-agent harness hit a ceiling on large tasks even with a 200k-token context?",
-      "options": [
-        "Single agents cannot make tool calls",
-        "Sandboxes refuse to host more than one process",
-        "Context cannot hold the architecture plan, four parallel codebase slices, reviewer commentary, and test output at once",
-        "Models lack support for git"
-      ],
-      "correct": 2,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What does the architect role own in this factory shape?",

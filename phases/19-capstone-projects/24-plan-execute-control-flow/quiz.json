@@ -4,18 +4,6 @@
   "questions": [
     {
       "stage": "pre",
-      "question": "What is the planner's responsibility in a plan-execute agent?",
-      "options": [
-        "To call the dispatcher on each step",
-        "To produce an ordered list of typed steps the executor will run",
-        "To enforce timeouts",
-        "To handle the JSON-RPC transport"
-      ],
-      "correct": 1,
-      "explanation": "Planner emits structured plans. The executor runs them. Mixing the two is the chain-of-thought trap this lesson is moving away from."
-    },
-    {
-      "stage": "pre",
       "question": "Why is expected_outcome part of the Step shape even though the executor does not check it?",
       "options": [
         "Because the dispatcher uses it as a cache key",
@@ -30,7 +18,7 @@
       "stage": "check",
       "question": "When a step fails and the replanner returns a new plan, what does the executor emit on the event stream?",
       "options": [
-        "Nothing — replan is silent",
+        "Nothing \u00e2\u20ac\u201d replan is silent",
         "session.complete with status=failed",
         "plan.diff with removed/added/revised step ids",
         "tool.error followed by session.start"

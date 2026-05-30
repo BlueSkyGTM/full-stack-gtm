@@ -1,19 +1,7 @@
 {
   "lesson": "02-rag-over-codebase",
-  "title": "Capstone 02 — RAG over Codebase (Cross-Repo Semantic Search)",
+  "title": "Capstone 02 \u00e2\u20ac\u201d RAG over Codebase (Cross-Repo Semantic Search)",
   "questions": [
-    {
-      "stage": "pre",
-      "question": "Why is naive cosine search over raw chunks insufficient for cross-repo code retrieval?",
-      "options": [
-        "It poisons results on generated code, monorepo duplication, and rarely imported symbols",
-        "Cosine similarity is undefined on code embeddings",
-        "Vector indexes cannot store payloads larger than 1KB",
-        "Embedding models do not see code as tokens"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
     {
       "stage": "pre",
       "question": "What does AST-aware chunking mean in the ingestion pipeline?",
