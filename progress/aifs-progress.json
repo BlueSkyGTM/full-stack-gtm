@@ -1,0 +1,11 @@
+{
+  "lessons": {},
+  "updatedAt": 0,
+  "savedAt": 0,
+  "message": "",
+  "focus": {
+    "currentLesson": null,
+    "mode": null,
+    "note": ""
+  }
+}

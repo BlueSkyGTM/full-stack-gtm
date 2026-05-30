@@ -1,0 +1,13 @@
+---
+description: Terminal hygiene for Cline on Windows and macOS
+alwaysApply: true
+---
+
+# Terminal hygiene (Cline)
+
+- Prefer single compound commands over multiple sequential `execute_command` calls.
+- Batch related git operations (`git add A && git commit -m "..."`) into one invocation.
+- Avoid bare `git status` / `git log` — use `--short`, `--oneline -N`, or pipe output.
+- On Windows PowerShell: `del` and `rm` behave differently than bash; prefer `Remove-Item` with comma-separated paths.
+- If Cline freezes after a command completes, click Proceed — this is expected on both Windows and macOS.
+- Close stale terminals in Cursor when the count exceeds 3 to prevent accumulation.
