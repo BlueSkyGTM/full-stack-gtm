@@ -1,6 +1,6 @@
 {
   "lesson": "14-speculative-decoding-server",
-  "title": "Capstone 14 \u00e2\u20ac\u201d Speculative-Decoding Inference Server",
+  "title": "Capstone 14 — Speculative-Decoding Inference Server",
   "questions": [
     {
       "stage": "pre",
@@ -12,7 +12,7 @@
         "It runs only on CPUs"
       ],
       "correct": 1,
-      "explanation": ""
+      "explanation": "EAGLE-3 uses a draft model (small, fast) to generate multiple candidate tokens in parallel, then verifies them with the target model (large, accurate), achieving 2-3x speedup."
     },
     {
       "stage": "check",
@@ -24,7 +24,7 @@
         "Tail latency is independent of batch size"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "The server streams verified tokens to clients in chunks, reducing round-trip latency and enabling incremental processing for real-time applications."
     },
     {
       "stage": "check",
@@ -36,7 +36,7 @@
         "Quantization changes at runtime"
       ],
       "correct": 1,
-      "explanation": ""
+      "explanation": "Token consistency checks compare draft model predictions with target model verification, rejecting divergent tokens and triggering fallback to direct generation."
     },
     {
       "stage": "check",
@@ -48,7 +48,7 @@
         "Queue-wait time on inference requests"
       ],
       "correct": 3,
-      "explanation": ""
+      "explanation": "Model routing directs simple queries to the draft model for low-latency responses and complex queries to the full model for higher accuracy, based on query complexity heuristics."
     },
     {
       "stage": "post",
@@ -60,7 +60,7 @@
         "Automatic dataset curation"
       ],
       "correct": 2,
-      "explanation": ""
+      "explanation": "The capstone measures speedup (tokens/sec vs baseline), accuracy preservation (perplexity of generated text), and fallback rate (percentage of queries requiring direct generation)."
     },
     {
       "stage": "post",
@@ -72,7 +72,7 @@
         "Exactly 10x throughput at any quality"
       ],
       "correct": 0,
-      "explanation": ""
+      "explanation": "Server stability is tested with load tests (concurrent request patterns), memory stress tests (large context windows), and failure recovery (graceful degradation on model errors)."
     }
   ]
 }
