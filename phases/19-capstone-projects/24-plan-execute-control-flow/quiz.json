@@ -18,7 +18,7 @@
       "stage": "check",
       "question": "When a step fails and the replanner returns a new plan, what does the executor emit on the event stream?",
       "options": [
-        "Nothing â€” replan is silent",
+        "Nothing — replan is silent",
         "session.complete with status=failed",
         "plan.diff with removed/added/revised step ids",
         "tool.error followed by session.start"

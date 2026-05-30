@@ -54,10 +54,10 @@
       "stage": "post",
       "question": "When the wall-clock budget is exceeded, what is the next state?",
       "options": [
-        "DONE â€” the session is terminated",
-        "EXECUTING â€” the loop retries",
-        "IDLE â€” a pull point is returned with a budget_exceeded reason",
-        "PLANNING â€” a fresh plan is drafted"
+        "DONE — the session is terminated",
+        "EXECUTING — the loop retries",
+        "IDLE — a pull point is returned with a budget_exceeded reason",
+        "PLANNING — a fresh plan is drafted"
       ],
       "correct": 2,
       "explanation": "The contract specifies message formats (JSON schemas), error handling conventions (status codes, retry logic), and observability requirements (span tags, token accounting)."

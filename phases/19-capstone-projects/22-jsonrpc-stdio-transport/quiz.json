@@ -43,7 +43,7 @@
       "question": "What does the server return when a batch contains only notifications?",
       "options": [
         "An empty array",
-        "Nothing â€” no bytes are written",
+        "Nothing — no bytes are written",
         "One null per notification",
         "A single null response"
       ],
