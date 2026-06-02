@@ -10,6 +10,49 @@ ICM replaces framework-level orchestration with filesystem structure. Numbered f
 
 ---
 
+## Quick Setup (New Machine)
+
+Run these once after cloning. Takes about 5 minutes.
+
+### 1. Clone
+
+```bash
+git clone https://github.com/BlueSkyGTM/ai-engineering-school.git
+cd ai-engineering-school
+```
+
+### 2. Install global tools
+
+```bash
+# graphify — AST code graph (per-workspace intelligence)
+uv tool install graphifyy && graphify install
+
+# bun — required by gstack
+npm install -g bun
+
+# gstack — AI software factory (slash commands: /review, /qa, /ship, /investigate, etc.)
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
+cd ~/.claude/skills/gstack && ./setup --team && cd -
+
+# gbrain — semantic knowledge store (optional but recommended)
+npm install -g ~/gbrain 2>/dev/null || (git clone https://github.com/garrytan/gbrain.git ~/gbrain && cd ~/gbrain && npm install --ignore-scripts && npm install -g . && cd -)
+```
+
+### 3. Install graphify per workspace
+
+```bash
+cd workspaces/ai-school-curriculum  && graphify install --project && cd ../..
+cd workspaces/ai-school-expansion   && graphify install --project && cd ../..
+cd workspaces/ai-school-website     && graphify install --project && cd ../..
+cd workspaces/ai-school-anti-library && graphify install --project && cd ../..
+```
+
+### 4. Open Claude Code
+
+Open Claude Code in `workspaces/` — the `CLAUDE.md` and `CONTEXT.md` there are your operating context as Dean. The curriculum workspace (`ai-school-curriculum/`) has its own git repo and its own `CLAUDE.md` for Cline.
+
+---
+
 ## Why This Exists
 
 There are genuinely good agentic frameworks available today. CrewAI, LangChain, AutoGen, and others handle multi-step orchestration, memory management, tool use, and error recovery. They work. But they work within their own structures, and adjusting those structures requires development work. Changing the order of steps, swapping a prompt, adding or removing a stage: these actions typically mean editing code, understanding abstractions, and redeploying.
