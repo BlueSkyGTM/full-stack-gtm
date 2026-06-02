@@ -2,11 +2,7 @@
 
 Folder structure as agent architecture.
 
-Full research paper here https://arxiv.org/abs/2603.16021
-
 ICM replaces framework-level orchestration with filesystem structure. Numbered folders represent stages. Markdown files carry the prompts and context that tell a single AI agent what role to play at each step. The result is a system where one agent, reading the right files at the right moment, does the work that would otherwise require a multi-agent framework.
-
-**Created by Jake Van Clief**
 
 ---
 
@@ -196,27 +192,23 @@ It is worth distinguishing ICM from Anthropic's Model Context Protocol (MCP). MC
 
 ## Getting Started
 
-1. Clone this repo
-2. `cd workspaces/script-to-animation` (or any workspace)
-3. Open [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-4. Type `setup`
-5. Answer the onboarding questions -- all at once, one pass
-6. Your answers populate across the workspace files
-7. Start producing -- give the agent a topic and walk through the stages
+See the **Quick Setup** section at the top for new machine setup.
 
-Each stage produces an output file. You can edit that file before moving on. The next stage reads whatever you left there.
+Once installed, open Claude Code in `workspaces/` — the `CLAUDE.md` and `CONTEXT.md` there are your operating context. Type `status` to see pipeline completion across workspaces.
 
-## Available Workspaces
+## Workspaces
 
-| Workspace | What it does | Stages |
-|-----------|-------------|--------|
-| [script-to-animation](workspaces/script-to-animation/) | Content idea through script writing, animation spec, and Remotion code | 3 |
-| [course-deck-production](workspaces/course-deck-production/) | Unstructured material (PDFs, papers, notes) into polished PowerPoint slide decks | 5 |
-| [workspace-builder](workspaces/workspace-builder/) | Build a new ICM workspace for any domain | 5 |
+| Workspace | What it does |
+|-----------|-------------|
+| [ai-school-curriculum](workspaces/ai-school-curriculum/) | 473-lesson AI engineering curriculum — 20 phases, raw math through production systems |
+| [ai-school-expansion](workspaces/ai-school-expansion/) | MLOps + production ML absorption source (Made With ML fork) |
+| [ai-school-website](workspaces/ai-school-website/) | Gamified world-map frontend for the curriculum (vanilla JS, no framework) |
+| [ai-school-anti-library](workspaces/ai-school-anti-library/) | Curated cognitive anchor library — books, courses, papers |
+| [workspace-builder](workspaces/workspace-builder/) | Build a new ICM workspace for any domain (5 stages) |
 
 ## Build Your Own Workspace
 
-The workspace-builder is a workspace whose output is a new workspace. It follows ICM conventions to produce workspaces that follow ICM conventions.
+The workspace-builder produces new workspaces using ICM conventions.
 
 1. `cd workspaces/workspace-builder`
 2. Type `setup` to describe your domain
@@ -292,9 +284,7 @@ Every workspace follows 15 patterns defined in [`_core/CONVENTIONS.md`](_core/CO
 
 ## Origin
 
-ICM grew out of a [content production system](https://github.com/RinDig/Content-Agent-Routing-Promptbase) that applies separation of concerns to AI context windows instead of code modules. That system runs a full content operation: scripting, animation specs, Remotion builds, brand management. ICM is the general-purpose version -- the structural patterns extracted so anyone can scaffold their own workflows.
-
-For the academic treatment, see [Model Workspace Protocol: Folder Structure as Agent Architecture](link-to-paper) (Van Clief, 2026).
+ICM applies separation of concerns to AI context windows instead of code modules. The structural patterns -- stage contracts, one-way references, selective section routing, canonical sources -- are old ideas from Unix pipelines and information-hiding applied to the specific problem of structuring context for AI agents.
 
 ## License
 
