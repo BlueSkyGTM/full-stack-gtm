@@ -111,6 +111,19 @@
     if (lesson.type) { const t = document.createElement('span'); t.className = 'lz-tag'; t.setAttribute('data-t', lesson.type); t.textContent = lesson.type; meta.appendChild(t); }
     if (lesson.lang && lesson.lang !== '—') { const lg = document.createElement('span'); lg.className = 'lz-tag'; lg.textContent = lesson.lang; meta.appendChild(lg); }
     if (lesson.url) { const gh = document.createElement('a'); gh.className = 'lz-tag'; gh.href = lesson.url; gh.target = '_blank'; gh.rel = 'noopener'; gh.textContent = 'GitHub ↗'; meta.appendChild(gh); }
+    if (lesson.path) {
+      const cp = document.createElement('button');
+      cp.className = 'lz-tag lz-copy-path';
+      cp.title = 'Copy path for Claude Code';
+      cp.textContent = '$ copy path';
+      cp.addEventListener('click', () => {
+        navigator.clipboard.writeText(lesson.path).then(() => {
+          cp.textContent = '✓ copied';
+          setTimeout(() => { cp.textContent = '$ copy path'; }, 1500);
+        });
+      });
+      meta.appendChild(cp);
+    }
     const btn = document.createElement('button');
     btn.className = 'lz-done-btn' + (done ? ' is-done' : '');
     btn.textContent = done ? '✓ Completed' : 'Mark complete';

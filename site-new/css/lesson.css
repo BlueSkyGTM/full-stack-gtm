@@ -48,6 +48,8 @@
 .lz-tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--line); color: var(--cream-dim); }
 .lz-tag[data-t="Build"] { color: var(--terra); border-color: var(--terra-deep); }
 .lz-tag[data-t="Capstone"] { color: var(--gold); border-color: var(--gold); }
+.lz-copy-path { cursor: pointer; background: none; color: var(--green, #98c379); border-color: var(--green-deep, #3d5c30); transition: color 0.12s, border-color 0.12s; }
+.lz-copy-path:hover { color: #fff; border-color: var(--green, #98c379); }
 .lz-done-btn {
   margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2);
   padding: 7px 13px; border: 1px solid var(--terra-deep); background: transparent; color: var(--terra);
