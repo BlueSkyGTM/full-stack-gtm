@@ -17,6 +17,14 @@
 .top nav { display: flex; gap: var(--s5); }
 .top nav a { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cream-dim); }
 .top nav a:hover, .top nav a[aria-current="page"] { color: var(--terra); }
+@media (max-width: 720px) {
+  .top { overflow: hidden; }
+  .top nav { overflow-x: auto; flex-shrink: 1; gap: var(--s3); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .top nav::-webkit-scrollbar { display: none; }
+  .top nav a { font-size: 0.6rem; letter-spacing: 0.06em; white-space: nowrap; }
+  .search-btn span, .search-btn kbd { display: none; }
+  .search-btn { padding: 0 var(--s2); min-width: 32px; }
+}
 
 /* ---------- HUD ---------- */
 .hud {
