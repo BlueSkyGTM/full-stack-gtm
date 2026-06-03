@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI School</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/cmdpalette.css">
+</head>
+<body>
+
+  <header class="top">
+    <a class="brand" href="index.html">
+      <span class="mark"></span><b>AI School</b>
+    </a>
+    <nav>
+      <a href="index.html" aria-current="page">Home</a>
+      <a href="course.html">Course</a>
+      <a href="roadmap.html">Roadmap</a>
+      <a href="catalog.html">Catalog</a>
+      <a href="library.html">Library</a>
+      <a href="projects.html">Projects</a>
+      <a href="glossary.html">Glossary</a>
+    </nav>
+    <button class="search-btn" type="button" data-cmd-palette aria-label="Search (Cmd-K)" title="Search (Cmd-K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span><kbd>⌘K</kbd>
+    </button>
+  </header>
+
+  <main class="wrap page">
+    <section class="home-hero" data-screen-label="Home">
+      <span class="eyebrow">AI Engineering · from scratch</span>
+      <h1 class="home-hero__t">Build modern AI,<br>by hand.</h1>
+      <p class="home-hero__sub">Re-implement every algorithm behind today's AI yourself — from tensors and backprop to transformers, RAG and agents. Twenty chapters, 470+ lessons, tracked as you go. Hands-on builds happen in Claude Code.</p>
+    </section>
+
+    <section class="section">
+      <div class="section__head"><span class="eyebrow">Where to go</span></div>
+      <nav class="signposts">
+        <a class="signpost" href="course.html">
+          <span class="signpost__ic">▤</span>
+          <span class="signpost__nm">Course</span>
+          <span class="signpost__d">Your progress and the full curriculum. Tick lessons as you complete them.</span>
+          <span class="signpost__go">Enter ↗</span>
+        </a>
+        <a class="signpost" href="roadmap.html">
+          <span class="signpost__ic">⋔</span>
+          <span class="signpost__nm">Roadmap</span>
+          <span class="signpost__d">How the chapters depend on each other. Plan the path ahead.</span>
+          <span class="signpost__go">Enter ↗</span>
+        </a>
+        <a class="signpost" href="catalog.html">
+          <span class="signpost__ic">▸</span>
+          <span class="signpost__nm">Catalog</span>
+          <span class="signpost__d">Search every lesson, language and build in one place.</span>
+          <span class="signpost__go">Enter ↗</span>
+        </a>
+        <a class="signpost" href="library.html">
+          <span class="signpost__ic">▤</span>
+          <span class="signpost__nm">Library</span>
+          <span class="signpost__d">Curated free reading — math, ML, LLMs, Rust, production.</span>
+          <span class="signpost__go">Enter ↗</span>
+        </a>
+        <a class="signpost" href="projects.html">
+          <span class="signpost__ic">★</span>
+          <span class="signpost__nm">Projects</span>
+          <span class="signpost__d">Every capstone build across all chapters — shipped and in progress.</span>
+          <span class="signpost__go">Enter ↗</span>
+        </a>
+      </nav>
+    </section>
+  </main>
+
+  <script src="js/data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/cmdpalette.js"></script>
+</body>
+</html>
