@@ -72,13 +72,16 @@
     if (!out.length) { body.replaceChildren(el('tr', null, el('td', { colspan: '5', class: 'cat-empty' }, 'No lessons match — try clearing a filter.'))); return; }
     body.replaceChildren(...out.map((r) => {
       const st = userStatus(r);
-      return el('tr', null, [
+      const href = readerHref(r.url) || r.url || null;
+      const row = el('tr', { class: href ? 'is-link' : '' }, [
         el('td', null, el('span', { class: 'cat-phase' }, String(r.phase).padStart(2, '0'))),
-        el('td', null, el(readerHref(r.url) ? 'a' : 'span', readerHref(r.url) ? { class: 'cat-name', href: readerHref(r.url) } : { class: 'cat-name' }, r.name)),
+        el('td', null, el('span', { class: 'cat-name' }, r.name)),
         el('td', null, el('span', { class: 'cat-tag', 'data-t': r.type }, r.type)),
         el('td', null, el('span', { class: 'cat-lang' }, r.lang)),
         el('td', null, el('span', { class: 'cat-stat', 'data-s': st }, st))
       ]);
+      if (href) row.addEventListener('click', () => window.open(href, '_blank'));
+      return row;
     }));
   }
 

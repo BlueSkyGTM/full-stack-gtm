@@ -18,9 +18,9 @@
   let active = 'all';
 
   function bookRow(b) {
-    return el('div', { class: 'book', 'data-topic': b.topic }, [
+    return el('a', { class: 'book', 'data-topic': b.topic, href: b.url, target: '_blank', rel: 'noopener' }, [
       el('div', { class: 'book__info' }, [
-        el('a', { class: 'book__title', href: b.url, target: '_blank', rel: 'noopener' }, b.title),
+        el('span', { class: 'book__title' }, b.title),
         el('div', { class: 'book__author' }, b.author),
         el('div', { class: 'book__note' }, b.note)
       ]),
