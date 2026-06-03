@@ -19,7 +19,7 @@
     $('#id').replaceChildren(
       el('div', { class: 'card__lv pix' }, 'LV.' + String(s.level).padStart(2, '0')),
       el('div', { class: 'card__rank' }, s.rank),
-      el('div', { class: 'card__name' }, 'AI Engineering from Scratch'),
+      el('div', { class: 'card__name' }, `${s.phasesCleared} / ${s.phasesTotal} chapters · ${s.lessonsDone} lessons`),
       el('div', { class: 'xp', style: 'margin: 16px 0 6px' }, el('i', { style: `--p:${s.pctIntoLevel}%` })),
       el('div', { class: 'xp__txt', style: 'text-align:center' },
         `${s.intoLevel} / ${s.levelSpan} XP → LV.${String(s.level + 1).padStart(2, '0')}`)

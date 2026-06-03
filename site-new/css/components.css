@@ -214,8 +214,8 @@
 .card__id { border: 1px solid var(--line); background: var(--panel); padding: var(--s5); text-align: center; }
 .card__ava { width: 120px; height: 120px; margin: 0 auto var(--s3); }
 .card__lv { font-family: var(--pix); font-size: 3.4rem; color: var(--terra); }
-.card__rank { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; margin: 6px 0 2px; }
-.card__name { font-size: 0.72rem; color: var(--cream-dim); }
+.card__rank { font-size: 1rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--terra); margin: 8px 0 4px; }
+.card__name { font-size: 0.68rem; color: var(--cream-dim); letter-spacing: 0.04em; }
 .card__actions { display: flex; gap: var(--s2); justify-content: center; flex-wrap: wrap; margin-top: var(--s4); }
 
 .stat { display: grid; grid-template-columns: 130px 1fr 56px; gap: var(--s3); align-items: center; padding: var(--s2) 0; border-bottom: 1px solid var(--line-soft); }
@@ -248,6 +248,11 @@
 .proj.is-open .proj__st { color: var(--terra); border-color: var(--terra-deep); }
 .proj__link { font-size: 0.54rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cream-dim); border: 1px solid var(--line); padding: 4px 8px; }
 .proj__link:hover { color: var(--terra); border-color: var(--terra); }
+/* locked-summary tile: one card that replaces N grey boxes */
+.proj--locked-summary { border-style: dashed; border-color: var(--line); min-height: 160px; }
+.proj__body--center { justify-content: center; align-items: center; text-align: center; min-height: 160px; }
+.proj__locked-num { font-family: var(--pix); font-size: 3.4rem; color: var(--cream-mute); line-height: 1; margin-bottom: var(--s2); }
+
 .proj--more { color: inherit; transition: border-color 0.12s; }
 .proj--more:hover { border-color: var(--terra); border-style: solid; }
 .proj--more:hover .proj__name { color: var(--terra); }

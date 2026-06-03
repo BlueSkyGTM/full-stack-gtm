@@ -1,8 +1,8 @@
 /* ============================================================
    AI SCHOOL · projects (capstone builds across all chapters)
-   Collects capstone lessons from every chapter — both the
-   dedicated capstone lesson that closes each chapter and all
-   Phase 19 final builds. Sorted: shipped first, then by chapter.
+   Shows SHIPPED capstones only. Locked ones collapse into a
+   single summary tile so the page doesn't look like a graveyard.
+   Tick a capstone lesson complete in Course to unlock it here.
    ============================================================ */
 (function () {
   'use strict';
@@ -26,22 +26,21 @@
     });
   });
 
-  /* shipped first, then by chapter id */
-  allCapstones.sort((a, b) => (b.done - a.done) || (a.ph.id - b.ph.id));
+  const shippedList = allCapstones.filter((c) => c.done);
+  const lockedCount = allCapstones.length - shippedList.length;
 
-  const shipped = allCapstones.filter((c) => c.done).length;
-  $('#capcount').textContent = `${shipped} / ${allCapstones.length} shipped`;
+  $('#capcount').textContent = `${shippedList.length} / ${allCapstones.length} shipped`;
 
-  const tiles = allCapstones.map(({ ph, l, i, done }) => {
-    const cls = 'proj ' + (done ? 'is-shipped' : 'is-locked');
+  /* render only shipped cards */
+  const tiles = shippedList.map(({ ph, l }) => {
     const foot = el('div', { class: 'proj__foot' }, [
       el('span', { class: 'proj__tag' }, `Ch. ${String(ph.id).padStart(2, '0')}`),
-      done && l.url
+      l.url
         ? el('a', { class: 'proj__link', href: l.url, target: '_blank', rel: 'noopener' }, 'View ↗')
-        : el('span', { class: 'proj__st' }, done ? 'Shipped' : 'Complete lesson in Course ↗')
+        : el('span', { class: 'proj__st' }, 'Shipped')
     ]);
-    return el('div', { class: cls }, [
-      el('div', { class: 'slot proj__art' }, done ? 'build 16×9' : '🔒 locked'),
+    return el('div', { class: 'proj is-shipped' }, [
+      el('div', { class: 'slot proj__art' }, 'build 16×9'),
       el('div', { class: 'proj__body' }, [
         el('div', { class: 'proj__name' }, l.name),
         el('div', { class: 'proj__desc' }, l.summary || ph.name),
@@ -49,6 +48,33 @@
       ])
     ]);
   });
+
+  /* single summary tile for all locked builds */
+  if (lockedCount > 0) {
+    tiles.push(el('div', { class: 'proj proj--locked-summary' }, [
+      el('div', { class: 'proj__body proj__body--center' }, [
+        el('div', { class: 'proj__locked-num' }, String(lockedCount)),
+        el('div', { class: 'proj__name' }, 'builds locked'),
+        el('div', { class: 'proj__desc' }, 'Complete capstone lessons in Course to unlock them here.'),
+        el('div', { class: 'proj__foot' }, [
+          el('a', { class: 'proj__link', href: 'course.html' }, 'Go to Course ↗')
+        ])
+      ])
+    ]));
+  }
+
+  /* empty state */
+  if (tiles.length === 0) {
+    tiles.push(el('div', { class: 'proj proj--locked-summary' }, [
+      el('div', { class: 'proj__body proj__body--center' }, [
+        el('div', { class: 'proj__name' }, 'No builds shipped yet'),
+        el('div', { class: 'proj__desc' }, 'Complete capstone lessons in Course. They appear here when done.'),
+        el('div', { class: 'proj__foot' }, [
+          el('a', { class: 'proj__link', href: 'course.html' }, 'Go to Course ↗')
+        ])
+      ])
+    ]));
+  }
 
   $('#builds').replaceChildren(...tiles);
 })();
