@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: AI Engineering Academy Progress
- * Description: Stores lesson progress for the AI Engineering Academy portfolio site.
+ * Plugin Name: Epoch Academy Progress
+ * Description: Stores lesson progress for the Epoch Academy portfolio site.
  * Version: 1.0.0
  */
 

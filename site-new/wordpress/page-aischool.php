@@ -1,6 +1,6 @@
 <?php
 /**
- * Template Name: AI Engineering Academy Page
+ * Template Name: Epoch Academy Page
  *
  * HOW TO USE:
  * 1. Copy the entire site-new/ folder into your theme directory:
@@ -10,11 +10,11 @@
  *    require get_template_directory() . '/aischool-progress.php';
  *
  * 3. In WordPress admin, create these pages with slugs matching exactly:
- *    - "course"   → Assign template: AI Engineering Academy Page
- *    - "catalog"  → Assign template: AI Engineering Academy Page
- *    - "library"  → Assign template: AI Engineering Academy Page
- *    - "projects" → Assign template: AI Engineering Academy Page
- *    - "glossary" → Assign template: AI Engineering Academy Page
+ *    - "course"   → Assign template: Epoch Academy Page
+ *    - "catalog"  → Assign template: Epoch Academy Page
+ *    - "library"  → Assign template: Epoch Academy Page
+ *    - "projects" → Assign template: Epoch Academy Page
+ *    - "glossary" → Assign template: Epoch Academy Page
  *
  * 4. The plugin handles auth via nonce. You must be logged in for
  *    progress to persist. For a personal site you're always logged in.
