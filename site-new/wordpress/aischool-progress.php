@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: AI School Progress
- * Description: Stores lesson progress for the AI School portfolio site.
+ * Plugin Name: AI Engineering Academy Progress
+ * Description: Stores lesson progress for the AI Engineering Academy portfolio site.
  * Version: 1.0.0
  */
 
