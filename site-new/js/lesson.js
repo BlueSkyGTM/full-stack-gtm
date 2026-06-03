@@ -117,7 +117,8 @@
       cp.title = 'Copy path for Claude Code';
       cp.textContent = '$ copy path';
       cp.addEventListener('click', () => {
-        navigator.clipboard.writeText(lesson.path).then(() => {
+        const prompt = `I'm working on this lesson: ${lesson.path}\nRead ${lesson.path}/docs/en.md and help me work through it.`;
+        navigator.clipboard.writeText(prompt).then(() => {
           cp.textContent = '✓ copied';
           setTimeout(() => { cp.textContent = '$ copy path'; }, 1500);
         });
