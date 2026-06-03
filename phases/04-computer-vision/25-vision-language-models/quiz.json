@@ -1,78 +1,39 @@
 {
-  "lesson": "25-vision-language-models",
-  "title": "Vision-Language Models — The ViT-MLP-LLM Pattern",
   "questions": [
     {
       "stage": "pre",
-      "question": "In the ViT-MLP-LLM VLM pattern, which component is most commonly trained while the others are kept frozen during alignment, and why?",
-      "options": [
-        "The projector (the 2-4 layer MLP between ViT and LLM) — it maps vision tokens into the LLM's embedding space and carries most of the cross-modal alignment signal while being small enough to train cheaply",
-        "The vision encoder — it must adapt its features to the LLM's vocabulary",
-        "The LLM — because language generation requires updating all weights",
-        "All three components are always trained together from the start"
-      ],
-      "correct": 0,
-      "explanation": "The standard VLM recipe trains the projector first with ViT and LLM frozen (alignment stage), then optionally unfreezes everything for pre-training and instruction tuning. The projector is small (tens to hundreds of millions of parameters) and takes the brunt of the modality bridge. Fine-tuning in production often trains only the projector plus LoRA on attention layers — cheap and effective for domain adaptation."
-    },
-    {
-      "stage": "check",
-      "question": "How does stage 1 (alignment) differ from stage 3 (instruction tuning) in the three-stage VLM training pipeline?",
-      "options": [
-        "Stage 1 and 3 are identical; the stage numbers are just checkpointing conventions",
-        "Stage 1 uses LoRA; stage 3 uses full fine-tuning on a larger dataset",
-        "Stage 1 freezes the ViT and LLM and trains only the projector on image-caption pairs to bridge the modality gap; stage 3 fine-tunes on curated (image, question, answer) triples to teach conversational behaviour and task formats",
-        "Stage 1 uses synthetic data; stage 3 uses only human-annotated data"
-      ],
-      "correct": 2,
-      "explanation": "Stage 1 (alignment) is cheap: only the projector moves, learning to convert vision tokens into the LLM's embedding space from raw image-caption pairs. Stage 3 (instruction tuning) is where the model learns to answer questions, follow instruction formats, and reason about images — the data is carefully curated QA rather than noisy web captions. Most domain-specific fine-tunes target stage 3 with LoRA, since the projector is already aligned after stage 1."
-    },
-    {
-      "stage": "check",
-      "question": "In `MinimalVLM._merge(text_embeds, vision_embeds, input_ids)`, vision embeddings replace positions where `input_ids == self.image_token_id`. Why use image placeholder tokens in the text stream rather than always prepending vision tokens?",
-      "options": [
-        "Special image marker tokens reduce the total sequence length, speeding up attention",
-        "Inserting vision tokens at image-token marker positions allows flexible interleaving — e.g. 'Compare <image1> with <image2>' — enabling multi-image and spatially grounded prompts; the same pattern is used by LLaVA, Qwen-VL, and InternVL",
-        "The LLM tokenizer rejects vision embeddings unless they occupy a dedicated special token slot in the vocabulary",
-        "It speeds up the KV-cache because vision tokens are cached separately"
-      ],
+      "question": "In the ViT-MLP-LLM VLM pattern, which component is most commonly trained while the others are kept frozen during alignment?",
+      "options": ["The vision encoder", "The projector (the 2-4 layer MLP between ViT and LLM) — it maps vision tokens into the LLM's embedding space and carries most of the cross-modal alignment signal", "The LLM", "All components are always trained together"],
       "correct": 1,
-      "explanation": "Always prepending vision tokens forces a fixed position for image content. Placeholder tokens in the text stream let the caller write 'Describe the difference between <image1> and <image2>: ...' with image tokens appearing exactly where the model should attend to them relative to the surrounding text. This is the token-interleaving pattern every production VLM (LLaVA, Qwen-VL, InternVL) uses for multi-image and spatially grounded reasoning."
+      "explanation": "The standard VLM recipe trains the projector first with ViT and LLM frozen (alignment stage), then optionally unfreezes everything for pre-training and instruction tuning. The projector is small (tens to hundreds of millions of params) and takes the brunt of the modality bridge. Fine-tuning in production often trains only the projector + LoRA on attention — cheap and effective."
     },
     {
-      "stage": "check",
-      "question": "The doc states current VLMs score 50-60% on spatial reasoning benchmarks (above-below, left-right, counting). What does the lesson recommend for production tasks that require precise spatial reasoning?",
-      "options": [
-        "Use a larger VLM (70B+) — scale alone closes the spatial reasoning gap",
-        "Use chain-of-thought prompting to help the VLM reason about positions step by step",
-        "Always fine-tune the vision encoder, not just the projector",
-        "Use a specialised keypoint/pose estimator, depth model, or detection model with box geometry post-processing — tools purpose-built for spatial reasoning are more reliable than a generic VLM on these tasks"
-      ],
-      "correct": 3,
-      "explanation": "VLMs are trained primarily on image-caption and QA data that does not strongly supervise spatial relationships, so 50-60% on spatial benchmarks is close to chance on some tasks. The lesson explicitly recommends routing spatial-reasoning production tasks to dedicated geometric tools: pose estimators, depth networks, or detectors with geometry post-processing. Validating heavily on the target spatial task is essential before trusting a generic VLM."
+      "stage": "pre",
+      "question": "DeepStack (used in Qwen3-VL) does what?",
+      "options": ["Uses only the deepest ViT layer's features", "Stacks features from multiple ViT depths before projection, so the LLM sees both high-level semantics (deep layers) and fine-grained spatial detail (shallow layers)", "Doubles the depth of the LLM", "Is a specific quantisation scheme"],
+      "correct": 1,
+      "explanation": "Vanilla VLMs project only last-layer ViT features. DeepStack samples multiple depths, concatenates, and projects. Deep layers give semantics ('this is a chart'); shallow layers give position and texture ('the bar at x=120 is red'). The combination closes the grounding gap on tasks requiring fine localisation, like GUI agent actions or dense captioning."
     },
     {
       "stage": "post",
-      "question": "A production VLM shows high token-generation confidence but the text describes objects not present in the image. Which metric captures this failure, and how is it computed?",
-      "options": [
-        "Perplexity — low perplexity means the model is hallucinating",
-        "Accuracy on MMMU — a drop in benchmark score flags hallucination",
-        "Cross-Modal Error Rate (CMER) — the fraction of outputs where text confidence is above a threshold but image-text cosine similarity (via a CLIP-family checker) is below a threshold; high CMER signals confident-but-ungrounded generation",
-        "Token generation latency — slower generation correlates with hallucination"
-      ],
-      "correct": 2,
-      "explanation": "CMER is a production alignment KPI introduced by Skywork.ai. It catches the classic VLM hallucination pattern: the model is confident about its text output (high mean per-token probability) but the text is not grounded in the image (low CLIP-based image-text cosine similarity). Monitor CMER per endpoint and prompt type; treating rising CMER as a routing signal to human review cut hallucination rate ~35% in their deployment."
+      "question": "A production VLM shows high text confidence but the generated text describes objects not present in the image. Which metric captures this failure?",
+      "options": ["Perplexity", "Cross-Modal Error Rate (CMER) — fraction of outputs where text confidence is high but image-text cosine similarity (via a CLIP-family checker) is low; ~12% typical on uncurated web data", "Accuracy on MMMU", "Token generation latency"],
+      "correct": 1,
+      "explanation": "CMER is a production alignment KPI. It catches the classic VLM hallucination pattern: the model is sure about its text, but the text is not grounded in the image. Monitor CMER per endpoint and prompt type; treat rising CMER as a signal that the model is drifting out of distribution or encountering a prompt category it cannot handle. Skywork.ai cut hallucinations ~35% by making CMER a first-class KPI."
     },
     {
       "stage": "post",
-      "question": "Why do modern VLMs use CLIP-family or SigLIP vision encoders rather than a supervised ImageNet ResNet as the backbone?",
-      "options": [
-        "SigLIP and CLIP encoders are faster at inference than ResNets of equivalent depth",
-        "SigLIP encoders have more parameters than ResNets, giving richer features",
-        "ResNets cannot produce patch tokens compatible with transformer projectors",
-        "CLIP/SigLIP encoders are trained jointly with text, so their output space is already approximately aligned with language; the projector needs far less work and the VLM reasons better about visual-textual concepts out of the box"
-      ],
-      "correct": 3,
-      "explanation": "Vision-language pretraining shapes the encoder's representation to live in a text-compatible space. A supervised ImageNet ResNet was trained without any text signal, so bridging its activations to an LLM requires much larger projectors and far more paired data. CLIP/SigLIP/DINOv3 encoders produce features an LLM can consume with a few linear layers. This is why almost every SOTA VLM — LLaVA, Qwen3-VL, InternVL3.5 — uses a CLIP-family or SigLIP encoder."
+      "question": "Why do modern VLMs use SigLIP or custom vision encoders rather than a supervised ImageNet ResNet as the backbone?",
+      "options": ["SigLIP is faster", "CLIP/SigLIP-style encoders are trained jointly with text, so their output space is already approximately aligned with language; the projector then has to do much less work and the model reasons better about visual-textual concepts", "ResNets cannot produce tokens", "SigLIP has more parameters"],
+      "correct": 1,
+      "explanation": "Vision-language pretraining shapes the encoder to live in a text-compatible space. A supervised ImageNet ResNet was trained without any text signal, so bridging to an LLM requires much larger projectors and more data. CLIP/SigLIP/DINOv3 encoders produce features that an LLM can consume with a few linear layers. Almost every SOTA VLM uses a CLIP-family or SigLIP encoder for this reason."
+    },
+    {
+      "stage": "post",
+      "question": "Qwen3-VL-235B-A22B achieves top scores on OSWorld. What is OSWorld, and what does this imply?",
+      "options": ["A synthetic benchmark", "An agent benchmark where the model operates desktop GUIs — identifies buttons, reads UI state, emits actions; Qwen3-VL's top scores imply VLMs are now viable visual agents for GUI automation", "A pose-estimation benchmark", "A video QA benchmark"],
+      "correct": 1,
+      "explanation": "OSWorld tests whether a model can autonomously operate a desktop environment via screenshots. Qwen3-VL's top global scores indicate the 'visual agent' paradigm — VLM reads screen, decides action, tool-calls the mouse/keyboard — has crossed into practical territory. This is what 2026 AI PC demos run; it is also a direct route into automated QA, RPA, and accessibility products."
     }
   ]
 }

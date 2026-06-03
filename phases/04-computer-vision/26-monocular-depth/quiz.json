@@ -1,6 +1,4 @@
 {
-  "lesson": "26-monocular-depth",
-  "title": "Monocular Depth & Geometry Estimation",
   "questions": [
     {
       "stage": "pre",
@@ -12,49 +10,25 @@
         "Relative depth gives only ordered distances without real-world units; metric depth gives distances in metres and requires the model to have learnt absolute scale from training data"
       ],
       "correct": 3,
-      "explanation": "Relative depth preserves ordering and ratios but has no anchor to real-world units — a MiDaS or Depth Anything prediction needs alignment before you can compare it to a ground-truth measurement in metres. Metric depth models (ZoeDepth, UniDepth, Metric3D) output calibrated distances at the cost of sensitivity to camera intrinsics and training data coverage."
+      "explanation": "Relative depth preserves ordering and ratios but has no anchor to real-world units \u2014 a MiDaS or Depth Anything prediction needs alignment before you can compare it to a ground-truth measurement in metres. Metric depth models (ZoeDepth, UniDepth, Metric3D) output calibrated distances at the cost of sensitivity to camera intrinsics and training data coverage."
     },
     {
-      "stage": "check",
-      "question": "A texture-gradient cue tells a monocular depth model that a surface is receding. Which description best defines texture gradient?",
+      "stage": "pre",
+      "question": "Depth Anything V3 uses a frozen DINOv2 encoder plus a DPT-style decoder. Why freeze the encoder?",
       "options": [
-        "Parallel lines in 3D converge toward a vanishing point in the image",
-        "A uniform surface appears to have progressively smaller and denser texture elements as it recedes from the camera",
-        "Distant objects appear hazier and slightly bluer due to atmospheric scattering",
-        "Nearer objects overlap and occlude farther ones"
+        "DINOv2 would otherwise learn bad features",
+        "DINOv2's self-supervised features already encode scene structure, texture gradients, and object semantics that correlate with depth; freezing them lets the decoder train with a small head on limited depth-supervised data while keeping the encoder's strong generalisation",
+        "Compute savings at training time only",
+        "Freezing is a legal requirement"
       ],
       "correct": 1,
-      "explanation": "Texture gradient is the perceptual cue where a surface's repeated elements — pebbles, grass blades, brickwork — project to ever-smaller and denser patterns at greater distances. A ViT encoder trained on billions of images internalises this cue alongside perspective convergence, occlusion ordering, size constancy, and atmospheric perspective, allowing monocular depth to work without any 3D sensor."
-    },
-    {
-      "stage": "check",
-      "question": "AbsRel is defined as mean(|d_pred − d_gt| / d_gt). Why divide by d_gt rather than computing a raw absolute error mean(|d_pred − d_gt|)?",
-      "options": [
-        "Dividing by d_gt makes the error scale-invariant — a 10 cm error at 1 m (10%) is treated the same as a 1 m error at 10 m (10%), preventing distant pixels from dominating the metric",
-        "d_pred can be zero, causing division by zero in the alternative",
-        "Dividing by d_gt is a legacy convention with no mathematical motivation",
-        "It prevents the metric from penalising overestimates more than underestimates"
-      ],
-      "correct": 0,
-      "explanation": "Raw absolute error biases the metric toward large distances where absolute values are bigger. Dividing by d_gt normalises to a percentage at each pixel, so near and far scene elements contribute equally. AbsRel near 0.05–0.1 is the standard production target; values above 0.2 indicate poor generalisation. Scale-and-shift alignment is applied first for relative-depth models before computing AbsRel."
-    },
-    {
-      "stage": "check",
-      "question": "The lesson's `align_scale_shift(pred, target)` function stacks `[pred, ones]` into matrix A and calls `torch.linalg.lstsq(A, target)`. Which linear model is it fitting?",
-      "options": [
-        "pred / target = a, with b = 0 (scale-only fit)",
-        "a + b * pred = target (intercept-first convention)",
-        "a * pred + b = target (scale a and shift b that minimise squared error)",
-        "a * (pred − b)² = target (quadratic alignment)"
-      ],
-      "correct": 2,
-      "explanation": "`align_scale_shift` solves a * pred + b = target via least squares: the two-column design matrix A = [pred, 1] lets lstsq recover coefficients [a, b]^T. This corrects the global scale and offset ambiguity that relative-depth models cannot resolve — a MiDaS prediction may be 5× the true scale and shifted by 0.3 m. Applying the alignment before AbsRel gives a fair evaluation of the model's ordering quality."
+      "explanation": "Self-supervised ViTs like DINOv2 / DINOv3 already have features that transfer to dense tasks with minimal fine-tuning. A frozen encoder plus a lightweight depth decoder means you train a tiny number of parameters on depth data, and you inherit DINOv2's cross-domain generalisation (indoor, outdoor, medical, satellite) for free. Fine-tuning the backbone sometimes hurts if the depth dataset is narrower than DINOv2's pretraining distribution."
     },
     {
       "stage": "post",
       "question": "To lift a pixel (u, v) with predicted depth d to 3D, you use X = (u - cx) * d / fx, Y = (v - cy) * d / fy, Z = d. What are fx, fy, cx, cy?",
       "options": [
-        "Pinhole camera intrinsics — focal lengths and principal point in pixels, from EXIF metadata or camera calibration",
+        "Pinhole camera intrinsics \u2014 focal lengths and principal point in pixels, from EXIF metadata or camera calibration",
         "Training loss weights",
         "Normalisation constants",
         "Weights learned by the depth decoder"
@@ -69,10 +43,22 @@
         "To inflate the metric score",
         "Relative-depth predictions have arbitrary scale and offset; aligning them to ground truth via least-squares fit of a * pred + b = target gives a fair measurement of the ordering quality that relative models are actually trained to produce",
         "To enable GPU inference",
-        "PyTorch cannot compute AbsRel without alignment"
+        "Pytorch cannot compute AbsRel without alignment"
       ],
       "correct": 1,
       "explanation": "MiDaS-style models produce outputs where only the ordering and ratios are meaningful. Directly computing AbsRel without alignment measures the scale mismatch, not the model's actual quality. Least-squares alignment fits a linear transform that minimises squared error; the residual after alignment is what you report. Every MiDaS / Depth Anything paper uses this protocol."
+    },
+    {
+      "stage": "post",
+      "question": "Your Depth Anything prediction on a glass-fronted reception desk reports believable but clearly wrong depth for the glass region. Why?",
+      "options": [
+        "The model is broken",
+        "The model was trained without glass data",
+        "Glass, mirrors, and highly reflective surfaces break the monocular cues the model relies on; the network sees the texture / content behind the glass and reports a plausible depth consistent with that, not the real glass surface distance",
+        "Your image resolution is wrong"
+      ],
+      "correct": 2,
+      "explanation": "Monocular depth relies on texture gradients, occlusion ordering, and perspective cues. Reflective or transparent surfaces confuse all of them: a mirror shows a scene with its own depth; glass shows content behind it. The model fills in a plausible depth and is confidently wrong. This is a fundamental limit of monocular depth, not a bug. Fix by fusing with stereo, LiDAR, or polarisation cameras when materials like glass matter."
     }
   ]
 }

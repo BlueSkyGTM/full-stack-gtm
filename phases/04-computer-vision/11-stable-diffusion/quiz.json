@@ -1,78 +1,39 @@
 {
-  "lesson": "11-stable-diffusion",
-  "title": "Stable Diffusion — Architecture & Fine-Tuning",
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does Stable Diffusion run its DDPM in a 4×64×64 latent space rather than directly on 3×512×512 pixel images?",
-      "options": [
-        "Latents are the native output of GPUs",
-        "To make inference deterministic",
-        "Training and sampling on 16,384 latent values instead of 786,432 pixels is roughly 48× cheaper; a pretrained VAE handles the image ↔ latent conversion, and the diffusion model only has to model the structured latent manifold",
-        "Latents are easier to visualise than pixels"
-      ],
-      "correct": 2,
-      "explanation": "Latent diffusion is the single innovation that made consumer-GPU text-to-image practical. The VAE compresses spatial and channel information by 48×. The diffusion model spends its entire parameter budget modelling the latent manifold — the part the user sees after decoding."
-    },
-    {
-      "stage": "check",
-      "question": "In the Stable Diffusion U-Net, what role does cross-attention serve at every spatial resolution?",
-      "options": [
-        "It attends from latent tokens to text-embedding tokens, injecting prompt information into the denoising process at every resolution level of the encoder and decoder",
-        "It attends between adjacent timesteps to improve temporal coherence across sampling steps",
-        "It replaces self-attention to reduce the total parameter count below 860M",
-        "It is applied only at the bottleneck layer to keep the skip-connection shapes consistent"
-      ],
-      "correct": 0,
-      "explanation": "Cross-attention in the SD U-Net connects latent feature tokens (query) to the CLIP/T5 text-embedding sequence (key, value). Placing it at every resolution — not just the bottleneck — ensures the prompt steers both coarse structure and fine texture. This is why swapping the text encoder (CLIP-L → T5) changes generation quality without retraining the U-Net weights."
-    },
-    {
-      "stage": "check",
-      "question": "In `StableDiffusionImg2ImgPipeline`, what does the `strength` parameter control, and why does `strength=1.0` ignore the input image entirely?",
-      "options": [
-        "The guidance scale applied to the text prompt; higher values mean stronger prompt adherence",
-        "The fraction of total denoising steps applied to the encoded latent: at strength=1.0 the pipeline adds full Gaussian noise to the encoded latent before denoising, erasing all original content; at 0.0 no noise is added and the image is unchanged",
-        "The resolution scaling factor applied before encoding the image into the VAE",
-        "The learning rate used during the LoRA adapter merge step"
-      ],
+      "question": "Why does Stable Diffusion run its DDPM in a 4x64x64 latent space rather than directly on 3x512x512 pixel images?",
+      "options": ["Latents are easier to visualise", "Training and sampling on 16,384 latent values instead of 786,432 pixels is roughly 48x cheaper; a pretrained VAE handles the image <-> latent conversion, and the diffusion model only has to model the structured latent manifold", "Latents are the native output of GPUs", "To make inference deterministic"],
       "correct": 1,
-      "explanation": "`strength` controls how much noise is injected into the encoded latent before denoising begins. At 0.0 the pipeline runs zero steps and returns the original; at 1.0 it adds noise equivalent to starting from pure noise, so the input image has no effect. The range 0.5–0.7 is the sweet spot for style transfer: structure survives encoding, and the prompt reshapes appearance."
+      "explanation": "Latent diffusion is the single innovation that made consumer-GPU text-to-image practical. The VAE compresses 48x spatial and channel information. The diffusion model can spend its entire parameter and compute budget modelling the latent manifold, which is the part the user sees after decoding."
     },
     {
-      "stage": "check",
-      "question": "LoRA injects the update W_q + α·(A @ B) into each attention weight. If d_in=1024, d_out=1024, and rank r=16, what are the shapes of A and B, and which tensors receive gradient?",
-      "options": [
-        "A: (1024, 1024), B: (1024, 1024); both receive gradient — LoRA is identical to full fine-tuning at low rank",
-        "A: (1024, 16), B: (16, 1024); W_q receives gradient while A and B are frozen",
-        "A: (16, 16), B: (16, 16); all three matrices are trained jointly",
-        "A: (1024, 16), B: (16, 1024); only A and B receive gradient while the base W_q remains frozen — the total trainable parameter count for this layer is 1024×16 + 16×1024 = 32,768 vs 1,048,576 for full fine-tuning"
-      ],
-      "correct": 3,
-      "explanation": "LoRA's efficiency comes from the rank factorisation: A maps from d_in to r, B maps from r to d_out. With r=16 and d=1024, each layer has 32,768 trainable parameters instead of 1M+. The base W_q is frozen — no gradient flows through it. At inference, fusing W_q + α·(A @ B) produces a single matrix with no extra latency."
+      "stage": "pre",
+      "question": "What does classifier-free guidance (CFG) do at inference?",
+      "options": ["Runs two separate models and averages them", "Uses one model trained to predict both conditional eps_cond and unconditional eps_uncond noise, then combines them as eps = eps_uncond + w*(eps_cond - eps_uncond) to amplify prompt adherence", "Adds a classifier head to the model at test time", "Uses a larger scheduler"],
+      "correct": 1,
+      "explanation": "CFG trains a single model with the conditioning dropped 10% of the time so the same weights produce both cond and uncond predictions. At inference the formula above amplifies the conditional direction. Guidance scale w is the standard knob to tune prompt adherence vs diversity; SD defaults to 7.5."
     },
     {
       "stage": "post",
-      "question": "You swap SD's default scheduler for DPM-Solver++ 2M Karras and reduce `num_inference_steps` from 50 to 20. What is the expected result, and does the U-Net need retraining?",
-      "options": [
-        "Comparable image quality in roughly half the compute; DPM-Solver++ is a second-order ODE integrator that converges in fewer steps than DDIM for the same sample quality, and schedulers are fully decoupled from U-Net weights — no retraining required",
-        "Worse quality and longer runtime because the scheduler change invalidates the learned noise schedule",
-        "Numerical instability causing NaN outputs after 10 steps",
-        "You must retrain the U-Net on the new solver's timestep scheme before it produces coherent images"
-      ],
-      "correct": 0,
-      "explanation": "Schedulers are decoupled from model weights. DPM-Solver++ is a higher-order ODE solver that achieves DDIM-50 quality in about 20 steps. Zero retraining required, and it is the production default in 2026. Going below 8 steps typically needs distilled or consistency-model variants like LCM or Turbo."
+      "question": "You swap SD's default scheduler for DPM-Solver++ 2M Karras and reduce num_inference_steps from 50 to 20. What is the expected result?",
+      "options": ["Worse quality and longer runtime", "Comparable quality in roughly half the time; DPM-Solver++ is a second-order ODE integrator that converges in fewer steps than DDIM for the same sample quality", "Numerical instability", "You must also retrain the model"],
+      "correct": 1,
+      "explanation": "Schedulers are decoupled from the model weights. DPM-Solver++ is a higher-order solver that achieves DDIM-50 quality in about 20 steps. Zero retraining required, and it is the production default in 2026. Going below 8 steps typically needs distilled/consistency-model variants like LCM or Turbo."
     },
     {
       "stage": "post",
-      "question": "Why is LoRA fine-tuning the dominant distribution format for Stable Diffusion community fine-tunes instead of full checkpoints?",
-      "options": [
-        "LoRA produces higher-quality images than full fine-tuning by default",
-        "LoRA keeps the 860M base U-Net frozen and inserts small rank-decomposition matrices into attention layers, so a fine-tune trains in minutes on consumer hardware, produces 10–50 MB adapters, and can be swapped or combined at inference without touching the base checkpoint",
-        "LoRA is required by the `diffusers` library API and cannot be bypassed",
-        "LoRA prevents overfitting entirely, making dataset curation unnecessary"
-      ],
+      "question": "Why is LoRA fine-tuning popular for Stable Diffusion instead of full fine-tuning?",
+      "options": ["LoRA produces better images by default", "LoRA keeps the 860M base U-Net frozen and inserts tiny rank-decomposition matrices into attention layers, so a fine-tune trains in minutes on consumer hardware, produces 10-50 MB adapters, and can be swapped or mixed at inference", "LoRA is required by diffusers", "LoRA prevents overfitting entirely"],
       "correct": 1,
-      "explanation": "LoRA's value is training cost and distribution efficiency. Full SD fine-tuning updates 860M+ parameters and needs 20+ GB of VRAM. LoRA updates ~1–10M parameters and fits in 6–8 GB. The base model is unchanged, so the same LoRA loads into any compatible checkpoint. Multiple LoRAs can be combined with weighted merging. CivitAI's entire ecosystem is built on LoRAs."
+      "explanation": "LoRA's value is training cost and distribution. Full SD fine-tuning updates 860M+ parameters and needs 20+ GB of VRAM. LoRA updates ~1-10M parameters and fits in 6-8 GB. The base model is unchanged, so the same LoRA loads into any compatible checkpoint, and multiple LoRAs can be combined. CivitAI's ecosystem is entirely LoRAs."
+    },
+    {
+      "stage": "post",
+      "question": "You generate the same prompt with guidance_scale=15 and see oversaturated colours and burned-in artefacts. What is going on?",
+      "options": ["The model is broken", "CFG amplifies the conditional direction; past a threshold around 9-12 the amplification pushes predictions outside the manifold the VAE can decode cleanly, producing visual artefacts. Drop guidance to 7-9 for balanced results", "The VAE needs retraining", "The seed is wrong"],
+      "correct": 1,
+      "explanation": "CFG's formula is unbounded: higher w moves the prediction further along (eps_cond - eps_uncond). Past a point, you leave the trained distribution and the VAE decoder produces over-saturated, posterised images. Production default is 7-8. Some newer schedulers support CFG scheduling (lower w at final timesteps) to avoid this."
     }
   ]
 }

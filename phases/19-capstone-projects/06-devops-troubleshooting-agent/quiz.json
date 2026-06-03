@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is the default permission posture for the troubleshooting agent's RBAC surface?",
+      "options": [
+        "Read-only by default, with destructive verbs gated behind a separate server and human approval",
+        "Namespace-admin in the affected namespace only",
+        "Equivalent to the on-call engineer",
+        "Cluster-admin so it can self-heal"
+      ],
+      "correct": 0,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What is the knowledge graph the agent walks during root cause analysis?",
       "options": [
         "Nodes are K8s objects plus telemetry sources; edges encode ownership, scheduling, and observation",
@@ -12,7 +24,7 @@
         "A graph of GitHub commits and PR reviews"
       ],
       "correct": 0,
-      "explanation": "The agent reads Kubernetes pod logs, events, and metrics from Prometheus to identify failure patterns like crashes, OOMKills, and connection errors."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "By the order they were generated"
       ],
       "correct": 0,
-      "explanation": "Symptom classification uses LLM-based pattern matching to categorize failures into known archetypes (database connection pool exhaustion, memory leaks, misconfigured probes)."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Replay attacks require both lists"
       ],
       "correct": 0,
-      "explanation": "The remediation playbook runs kubectl commands and applies configuration patches based on the diagnosed issue, with safety checks to avoid destructive operations."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "PagerDuty automatically pauses the deployment"
       ],
       "correct": 0,
-      "explanation": "Verification runs synthetic workloads and checks health endpoints to confirm the fix is effective before marking the incident as resolved."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Under 30 seconds"
       ],
       "correct": 2,
-      "explanation": "The capstone measures MTTR (mean time to resolution), fix accuracy (percentage of incidents correctly resolved), and false positive rate (incorrect diagnoses requiring rollback)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "20 scenarios covering OOMKill, DNS flap, HPA thrash, PVC fill, and more"
       ],
       "correct": 3,
-      "explanation": "Safety is ensured by sandboxing kubectl operations, requiring human approval for destructive commands, and maintaining a rollback history of all applied changes."
+      "explanation": ""
     }
   ]
 }

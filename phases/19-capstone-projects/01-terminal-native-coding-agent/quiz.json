@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Which loop shape do 2026 terminal coding agents share?",
+      "options": [
+        "Plan, act, observe, recover",
+        "Encode, decode, sample, stream",
+        "Train, evaluate, deploy, monitor",
+        "Fetch, embed, rank, synthesize"
+      ],
+      "correct": 0,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Why does the harness run each task inside an E2B or Daytona sandbox?",
       "options": [
         "To isolate filesystem and tool execution from the host so the worktree can be torn down on completion",
@@ -12,7 +24,7 @@
         "To enable GPU access for the agent loop"
       ],
       "correct": 0,
-      "explanation": "E2B and Daytona sandboxes isolate each task in a fresh devcontainer with a git worktree, ensuring the harness never touches the host filesystem and allowing safe teardown on completion."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "PostToolUse"
       ],
       "correct": 0,
-      "explanation": "PreToolUse runs before each tool call, making it the correct hook to inspect and block dangerous operations like rm -rf outside the worktree."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Model overfitting to tool-call traces"
       ],
       "correct": 1,
-      "explanation": "Truncating tool output prevents context window overflow and runaway token costs when tools like ripgrep return megabytes of matches."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Switches the backing model to a smaller draft model"
       ],
       "correct": 1,
-      "explanation": "PreCompact summarizes older conversation history into a prior-state block, freeing context space for new observations while preserving the plan."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Aider"
       ],
       "correct": 1,
-      "explanation": "mini-swe-agent is the minimal baseline used for comparison on pass@1, turns-per-task, and cost-per-task metrics."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "MRR@10 and nDCG@10"
       ],
       "correct": 2,
-      "explanation": "The rubric measures SWE-bench Pro pass@1 vs baseline, architecture clarity, safety, observability, and developer UX, with specific quantification of turns-per-task and cost-per-task."
+      "explanation": ""
     }
   ]
 }

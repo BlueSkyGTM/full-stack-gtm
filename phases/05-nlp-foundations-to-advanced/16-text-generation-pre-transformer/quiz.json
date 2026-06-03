@@ -15,6 +15,18 @@
       "explanation": "An n-gram LM models P(w | last n-1 words) via counted occurrences."
     },
     {
+      "stage": "pre",
+      "question": "What problem does smoothing solve in n-gram models?",
+      "options": [
+        "Numerical precision",
+        "Memory usage",
+        "Zero-probability assignment to n-grams unseen in training, which collapses sentence likelihoods to zero",
+        "Tokenization mismatch"
+      ],
+      "correct": 2,
+      "explanation": "Smoothing reallocates probability mass so unseen n-grams get non-zero probability."
+    },
+    {
       "stage": "check",
       "question": "What insight makes Kneser-Ney smoothing better than naive absolute discounting?",
       "options": [
@@ -73,6 +85,18 @@
       ],
       "correct": 2,
       "explanation": "KenLM-style n-gram models still serve as fast on-device or rescoring components."
+    },
+    {
+      "stage": "post",
+      "question": "Why is computing an n-gram baseline before declaring a neural LM 'good' still recommended?",
+      "options": [
+        "It speeds up training",
+        "Required by ROUGE",
+        "It removes OOV",
+        "If a transformer LM does not beat a tuned Kneser-Ney baseline by a wide margin on the same tokenization, something is off in the training pipeline"
+      ],
+      "correct": 3,
+      "explanation": "KN baselines are surprisingly strong; a neural LM should win by a large margin or you have a bug."
     }
   ]
 }

@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What does Bag of Words throw away?",
+      "options": [
+        "Token order",
+        "Vocabulary size",
+        "Document length",
+        "Punctuation"
+      ],
+      "correct": 0,
+      "explanation": "BoW counts tokens per document but discards their sequence."
+    },
+    {
+      "stage": "pre",
       "question": "Why scale TF by an IDF factor?",
       "options": [
         "Words that appear in every document carry little discriminative signal and should be downweighted",
@@ -73,6 +85,18 @@
       ],
       "correct": 3,
       "explanation": "Without word order or syntactic context, BoW cannot model that 'not' flips the sentiment of 'good'."
+    },
+    {
+      "stage": "post",
+      "question": "What is the TF-IDF weighted embedding hybrid?",
+      "options": [
+        "Using TF-IDF weights as a pooling weight over per-token embeddings before averaging",
+        "Running PCA on TF-IDF then re-embedding",
+        "Concatenating BoW and dense embeddings",
+        "Training BERT on TF-IDF features"
+      ],
+      "correct": 0,
+      "explanation": "The hybrid weights each token's embedding by its TF-IDF score and averages, blending semantic capacity with rare-word emphasis."
     }
   ]
 }

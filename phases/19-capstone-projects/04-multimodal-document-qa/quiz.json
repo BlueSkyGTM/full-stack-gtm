@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the 2026 frontier prefer vision-first late interaction over OCR-then-text on financial PDFs and scientific papers?",
+      "options": [
+        "Vision models are cheaper per page",
+        "OCR pipelines mangle rotated tables, dense equations, and chart imagery, losing half the signal",
+        "OCR is slower than rendering",
+        "OCR cannot run on GPUs"
+      ],
+      "correct": 1,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What does late interaction mean in ColPali-style retrieval?",
       "options": [
         "Each query token scores against every patch token, and per-token maxima are summed via MaxSim",
@@ -12,7 +24,7 @@
         "The reranker only runs on the final candidate"
       ],
       "correct": 0,
-      "explanation": "Vision-first layout analysis uses patch-based ViT encoders to understand document structure (tables, charts, text blocks) rather than OCR-to-text approaches."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "16 vectors with negligible storage overhead"
       ],
       "correct": 0,
-      "explanation": "The system uses a multi-headed pipeline: one head extracts text, another interprets tables and charts, and a third retrieves from a vector index for semantic search."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Crops bounding boxes around evidence regions"
       ],
       "correct": 1,
-      "explanation": "Hybrid retrieval combines visual similarity (matched page regions) with semantic text search, using weighted scoring to balance visual and textual evidence."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Equation-dense and table-heavy pages benefit from a text fallback alongside the image"
       ],
       "correct": 3,
-      "explanation": "Grounding annotations highlight the specific region in the PDF that supports each answer, enabling users to verify the source of information."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "MMLU-Pro"
       ],
       "correct": 2,
-      "explanation": "The capstone measures answer accuracy (correctness against ground truth), hallucination rate (answers without source support), and grounding recall (whether source regions are correctly identified)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Fraction of cited bounding boxes that actually contain the answer span"
       ],
       "correct": 3,
-      "explanation": "System robustness is tested with multi-column layouts, scanned documents, and chart-heavy content to ensure consistent performance across document types."
+      "explanation": ""
     }
   ]
 }

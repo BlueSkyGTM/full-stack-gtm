@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What distinguishes a JSON-RPC notification from a request on the wire?",
+      "options": [
+        "Different jsonrpc version field",
+        "Notifications omit the id field; servers must not respond to them",
+        "Notifications use a different method namespace",
+        "Notifications are wrapped in an array"
+      ],
+      "correct": 1,
+      "explanation": "Absence of id is the only marker. Servers do not respond, because there is no id to correlate against."
+    },
+    {
+      "stage": "pre",
       "question": "Why is newline-delimited JSON sufficient for stdio framing?",
       "options": [
         "Because JSON does not allow literal newlines inside strings without escaping, so each object can be one line",
@@ -12,7 +24,7 @@
         "Because the spec mandates it"
       ],
       "correct": 0,
-      "explanation": "JSON-RPC 2.0 over stdio uses newline-delimited JSON messages with request/response correlation IDs, enabling bidirectional communication between parent and child processes."
+      "explanation": "json.dumps emits a single line per object; literal newlines inside strings are escaped. That makes \\n a safe record separator."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "-32601"
       ],
       "correct": 1,
-      "explanation": "The message format includes JSON-RPC fields: jsonrpc version, method name, parameters, request ID (for calls), result or error (for responses), and notification type (for async events)."
+      "explanation": "-32700 is Parse error. The response id is null because no id could be extracted."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "It does not return; the connection drops"
       ],
       "correct": 2,
-      "explanation": "Error handling uses JSON-RPC error codes (-32600 invalid request, -32601 method not found, -32602 invalid params) with custom error objects containing code, message, and data fields."
+      "explanation": "Unmapped exceptions surface as -32603. data.exception preserves the class name for the client."
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "A single null response"
       ],
       "correct": 1,
-      "explanation": "Async events are sent as notifications (without request IDs) for model-side pushes like progress updates, streaming tokens, or heartbeat signals to the parent process."
+      "explanation": "Spec rule: if every entry is a notification, the server stays silent."
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "They are all rejected with -32600"
       ],
       "correct": 2,
-      "explanation": "The capstone measures message throughput (messages per second), error handling completeness (coverage of all JSON-RPC error cases), and process stability (graceful handling of child process crashes)."
+      "explanation": "The framing layer must not poison the stream. One parse error means one error response and the loop continues."
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Because the transport runs in a different process"
       ],
       "correct": 1,
-      "explanation": "Compatibility is tested against the JSON-RPC 2.0 specification, with conformance tests verifying correct request/response correlation and error code usage."
+      "explanation": "The transport speaks the wire. The dispatcher (next lesson) is where transport meets registry meets timeout."
     }
   ]
 }

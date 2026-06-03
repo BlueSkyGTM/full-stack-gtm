@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is the goal of POS tagging?",
+      "options": [
+        "Detect sentiment",
+        "Translate the sentence",
+        "Extract named entities",
+        "Assign a grammatical category (noun, verb, etc.) to each token"
+      ],
+      "correct": 3,
+      "explanation": "POS tagging labels each token with its part of speech."
+    },
+    {
+      "stage": "pre",
       "question": "Which tagset is the default for cross-lingual work?",
       "options": [
         "Penn Treebank",
@@ -28,7 +40,7 @@
     },
     {
       "stage": "check",
-      "question": "What does the viterbi function compute for an HMM tagger?",
+      "question": "What does the Viterbi algorithm compute for an HMM tagger?",
       "options": [
         "The single highest-probability tag sequence via dynamic programming over the tag lattice",
         "The transition matrix",
@@ -36,7 +48,7 @@
         "The forward probabilities only"
       ],
       "correct": 0,
-      "explanation": "viterbi finds the argmax sequence with O(n * |T|^2) dynamic programming over tag transitions and emissions."
+      "explanation": "Viterbi finds the argmax sequence with O(n * |T|^2) dynamic programming."
     },
     {
       "stage": "check",
@@ -73,6 +85,18 @@
       ],
       "correct": 1,
       "explanation": "POS and dependency parses feed many structured downstream tasks even when LLMs generate the prose."
+    },
+    {
+      "stage": "post",
+      "question": "Which library should you reach for in most production POS / parse tasks?",
+      "options": [
+        "scikit-learn",
+        "NumPy",
+        "spaCy (or stanza/trankit for top accuracy or wider language coverage)",
+        "Roll your own parser"
+      ],
+      "correct": 2,
+      "explanation": "spaCy ships fast production-grade POS + dependency parsers; stanza/trankit cover broader languages."
     }
   ]
 }

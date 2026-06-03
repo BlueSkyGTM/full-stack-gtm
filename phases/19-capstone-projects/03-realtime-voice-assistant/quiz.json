@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why can a voice agent not be built by stitching three blocking REST calls?",
+      "options": [
+        "REST endpoints have a 30-second hard timeout",
+        "REST is incompatible with WebRTC",
+        "JSON serialization is too slow for audio data",
+        "End-to-end latency below 800ms requires pipelined streaming at every stage"
+      ],
+      "correct": 3,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What is the role of the turn-detector alongside VAD?",
       "options": [
         "Trains a custom voice clone for the agent",
@@ -12,7 +24,7 @@
         "Mixes background music into the output stream"
       ],
       "correct": 1,
-      "explanation": "The VAD module detects speech boundaries and silence, triggering ASR only when speech is present and avoiding unnecessary processing of ambient noise."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "The agent raises the TTS volume to assert priority"
       ],
       "correct": 2,
-      "explanation": "Streaming Whisper processes audio in 30-second chunks with overlap, transcribing continuously while the user speaks for low-latency responses."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "It improves WER on the next utterance"
       ],
       "correct": 0,
-      "explanation": "Symmetric VAD detects turn boundaries on both user and agent audio, enabling seamless back-and-forth conversation without explicit push-to-talk."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "200ms"
       ],
       "correct": 3,
-      "explanation": "The architecture minimizes first-audio-out latency by using streaming models, VAD-based triggering, and parallel ASR/LLM processing pipelines."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "False-cutoff rate"
       ],
       "correct": 3,
-      "explanation": "The capstone measures first-audio-out (time from user speech start to agent audio output), WER (word error rate on speech recognition), and MOS (mean opinion score on voice quality)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Restarting the LiveKit room"
       ],
       "correct": 2,
-      "explanation": "Robustness is tested with background noise tests, concurrent session stress tests, and interruption handling to ensure graceful degradation under adverse conditions."
+      "explanation": ""
     }
   ]
 }

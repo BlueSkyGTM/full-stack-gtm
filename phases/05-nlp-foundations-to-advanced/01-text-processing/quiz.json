@@ -15,6 +15,18 @@
       "explanation": "Models operate on integer token IDs; preprocessing bridges continuous language to discrete inputs."
     },
     {
+      "stage": "pre",
+      "question": "Which preprocessing operation is rule-based suffix stripping?",
+      "options": [
+        "Stemming",
+        "POS tagging",
+        "Lemmatization",
+        "Tokenization"
+      ],
+      "correct": 0,
+      "explanation": "Stemming chops suffixes with rules; it is fast but can be wrong."
+    },
+    {
       "stage": "check",
       "question": "What does the Porter stemmer step 1a return for the word 'ponies'?",
       "options": [
@@ -55,11 +67,11 @@
       "question": "What is 'training/inference mismatch' in NLP preprocessing?",
       "options": [
         "Different batch sizes between train and test",
-        "A GPU memory issue",
         "Training and serving apply different preprocessing, so the model sees an unfamiliar distribution at inference",
+        "A GPU memory issue",
         "Mixing tokenizer libraries within a notebook"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "Different preprocessing at training vs inference is the most common production NLP failure."
     },
     {
@@ -67,12 +79,24 @@
       "question": "Which tool would you reach for in a transformer pipeline instead of classical preprocessing?",
       "options": [
         "NLTK word_tokenize",
+        "The model's own tokenizer (e.g. via tokenizers / transformers)",
         "A regex tokenizer",
-        "spaCy en_core_web_sm",
-        "The model's own tokenizer (e.g. via tokenizers / transformers)"
+        "spaCy en_core_web_sm"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Transformer models ship a paired tokenizer; classical preprocessing is bypassed."
+    },
+    {
+      "stage": "post",
+      "question": "Why pin NLTK and spaCy versions in requirements?",
+      "options": [
+        "License compatibility",
+        "Tokenizer and lemmatizer behavior shifts between minor releases, silently changing training distribution",
+        "Older versions support more languages",
+        "Newer versions are slower"
+      ],
+      "correct": 1,
+      "explanation": "Library upgrades can change tokenization output, drifting from the training distribution."
     }
   ]
 }

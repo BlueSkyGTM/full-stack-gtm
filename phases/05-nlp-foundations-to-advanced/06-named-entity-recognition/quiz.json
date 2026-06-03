@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is BIO tagging?",
+      "options": [
+        "Per-token labels: B-TYPE for entity start, I-TYPE for inside, O for outside",
+        "A binary entity vs non-entity scheme",
+        "A tokenization style",
+        "A tree representation of entities"
+      ],
+      "correct": 0,
+      "explanation": "BIO turns span extraction into token classification with B/I/O prefixes."
+    },
+    {
+      "stage": "pre",
       "question": "Why are rule-based gazetteers brittle in production NER?",
       "options": [
         "They require GPUs",
@@ -40,7 +52,7 @@
     },
     {
       "stage": "check",
-      "question": "After bio_to_spans converts predictions, why must NER be evaluated with entity-level F1, not token-level F1?",
+      "question": "Why must NER be evaluated with entity-level F1, not token-level F1?",
       "options": [
         "Entity-level F1 is easier to compute",
         "Predicted spans must match true spans exactly; token-level F1 overstates accuracy by counting partial matches",
@@ -48,7 +60,19 @@
         "Entity-level F1 is required by HuggingFace"
       ],
       "correct": 1,
-      "explanation": "bio_to_spans produces whole spans; span exact-match is the meaningful metric, not partial token overlap."
+      "explanation": "Span exact-match is the meaningful metric; token-level F1 inflates scores via partial overlap."
+    },
+    {
+      "stage": "post",
+      "question": "What does aggregation_strategy='simple' do in the HuggingFace NER pipeline?",
+      "options": [
+        "Lowercases the output",
+        "Skips tokenization",
+        "Merges contiguous B-X and I-X tokens into a single span",
+        "Returns only the most confident entity"
+      ],
+      "correct": 2,
+      "explanation": "It merges contiguous BIO tokens of the same type into span-level entities."
     },
     {
       "stage": "post",

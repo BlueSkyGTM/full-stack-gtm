@@ -15,6 +15,18 @@
       "explanation": "Dense embeddings give one vector per text (typically 384-3072 dim); cosine ranks similarity."
     },
     {
+      "stage": "pre",
+      "question": "What does Matryoshka Representation Learning enable?",
+      "options": [
+        "Multilingual training",
+        "Faster softmax",
+        "Truncating a trained embedding to its first N dimensions and getting a still-useful smaller embedding",
+        "Cross-encoder rescoring"
+      ],
+      "correct": 2,
+      "explanation": "Matryoshka training makes the first N dims of the vector standalone-useful, enabling cheap truncation."
+    },
+    {
       "stage": "check",
       "question": "How do multi-vector (ColBERT) embeddings score query-doc pairs?",
       "options": [
@@ -73,6 +85,18 @@
       ],
       "correct": 2,
       "explanation": "MTEB averages across tasks; domain-specific eval can flip the ranking."
+    },
+    {
+      "stage": "post",
+      "question": "When should you add SPLADE sparse retrieval alongside dense embeddings?",
+      "options": [
+        "Whenever the encoder is multilingual",
+        "Whenever Matryoshka is used",
+        "When queries are keyword-heavy or contain identifiers/codes that dense embeddings blur",
+        "On small corpora only"
+      ],
+      "correct": 2,
+      "explanation": "SPLADE captures lexical/keyword matches that dense models can miss; fuse with dense via RRF."
     }
   ]
 }

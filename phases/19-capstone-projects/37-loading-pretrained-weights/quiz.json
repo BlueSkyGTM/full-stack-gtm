@@ -6,12 +6,12 @@
       "stage": "pre",
       "question": "Why does the loader need a name map?",
       "options": [
-        "Published GPT-2 weights use names like wte, wpe, h.N.attn.c_attn; the local model uses tok_embed, pos_embed, blocks.N.attn.qkv; the loader translates one onto the other",
         "Pretrained tensors and local parameters share the same name",
+        "Published GPT-2 weights use names like wte, wpe, h.N.attn.c_attn; the local model uses tok_embed, pos_embed, blocks.N.attn.qkv; the loader translates one onto the other",
         "Safetensors files are encrypted",
         "Torch requires it"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "The two naming conventions are different histories; the map is a literal dict expanded per layer."
     },
     {
@@ -31,11 +31,11 @@
       "question": "Why is the LM head not in the safetensors file?",
       "options": [
         "It is computed at runtime from logits",
-        "It is too large",
         "Weight tying: the LM head shares storage with the token embedding (wte), so loading wte and aliasing lm_head.weight = tok_embed.weight after the load reconstructs the head",
+        "It is too large",
         "It is loaded from a separate file"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "Setting lm_head.weight = tok_embed.weight after wte lands restores the alias; copying instead doubles the parameter count."
     },
     {
@@ -43,23 +43,23 @@
       "question": "What does the loader do on a shape mismatch?",
       "options": [
         "Pads the smaller tensor",
-        "Truncates the larger tensor",
+        "Records the mismatch in LoadReport.shape_mismatch and refuses to assign, leaving the local parameter untouched",
         "Crashes the process",
-        "Records the mismatch in LoadReport.shape_mismatch and refuses to assign, leaving the local parameter untouched"
+        "Truncates the larger tensor"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Half loaded models are silent failure machines; refusing to assign keeps the report honest."
     },
     {
       "stage": "post",
       "question": "Why is the demo's stub fixture not a real GPT-2 download?",
       "options": [
-        "The demo must run offline and quickly; the stub uses the exact pretrained naming convention so the loader code path is identical, and swapping in a real file changes nothing about the loader",
         "Real files are not in safetensors format",
+        "The demo must run offline and quickly; the stub uses the exact pretrained naming convention so the loader code path is identical, and swapping in a real file changes nothing about the loader",
         "Real weights are encrypted",
         "Safetensors cannot store large tensors"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "Same code path, smaller payload; the loader works on either."
     },
     {

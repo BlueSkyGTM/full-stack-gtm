@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does timeout on a non-idempotent tool default to no retry?",
+      "options": [
+        "Because the dispatcher cannot measure non-idempotent calls",
+        "Because the tool may have partially committed; retry can duplicate the effect",
+        "Because non-idempotent handlers run faster",
+        "Because idempotency keys are slow"
+      ],
+      "correct": 1,
+      "explanation": "Retrying a db.write that timed out at 4.9s can produce a second write. The dispatcher refuses unless the handler tells it the call is safe to repeat."
+    },
+    {
+      "stage": "pre",
       "question": "What is the idempotency-key dedupe protecting against?",
       "options": [
         "Slow networks",
@@ -12,7 +24,7 @@
         "Process restarts"
       ],
       "correct": 1,
-      "explanation": "The dispatcher maintains a tool registry with metadata: tool name, parameter schema (JSON Schema), return type schema, and execution context (sync/async, timeout)."
+      "explanation": "Without dedupe, a retry at 5s races a slow original still pending. The cache collapses both into one handler invocation."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "All of them"
       ],
       "correct": 2,
-      "explanation": "Parameter validation uses JSON Schema validation against tool definitions, rejecting invalid requests with clear error messages indicating the validation failure."
+      "explanation": "Schema and not_found are deterministic. Internal masks an unknown handler bug. Budget exceeded is a yield. Only timeout-on-idempotent and explicit TransientError retry."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "The retry counter"
       ],
       "correct": 1,
-      "explanation": "Execution routing directs tool calls to appropriate handlers: built-in tools (file operations, shell commands), MCP tools (via protocol), or custom Python functions."
+      "explanation": "A gather of forty calls would open forty concurrent dispatches without the limit. The semaphore caps the wave."
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Because the cache cannot store strings"
       ],
       "correct": 1,
-      "explanation": "Async tool execution supports long-running operations (HTTP requests, subprocess calls) with futures/promises, enabling concurrent execution of multiple tool calls."
+      "explanation": "The caller knows the step id, the planner intent, the user. Args alone are not enough context to safely dedupe."
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "-32700"
       ],
       "correct": 1,
-      "explanation": "The capstone measures dispatcher throughput (tool calls per second), validation accuracy (correctness of parameter checks), and async support (successful concurrent execution)."
+      "explanation": "-32602 Invalid params. The dispatcher returns it before any handler runs."
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "DispatchError with kind=internal"
       ],
       "correct": 2,
-      "explanation": "Error handling provides structured error responses for validation failures, execution errors, and timeouts, with error propagation to the agent loop for recovery."
+      "explanation": "The dispatcher returns a typed error envelope. The kind reflects the last failure mode, attempts reflects how many tries it made."
     }
   ]
 }

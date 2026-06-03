@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is the role of the encoder in a 2014-style seq2seq model?",
+      "options": [
+        "Computes attention weights",
+        "Performs beam search",
+        "Reads the source and produces a fixed-size context vector summarizing it",
+        "Generates target tokens"
+      ],
+      "correct": 2,
+      "explanation": "The encoder RNN compresses the source into a final hidden state used by the decoder."
+    },
+    {
+      "stage": "pre",
       "question": "What is teacher forcing during seq2seq training?",
       "options": [
         "Adding a teacher network during inference",
@@ -12,7 +24,7 @@
         "Manually labeling each decoder step"
       ],
       "correct": 2,
-      "explanation": "Teacher forcing stabilizes training by using true previous tokens as decoder input; without it, early prediction errors cascade and the model never converges."
+      "explanation": "Teacher forcing stabilizes training by using true previous tokens; without it early errors cascade."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Vocabulary becomes too large"
       ],
       "correct": 2,
-      "explanation": "The fixed context-vector bottleneck means the encoder must compress an entire sequence into one hidden state — lossless compression of 40+ tokens is impossible."
+      "explanation": "The fixed context-vector bottleneck means long inputs cannot be losslessly summarized."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "The train/inference gap from training on ground-truth tokens but generating from the model's own predictions at inference"
       ],
       "correct": 3,
-      "explanation": "The model never practiced recovering from its own mistakes during training (teacher forcing always corrects it), so errors compound at inference — the train/inference distribution mismatch."
+      "explanation": "The model never practiced recovering from its own mistakes during training, so errors cascade at inference."
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Beam search lowers the loss"
       ],
       "correct": 0,
-      "explanation": "Greedy commits irrevocably per step; beam search explores multiple hypotheses in parallel and picks the highest-scoring complete sequence at the end."
+      "explanation": "Greedy commits per step; beam search explores multiple hypotheses, then picks the best complete one."
     },
     {
       "stage": "post",
@@ -60,11 +72,23 @@
         "1D CNNs"
       ],
       "correct": 0,
-      "explanation": "Transformer encoder-decoders dropped recurrence, enabling full parallelism and attention over the entire source at every decoder step — the same encoder-decoder shape, a different mechanism."
+      "explanation": "Transformer encoder-decoders dropped recurrence and now dominate generation tasks."
     },
     {
       "stage": "post",
-      "question": "The lesson's `greedy_decode` function irrevocably picks the highest-probability token each step. Which production failure does this create?",
+      "question": "What does scheduled sampling do?",
+      "options": [
+        "Anneals the teacher-forcing ratio downward during training so the model learns to recover from its own predictions",
+        "Schedules learning-rate decay",
+        "Reorders the training set",
+        "Adds random noise to embeddings"
+      ],
+      "correct": 0,
+      "explanation": "Scheduled sampling gradually mixes in model predictions to close the train/inference gap."
+    },
+    {
+      "stage": "post",
+      "question": "Why does greedy decoding alone often fail for user-facing generation?",
       "options": [
         "It cannot use embeddings",
         "It always picks <EOS> first",
@@ -72,7 +96,7 @@
         "It requires more memory"
       ],
       "correct": 2,
-      "explanation": "Greedy decoding's irrevocable per-step commitment causes repetition loops and globally poor sequences — use beam search or sampling for user-facing generation."
+      "explanation": "Greedy decoding's irrevocable per-step choice causes loops and repetition without beam search or sampling."
     }
   ]
 }

@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why is a scene-level index still needed even when a long-context VLM can read a 2-hour video natively?",
+      "options": [
+        "Long-context VLMs cannot stream output",
+        "Vector indexes do not support video files",
+        "Ingesting 100 hours of video into a queryable corpus needs scene-level retrieval, even when individual videos can be read whole",
+        "Scene cuts are the only thing a VLM understands"
+      ],
+      "correct": 2,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Which three vector types does each scene get in the multi-vector index?",
       "options": [
         "Caption embedding, keyframe embedding, and transcript embedding",
@@ -12,7 +24,7 @@
         "Pose, depth, and optical flow"
       ],
       "correct": 0,
-      "explanation": "Scene segmentation uses CLIP embeddings to detect shot boundaries and keyframes, dividing long videos into semantically coherent segments for processing."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "By taking the union without scoring"
       ],
       "correct": 2,
-      "explanation": "Temporal modeling uses VideoMAE or similar architectures to understand motion patterns and temporal relationships between frames across video segments."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "The keyframe embedding dimensionality"
       ],
       "correct": 2,
-      "explanation": "Multi-modal QA combines visual features (frame embeddings), audio features (speech transcription, sound analysis), and text features (captions, subtitles) for comprehensive understanding."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Counting and action-type questions, where VLMs miscount or mis-order events"
       ],
       "correct": 3,
-      "explanation": "Search indexing stores segment embeddings with metadata (timestamps, visual tags, audio transcripts), enabling temporal search (finding events at specific times) and semantic search (finding similar scenes)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "MRR@10"
       ],
       "correct": 0,
-      "explanation": "The capstone measures scene segmentation accuracy (boundary detection F1 score), QA accuracy (correctness of answers to video questions), and search relevance (retrieval quality for video queries)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "They let the viewer jump to the exact (video_id, start, end) so users can verify the claim"
       ],
       "correct": 3,
-      "explanation": "Processing efficiency is measured by throughput (frames per second) and latency (time to process a 10-minute video end-to-end)."
+      "explanation": ""
     }
   ]
 }

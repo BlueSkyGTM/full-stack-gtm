@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What did GloVe contribute over Word2Vec?",
+      "options": [
+        "Direct factorization of the word-word co-occurrence matrix with a weighted loss",
+        "Byte-level tokenization",
+        "A deeper neural network",
+        "Subword n-gram embeddings"
+      ],
+      "correct": 0,
+      "explanation": "GloVe factorizes the global co-occurrence matrix with a thoughtfully weighted log-loss."
+    },
+    {
+      "stage": "pre",
       "question": "What problem does FastText solve that Word2Vec and GloVe do not?",
       "options": [
         "Reducing training cost",
@@ -28,7 +40,7 @@
     },
     {
       "stage": "check",
-      "question": "How does learn_bpe pick which adjacent token pair to merge next?",
+      "question": "How does the BPE merge step pick which pair to combine next?",
       "options": [
         "A random pair",
         "The lexicographically first pair",
@@ -36,7 +48,7 @@
         "The pair with highest IDF"
       ],
       "correct": 2,
-      "explanation": "learn_bpe iteratively merges the most frequent adjacent pair until the merge budget is exhausted."
+      "explanation": "BPE iteratively merges the most frequent adjacent pair."
     },
     {
       "stage": "check",
@@ -73,6 +85,18 @@
       ],
       "correct": 1,
       "explanation": "FastText's subword composition handles inflections, neologisms, and misspellings that GloVe cannot."
+    },
+    {
+      "stage": "post",
+      "question": "What unit forms the base of WordPiece, BPE, and SentencePiece vocabularies?",
+      "options": [
+        "Sentences",
+        "Whole words",
+        "Paragraphs",
+        "Subword pieces (characters, n-grams, or learned merges) below the word level"
+      ],
+      "correct": 3,
+      "explanation": "All three are subword tokenizers; they differ in how merges or pieces are learned, not in being subword."
     }
   ]
 }

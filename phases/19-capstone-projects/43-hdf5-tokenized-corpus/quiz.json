@@ -7,11 +7,11 @@
       "question": "Why store the tokenized corpus in a resizable, chunked HDF5 dataset rather than JSONL?",
       "options": [
         "HDF5 has a smaller logo",
-        "JSONL is deprecated",
         "HDF5 offers chunked, integer-only, memory-mapped reads with O(1) random access; JSONL forces the parser onto every hot-path read",
+        "JSONL is deprecated",
         "Random reasons"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "The dataloader wants a flat token stream with addressable slices; HDF5 supplies that natively."
     },
     {
@@ -19,23 +19,23 @@
       "question": "What is the right rule for sizing the HDF5 chunk vs the trainer's window_size?",
       "options": [
         "Always pick chunk=1",
-        "Pick the largest chunk that fits in RAM",
+        "Set chunk to a multiple of window_size so each sample lands inside one or two chunks and reads stay page-cache aligned",
         "Pick chunk equal to the document length",
-        "Set chunk to a multiple of window_size so each sample lands inside one or two chunks and reads stay page-cache aligned"
+        "Pick the largest chunk that fits in RAM"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Mismatched chunks halve throughput because every sample straddles two chunks instead of one."
     },
     {
       "stage": "check",
       "question": "Why is token_count stored as an HDF5 attribute and not implied from dataset shape?",
       "options": [
-        "The trailing chunk may be partially full; without the explicit attribute the reader walks past the real end into zero-padded tokens and the model learns to predict zero",
         "Attributes are pretty",
+        "The trailing chunk may be partially full; without the explicit attribute the reader walks past the real end into zero-padded tokens and the model learns to predict zero",
         "Shapes are slow to read",
         "Attributes are mandatory"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "The chunked layout sometimes leaves trailing slots; the attribute carries the truth."
     },
     {
@@ -55,11 +55,11 @@
       "question": "Why is swmr=True opened on the reader side, not on the writer side?",
       "options": [
         "Random preference",
-        "Performance",
         "Single-Writer-Multiple-Reader mode lets dataloader workers share the file safely; the writer needs no special mode because it writes one shard per process",
+        "Performance",
         "Security"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "Mixing the two modes is the most common cause of 'file is locked' failures."
     },
     {
@@ -67,11 +67,11 @@
       "question": "What does the boundary token id exist to make explicit?",
       "options": [
         "Vocabulary size limits",
-        "Random data",
+        "Document boundaries within a packed window so the model is not silently trained on cross-document concatenation",
         "Compression",
-        "Document boundaries within a packed window so the model is not silently trained on cross-document concatenation"
+        "Random data"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Without an explicit boundary the trainer learns boundaries as noise; with it the boundary becomes a usable separator."
     }
   ]

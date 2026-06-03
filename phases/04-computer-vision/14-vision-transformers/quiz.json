@@ -1,78 +1,39 @@
 {
-  "lesson": "14-vision-transformers",
-  "title": "Vision Transformers (ViT)",
   "questions": [
     {
       "stage": "pre",
-      "question": "How does a ViT turn a 224×224 image into a sequence of tokens ready for the transformer encoder?",
-      "options": [
-        "It flattens the entire 3×224×224 tensor into one long vector and projects it to the model dimension",
-        "It applies a Conv2d with kernel_size=stride=patch_size, projecting the image into a grid of non-overlapping patch embeddings in a single operation — a 224×224 image with patch_size=16 produces a 14×14=196 token sequence, each of dimension 768",
-        "It runs a CNN backbone first and uses the final feature map as the token sequence",
-        "It sorts pixel intensities into a fixed-length codebook before feeding them to the transformer"
-      ],
+      "question": "How does a ViT turn an image into a sequence of tokens?",
+      "options": ["Flattens the entire image into one vector", "Applies a conv with kernel_size = stride = patch_size to split the image into non-overlapping patches and linearly project each to a token embedding in one operation", "Runs a CNN first and uses its feature map as tokens", "Sorts pixel intensities"],
       "correct": 1,
-      "explanation": "The first layer of ViT is a Conv2d with kernel_size=stride=16, turning a 224×224 image into a 14×14 grid of 16×16 patches, each projected to dim=768. That single conv does both patchification and linear projection. The result is 196 tokens that a standard transformer encoder processes. Every ViT variant (DeiT, Swin, MAE) changes what happens after this step."
+      "explanation": "The first layer of a ViT is a conv with kernel_size = stride = 16, turning a 224x224 image into a 14x14 grid of 16x16 patches, each projected to dim=768. That single conv does both patchification and projection. The result is 196 tokens that a standard transformer encoder can process."
     },
     {
-      "stage": "check",
-      "question": "A `PatchEmbedding` layer is configured with `patch_size=16` and `image_size=224`. How many patch tokens does it produce, and what is the formula?",
-      "options": [
-        "16 tokens (the patch size itself)",
-        "224 tokens (one per pixel row)",
-        "256 tokens (16² — the patches along each axis squared)",
-        "196 tokens, computed as (image_size ÷ patch_size)² = (224 ÷ 16)² = 14² = 196 non-overlapping patches tiled across the image"
-      ],
-      "correct": 3,
-      "explanation": "The stride-equals-kernel-size convolution in PatchEmbedding tiles the image with non-overlapping patches. Along each spatial axis the number of patches is image_size ÷ patch_size = 224 ÷ 16 = 14. Squaring gives 196 tokens total. Halving the patch size to 8 quadruples the token count to 784 and quadruples self-attention cost — the patch-size trade-off is the most impactful hyperparameter in ViT."
-    },
-    {
-      "stage": "check",
-      "question": "In the `Block` forward method, attention output `a` is added to the un-normalised `x` before LayerNorm is applied in the MLP branch: `x = x + a; x = x + self.mlp(self.ln2(x))`. What design pattern does this implement, and why does it matter for training deep ViTs?",
-      "options": [
-        "Post-LayerNorm with residual connections — the original 2017 transformer design that is stable up to about 12 layers",
-        "Weight tying between the attention and MLP sublayers to reduce the parameter count of each block",
-        "Pre-LayerNorm with residual connections: LayerNorm is applied to the input before each sublayer, and the sublayer output is added back to the un-normalised residual stream — this keeps gradient norms stable in deep networks without needing a warmup schedule",
-        "Gradient checkpointing: the intermediate `a` tensor is recomputed during the backward pass to reduce peak activation memory"
-      ],
-      "correct": 2,
-      "explanation": "Pre-LayerNorm (`x + sublayer(LN(x))`) differs from post-LN (`LN(x + sublayer(x))`) in where normalisation sits relative to the residual. Pre-LN keeps the residual stream un-normalised so gradients flow directly without passing through LN, enabling stable training of 12-24+ layer models without warmup. Every ViT and every modern LLM uses pre-LN for this reason."
-    },
-    {
-      "stage": "check",
-      "question": "In the `ViT` class, the positional embedding is initialised with shape `(1, num_patches + 1, dim)` rather than `(1, num_patches, dim)`. Why the +1?",
-      "options": [
-        "Because the CLS token is prepended to the patch sequence and also needs a positional embedding; index 0 of the positional embedding corresponds to the CLS position, and indices 1…num_patches correspond to the spatial patches",
-        "To accommodate variable batch sizes via broadcasting along the batch axis",
-        "Because the last patch in the flattened sequence is split into two sub-patches for boundary handling",
-        "To leave a reserved slot for the distillation token used in DeiT training"
-      ],
+      "stage": "pre",
+      "question": "What is the [CLS] token in ViT and why is it needed?",
+      "options": ["A learned vector prepended to the token sequence; after N transformer layers its output aggregates the whole image and feeds the classifier head", "A special pixel value", "A placeholder for missing data", "A dropout mask"],
       "correct": 0,
-      "explanation": "ViT prepends a learned [CLS] token to the patch sequence, making the full sequence length num_patches + 1 = 197 for a standard ViT-B/16 on 224×224 input. The positional embedding must cover all 197 positions. In the ViT forward method, `self.pos_embed` is broadcast over the batch and added to the concatenated [CLS + patches] tensor. The CLS position at index 0 learns to encode where the global token sits relative to the patches."
+      "explanation": "ViT follows BERT's convention: prepend a learned vector (the CLS token) to the patch sequence. Self-attention lets every token see every other token, so the CLS token aggregates global information from all patches. The classifier reads only the CLS output. Alternative designs use average-pooling over all patch tokens (used by ConvNeXt and many post-ViT models)."
     },
     {
       "stage": "post",
-      "question": "Why did the original ViT paper need JFT-300M pretraining to beat ResNet on ImageNet-1k, and why does DeiT not?",
-      "options": [
-        "The original ViT paper contained implementation errors that DeiT corrected, independently of dataset size",
-        "ViT has weaker inductive biases than CNNs — no locality or translation equivariance baked in — so it needs more data to learn spatial structure. DeiT showed that with strong augmentation (RandAugment, Mixup, CutMix), stochastic depth, and optional CNN distillation, ViTs train to 81%+ on ImageNet-1k alone",
-        "DeiT uses a different attention mechanism that is more sample-efficient than scaled dot-product attention",
-        "The original ViT paper intentionally held back training tricks to leave room for follow-up work"
-      ],
+      "question": "Why did the original ViT paper need JFT-300M pretraining to beat ResNet, and why does DeiT not?",
+      "options": ["ViT is broken without JFT-300M", "ViT has weaker inductive biases than CNNs; without enough data it overfits. DeiT showed that with strong augmentation (RandAugment, Mixup, CutMix), stochastic depth, and optionally CNN distillation, ViTs train fine on ImageNet-1k alone", "DeiT uses different attention", "The ViT paper was wrong"],
       "correct": 1,
-      "explanation": "ViT's lack of inductive bias means the network must learn locality and translation invariance from data alone. With 1M ImageNet images that is hard; with 300M JFT images it is easy. DeiT replaced the data with training-recipe improvements: heavy augmentation, stochastic depth, and a CNN teacher for distillation — all of which act as inductive-bias surrogates. Every modern ViT training recipe descends from DeiT."
+      "explanation": "ViT's lack of inductive bias (no locality, no translation equivariance baked in) means the network has to learn these from data. With 1M ImageNet images that is hard; with 300M JFT images it is easy. DeiT replaced the data with training-recipe improvements: heavy augmentation, stochastic depth, and distillation from a CNN teacher, all of which compensate for the lack of priors."
     },
     {
       "stage": "post",
-      "question": "Pre-LayerNorm (`x = x + sublayer(LN(x))`) is used in modern transformers instead of the original post-LayerNorm (`x = LN(x + sublayer(x))`). Which is correct and why?",
-      "options": [
-        "Pre-LN is used because it trains deeper networks stably without learning-rate warmup: the residual stream accumulates without passing through LN, so each sublayer operates on a normalised input while gradients flow unobstructed through the skip connection",
-        "Post-LN is the modern choice because it was validated on larger language models first and then adopted for ViT",
-        "The two formulations are mathematically identical for networks with residual connections and LayerNorm",
-        "Neither; modern transformers remove LayerNorm entirely and use RMSNorm in a post-sublayer position"
-      ],
-      "correct": 0,
-      "explanation": "Post-LN was the original 2017 transformer and required careful warmup and small learning rates to train past 6–8 layers. Pre-LN (used by ViT, GPT-2+, every modern LLM) is numerically more stable: the residual stream accumulates without normalisation, keeping gradient norms well-behaved through depth. Every transformer deeper than 12 layers uses pre-LN."
+      "question": "Pre-LayerNorm (`x = x + sublayer(LN(x))`) vs post-LayerNorm (`x = LN(x + sublayer(x))`) — which is used in modern transformers and why?",
+      "options": ["Post-LN; it is simpler", "Pre-LN; it trains deeper networks stably without learning-rate warmup and avoids the gradient instabilities that post-LN suffers past about 6 layers", "They are identical", "Neither; modern transformers skip LayerNorm"],
+      "correct": 1,
+      "explanation": "Post-LN was the original transformer (2017) and required careful warmup + small learning rates past 6-8 layers. Pre-LN (Xiong et al., 2020; used by ViT, GPT-2+, every modern LLM) is numerically more stable: the residual stream accumulates without passing through LN, and each sublayer operates on a normalised input. Every transformer deeper than 12 layers uses pre-LN."
+    },
+    {
+      "stage": "post",
+      "question": "Swin Transformer introduces windowed attention. What problem does it solve?",
+      "options": ["Vanishing gradients", "Full attention has O((H*W)^2) cost; Swin restricts attention to local windows of 7x7 patches, reducing cost to O(H*W * window^2). Alternating blocks shift the window by half its size so information eventually mixes across the image", "BatchNorm not supported", "Overfitting to texture"],
+      "correct": 1,
+      "explanation": "A 224x224 image with 4x4 patches has 56*56 = 3136 tokens; full attention is 3136^2 = ~10M pairs per layer. Swin attends only within 7x7 windows, giving 49^2 = 2401 pairs per window (plus the window count). Shifted windows in alternating blocks mix information across windows over a few layers. This brings a CNN-like locality prior back to the transformer without giving up attention."
     }
   ]
 }

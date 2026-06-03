@@ -1,78 +1,64 @@
 {
-  "lesson": "12-video-understanding",
-  "title": "Video Understanding — Temporal Modeling",
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does a 2D+pool video model fail on the Something-Something V2 dataset even when it achieves strong results on Kinetics-400?",
+      "question": "Why does a 2D+pool video model fail on the Something-Something V2 dataset?",
       "options": [
-        "The images in Something-Something V2 are too small for ResNet feature extraction",
-        "The model architecture is incompatible with the Something-Something label format",
-        "Something-Something labels are defined by motion direction ('pushing something from left to right'), not appearance; order-invariant average pooling over per-frame features cannot distinguish motion direction because pool(f1, f2, …, fT) == pool(fT, …, f1)",
-        "There are too many classes in Something-Something V2 for a single-head classifier"
+        "The images are too small",
+        "The model architecture is incompatible",
+        "The dataset's labels are defined by motion direction ('pushing something from left to right'), not appearance; order-invariant average pooling over per-frame features cannot distinguish motion direction",
+        "There are too many classes"
       ],
       "correct": 2,
-      "explanation": "Something-Something labels are literally 'X moved left to right' vs 'X moved right to left'. The two actions look identical in any single frame, and averaging frame embeddings is order-invariant. Motion-defined labels require a model that respects temporal order — a 3D conv or spatio-temporal transformer."
+      "explanation": "Something-Something labels are literally 'X moved left to right' vs 'X moved right to left'. The two look identical in any single frame, and averaging frame embeddings is order-invariant so pool(f1, f2, ..., fT) == pool(fT, ..., f2, f1). Motion-defined labels require a model that attends to temporal order."
     },
     {
-      "stage": "check",
-      "question": "In `inflate_2d_to_3d`, the inflated 3D weights are divided by `time_kernel` after repeating the 2D weights along the new time axis. Why is this division necessary?",
+      "stage": "pre",
+      "question": "What is I3D's inflation trick?",
       "options": [
-        "To reduce the rank of the weight tensor so it fits in GPU memory",
-        "To keep activation magnitudes constant so that batch-normalisation statistics from the pretrained 2D model remain valid on the first 3D forward pass — without the rescale, each output unit would sum `time_kernel` copies of the 2D response, inflating activations by that factor",
-        "To prevent exploding gradients during the first backward pass through the inflated layers",
-        "To make the 3D kernel mathematically equivalent to a depthwise-separable convolution"
+        "A way to pretrain on more images",
+        "Take a 2D CNN's pretrained kernels, copy each along a new time axis (dividing by kernel_T to preserve activation scale), and use them to initialise a 3D CNN \u2014 giving the 3D model strong weights without 3D pretraining",
+        "A scheduler for learning rates",
+        "A method for compressing videos"
       ],
       "correct": 1,
-      "explanation": "Inflation copies each 2D filter `time_kernel` times along the time axis, so without rescaling every output neuron accumulates `time_kernel` times as much signal. Dividing by `time_kernel` preserves the expected activation magnitude, which is critical when the downstream BatchNorm layers were calibrated on the 2D pretrained statistics."
-    },
-    {
-      "stage": "check",
-      "question": "Dense frame sampling picks a random contiguous T-frame window rather than uniformly spacing T frames across the full clip. When should dense sampling be preferred over uniform sampling?",
-      "options": [
-        "For appearance-based tasks where any single frame carries enough signal; uniform sampling covers more of the clip's content",
-        "When the video is very long and memory is limited, because a contiguous window is cheaper to decode",
-        "For 3D convolutional models that model short-range motion — consecutive frames share temporal context that uniform sampling across the full clip would destroy, leaving large temporal gaps between adjacent model inputs",
-        "When the video transformer uses divided attention instead of joint spatio-temporal attention"
-      ],
-      "correct": 2,
-      "explanation": "3D convolutions and (2+1)D convolutions have small temporal receptive fields (3–7 frames). They need adjacent frames to capture motion. Uniform sampling over a 5-minute video would space selected frames minutes apart, making temporal kernels see unrelated content. Dense sampling keeps frames neighbouring in time — matching the model's temporal receptive field to the data."
-    },
-    {
-      "stage": "check",
-      "question": "In the `FramePool` forward method, the input `x` of shape `(N, T, 3, H, W)` is reshaped to `(N*T, 3, H, W)` before passing through the ResNet backbone. What does this accomplish and why?",
-      "options": [
-        "All T frames from all N videos are processed in one batch-parallel call through the 2D CNN; the output is then unflattened back to `(N, T, 512)` and averaged over the time dimension to produce a single per-video embedding",
-        "It converts the tensor from NHWC to NCHW channel ordering before the first conv layer",
-        "It applies temporal convolutions across consecutive frames by treating time as the height dimension",
-        "It reduces memory usage by processing frames sequentially on CPU rather than in parallel on GPU"
-      ],
-      "correct": 0,
-      "explanation": "By collapsing the batch and time axes, all N*T frames pass through the ResNet backbone in a single efficient forward call. The `view(N, T, -1)` call afterwards separates them back, and `feats.mean(dim=1)` pools across time. This is the standard 2D+pool implementation pattern — simple, parallelisable, and compatible with ImageNet-pretrained weights without modification."
+      "explanation": "Inflation bootstraps 3D video models from strong 2D ImageNet weights. A 3x3 2D kernel becomes a 3x3x3 3D kernel by replicating along T with a 1/kernel_T rescale. It transfers object and texture features learnt on ImageNet directly into the video model, which is why I3D was the first 3D model to seriously beat 2D+pool baselines."
     },
     {
       "stage": "post",
-      "question": "A (2+1)D factorised convolution splits a 3×3×3 3D conv into which two operations, and what advantage does the factorisation provide?",
+      "question": "A (2+1)D factorised convolution splits a 3D conv into which two operations?",
       "options": [
-        "One temporal conv followed by one depthwise conv; the advantage is reduced memory bandwidth",
-        "A grouped conv and a 1×1 pointwise conv; the advantage is channel mixing without spatial computation",
-        "Two 3D convs with different strides; the advantage is a larger effective receptive field",
-        "A spatial 1×3×3 conv followed by a temporal 3×1×1 conv with a BN+ReLU non-linearity in between; the extra non-linearity increases expressive power per parameter and consistently improves accuracy over monolithic 3D convs on benchmarks like Kinetics"
+        "One temporal conv followed by one depthwise conv",
+        "A grouped conv and a 1x1 conv",
+        "Two 3D convs with different strides",
+        "A spatial 1x3x3 conv followed by a temporal 3x1x1 conv, with a BN+ReLU in between to add a non-linearity that full 3D convs do not have"
       ],
       "correct": 3,
-      "explanation": "(2+1)D factorises the 3×3×3 kernel into (1×3×3) then (3×1×1). The BN+ReLU between them adds a non-linearity that full 3D convs do not have. On Kinetics, R(2+1)D-34 outperforms an equivalent R3D-34 with fewer parameters — the extra non-linearity does real work, not just parameter reduction."
+      "explanation": "(2+1)D factorises the 3x3x3 kernel into (1x3x3) then (3x1x1). The two convs have a non-linearity between them (BN+ReLU), which increases expressive power per parameter. On Kinetics, R(2+1)D-34 outperforms an equivalent R3D-34 with fewer params \u2014 the extra non-linearity is doing real work."
     },
     {
       "stage": "post",
-      "question": "In a video transformer, what does 'divided attention' mean, and what computational problem does it solve compared to joint spatio-temporal attention?",
+      "question": "In a video transformer, what does 'divided attention' mean?",
       "options": [
-        "Attention applied to half the tokens per layer, reducing VRAM by 2× with no accuracy loss",
-        "Each transformer block has two attention modules: one over tokens at the same spatial position across time (temporal attention), then one over tokens at the same timestep across space (spatial attention) — breaking O((T·H·W)²) joint attention into O(T²) + O((H·W)²) per block",
-        "Attention applied only during training and replaced with a lookup table at inference",
-        "Attention that skips alternate transformer layers to reduce depth while preserving width"
+        "Attention over half the tokens",
+        "Each transformer block has two attention modules: one over tokens at the same spatial position across time (temporal attention), then one over tokens at the same timestep across space (spatial attention) \u2014 breaking the O((T*H*W)^2) full attention into O(T^2) + O((H*W)^2)",
+        "Attention applied only during training",
+        "Attention that skips some layers"
       ],
       "correct": 1,
-      "explanation": "Full joint spatio-temporal attention is O((T·H·W)²), which is infeasible for long videos. Divided attention (TimeSformer) alternates temporal and spatial attention within each block, reducing cost to O(T² + (H·W)²). It trades a theoretical expressivity loss for tractable training; empirically divided attention matches or beats joint attention on most benchmarks."
+      "explanation": "Full joint spatio-temporal attention is O((T*H*W)^2), which is infeasible for long videos. Divided attention (TimeSformer) alternates temporal and spatial attention within each block, bringing cost to O(T^2 + (H*W)^2). It trades off a theoretical loss in expressivity for tractable training; in practice divided attention matches or beats joint on most benchmarks."
+    },
+    {
+      "stage": "post",
+      "question": "Your Kinetics-400 model reports 76% clip accuracy and 82% video accuracy. What does the gap tell you?",
+      "options": [
+        "Per-clip predictions are noisy; averaging predictions across multiple sampled clips per video (test-time augmentation) stabilises the result. A large gap suggests the model's features are sensitive to which 8-frame window was sampled, and longer clips or stronger spatial augmentation during training would shrink the gap",
+        "The model is broken",
+        "The test set is too small",
+        "Clip accuracy is always lower than video accuracy by definition"
+      ],
+      "correct": 0,
+      "explanation": "Clip accuracy evaluates the model on a single sampled window; video accuracy averages predictions across multiple windows. A 6-point gap means the model is sensitive to which window you sampled. Closing the gap means the model has generalised better across the temporal distribution of each video \u2014 which is what you want in deployment. Report both numbers always."
     }
   ]
 }

@@ -7,23 +7,23 @@
       "question": "What does Voyager treat as the action space?",
       "options": [
         "Primitive Minecraft commands",
-        "Reinforcement learning Q-values",
+        "Executable code (JavaScript functions) stored, retrieved, and composed",
         "Text prompts only",
-        "Executable code (JavaScript functions) stored, retrieved, and composed"
+        "Reinforcement learning Q-values"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Voyager's contribution is making code the action: skills are programs, not raw commands."
     },
     {
       "stage": "pre",
       "question": "What three components define a Voyager agent?",
       "options": [
-        "Automatic curriculum, skill library, iterative prompting",
         "Encoder, decoder, value head",
+        "Automatic curriculum, skill library, iterative prompting",
         "Planner, executor, judge",
         "Retriever, generator, ranker"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "Voyager structures the agent around curriculum, skill library, and iterative prompting."
     },
     {
@@ -43,11 +43,11 @@
       "question": "How does the automatic curriculum pick the next task?",
       "options": [
         "Random uniform over the action space",
-        "Always the hardest available task",
         "Just above current capability, based on environment state and skill inventory (the exploration sweet spot)",
+        "Always the hardest available task",
         "User-supplied list only"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "The proposer aims for tasks just above current capability so progress is steady."
     },
     {
@@ -55,23 +55,23 @@
       "question": "Which 2026 product is the lesson's clearest match for the Voyager skill?",
       "options": [
         "OpenAI fine-tuning",
-        "AWS Lambda layers",
+        "Claude Agent SDK skills: named, retrievable code plus instructions loaded on demand",
         "Pinecone indices",
-        "Claude Agent SDK skills: named, retrievable code plus instructions loaded on demand"
+        "AWS Lambda layers"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Agent SDK skills match Voyager's named-retrievable-composable code pattern."
     },
     {
       "stage": "post",
       "question": "Why does the lesson recommend dedup on write for the skill library?",
       "options": [
-        "Without dedup, the same skill gets added many times with slightly different descriptions; retrieval should return one canonical version",
         "Disk is expensive",
+        "Without dedup, the same skill gets added many times with slightly different descriptions; retrieval should return one canonical version",
         "Providers reject duplicates",
         "Git blocks duplicates"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "Near-duplicate descriptions collapse to a single canonical skill so retrieval stays clean."
     },
     {

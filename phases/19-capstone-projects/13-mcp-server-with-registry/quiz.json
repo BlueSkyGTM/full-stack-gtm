@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the 2026 MCP revision favor StreamableHTTP for production servers?",
+      "options": [
+        "It removes the need for authentication",
+        "It is the only transport that supports tool calls",
+        "It encrypts payloads automatically",
+        "It is stateless by default, so a single endpoint behind a load balancer can scale horizontally"
+      ],
+      "correct": 3,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Which authorization model gates tool calls in this capstone?",
       "options": [
         "OAuth 2.1 tokens carrying per-tool scopes, checked at tool-call time",
@@ -12,7 +24,7 @@
         "Mutual TLS without scopes"
       ],
       "correct": 0,
-      "explanation": "OAuth 2.1 tokens carry per-tool scopes like `jira:read`, `s3:list`, and `postgres:query:readonly`, which the MCP server checks at tool-call time rather than just at session start."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Exposes the tool manifest, transport URL, and auth requirements so the registry can validate and index the server"
       ],
       "correct": 3,
-      "explanation": "The .well-known/mcp-capabilities document exposes the tool manifest, transport URL, and auth requirements for service discovery and client auto-configuration."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "They require a different programming language"
       ],
       "correct": 2,
-      "explanation": "The registry stores tool definitions with versioned schemas, enabling clients to discover available tools, understand their parameters, and fetch compatible versions."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Whether the caller's scopes permit invocation, plus PII redaction and payload caps"
       ],
       "correct": 3,
-      "explanation": "Governance uses OPA policies to enforce rules: rate limits per tool, allowed operations (read-only vs read-write), and access control based on user roles and scopes."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Adding a second replica and showing the load balancer redistributing without session stickiness"
       ],
       "correct": 3,
-      "explanation": "The capstone measures registration accuracy (correctness of tool schemas), governance enforcement effectiveness (percentage of policy violations blocked), and service discovery reliability."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "PII improves search performance"
       ],
       "correct": 1,
-      "explanation": "Security is ensured by TLS encryption for all communications, signed JWTs for OAuth tokens, and regular security audits of the OPA policy bundle."
+      "explanation": ""
     }
   ]
 }

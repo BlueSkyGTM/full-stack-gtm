@@ -1,78 +1,39 @@
 {
-  "lesson": "21-keypoint-pose",
-  "title": "Keypoint Detection & Pose Estimation",
   "questions": [
     {
       "stage": "pre",
       "question": "Why do pose models regress heatmaps instead of (x, y) coordinates directly?",
-      "options": [
-        "Heatmaps are cheaper to compute",
-        "Coordinate regression produces NaN",
-        "Heatmaps are required by the COCO metric",
-        "The spatial structure of a conv feature map aligns with spatial output; a Gaussian heatmap target provides a smooth loss landscape that tolerates small localisation errors, whereas direct coordinate regression is brittle and loses spatial context"
-      ],
-      "correct": 3,
+      "options": ["Heatmaps are cheaper to compute", "The spatial structure of a conv feature map aligns with spatial output; a Gaussian heatmap target provides a smooth loss landscape that tolerates small localisation errors, whereas direct coordinate regression is brittle and loses spatial context", "Heatmaps are required by the COCO metric", "Coordinate regression produces NaN"],
+      "correct": 1,
       "explanation": "Regressing coordinates with MSE asks the network to reduce a 2D position to two scalars, losing the feature-map alignment that CNNs exploit. Heatmap regression gives the network a per-pixel loss that is smooth around the true location and preserves spatial priors. The empirical improvement over coordinate regression is large enough that every modern pose model uses heatmaps."
     },
     {
-      "stage": "check",
-      "question": "A sports analytics app must track poses for 20+ simultaneous players at 30 fps. Which architecture best handles this crowd density, and why?",
-      "options": [
-        "Bottom-up (OpenPose, HigherHRNet), because one forward pass produces all keypoints plus PAF association fields; runtime is constant regardless of person count",
-        "Top-down (HRNet, ViTPose), because each crop is independently processed and crops are fast",
-        "Top-down always, because per-person accuracy is highest regardless of crowd size",
-        "Both scale identically; choose by GPU memory"
-      ],
-      "correct": 0,
-      "explanation": "Bottom-up runs one forward pass over the entire image and then groups all keypoints, so inference time does not grow with the number of people. Top-down runs the keypoint model once per detected person, so cost scales linearly with crowd size. For crowded real-time scenarios, bottom-up is the throughput leader even though top-down wins per-person accuracy in sparse scenes."
-    },
-    {
-      "stage": "check",
-      "question": "In `gaussian_heatmap(size, cx, cy, sigma)`, the target value at pixel (x, y) is `exp(-((x-cx)^2 + (y-cy)^2) / (2*sigma^2))`. What is the effect of increasing sigma?",
-      "options": [
-        "It normalises the heatmap to sum to 1",
-        "It sets the number of keypoints output by the network",
-        "It broadens the Gaussian peak, making the loss smoother and more tolerant of small localisation errors at the cost of lower spatial precision",
-        "It controls the learning rate for the keypoint head"
-      ],
-      "correct": 2,
-      "explanation": "Sigma is the standard deviation of the 2D Gaussian. A small sigma concentrates the peak tightly (precise target, sharp gradient cliff near the boundary), while a larger sigma spreads the target (smoother loss landscape, more forgiving of minor mislocalisation). In practice sigma=2-3 pixels balances spatial precision with training stability for most pose benchmarks."
-    },
-    {
-      "stage": "check",
-      "question": "In `heatmap_to_coords(heatmaps)`, the code reshapes heatmaps to `(N, K, H*W)`, calls `argmax(dim=-1)`, then computes `ys = idx // W` and `xs = idx % W`. What does the integer division and modulo recover?",
-      "options": [
-        "The normalised [0, 1] coordinates after sub-pixel refinement",
-        "The (x, y) pixel coordinates by treating the flat argmax index as row*W + col — integer division recovers the row (y) and modulo recovers the column (x)",
-        "A confidence score for each keypoint",
-        "The batch dimension of the heatmap tensor"
-      ],
+      "stage": "pre",
+      "question": "Top-down pose estimation vs bottom-up: which scales better with crowd size, and why?",
+      "options": ["Top-down, because each person uses a separate fast model", "Bottom-up, because it does one forward pass over the whole image then groups keypoints, so runtime is constant in the number of people", "They scale equally", "Top-down never scales"],
       "correct": 1,
-      "explanation": "Flattening the (H, W) heatmap to length H*W means a single scalar argmax encodes the 2D location as row*W + col. Integer division by W gives the row index (y coordinate) and the remainder gives the column index (x coordinate). This is the standard 1D-to-2D index unpacking used by every production pose model to extract integer keypoint locations from heatmaps."
+      "explanation": "Top-down runs a per-person keypoint model after a person detector, so cost grows linearly with the number of people. Bottom-up (OpenPose, HigherHRNet) produces all keypoints and association fields in one pass, then groups them — constant time regardless of crowd density. The trade: top-down is more accurate per-person; bottom-up is faster in crowds."
     },
     {
       "stage": "post",
-      "question": "What are Part Affinity Fields (PAFs) and how do they enable bottom-up multi-person pose?",
-      "options": [
-        "A scheduling algorithm for batching person crops",
-        "2-channel unit-vector fields encoding the direction from one keypoint to another; integrating the PAF along a candidate limb line scores how likely two keypoints belong to the same instance, turning pose grouping into bipartite matching",
-        "A data augmentation technique for small datasets",
-        "A type of loss function that penalises incorrect keypoint order"
-      ],
+      "question": "What are Part Affinity Fields?",
+      "options": ["A scheduling algorithm", "2-channel unit-vector fields that encode the direction from one keypoint to another; integrating the PAF along a candidate line tells you whether two keypoints belong to the same instance, enabling bottom-up association without per-person detection", "A data augmentation technique", "A type of loss function"],
       "correct": 1,
-      "explanation": "Per connected keypoint pair (limb), predict a 2-channel field whose value at each pixel is the unit vector pointing from one keypoint (e.g. shoulder) to the other (elbow). To associate a candidate shoulder with a candidate elbow, integrate the PAF along the line joining them; higher integral = stronger match. This turns pose grouping into a bipartite matching problem solvable in polynomial time without per-person crops."
+      "explanation": "Per connected keypoint pair (limb), predict a 2-channel field (x, y components of the unit vector pointing from one keypoint to the other). To match a candidate shoulder with a candidate elbow, integrate the PAF along the line joining them; higher integral = stronger match. This turns pose into a bipartite matching problem solvable in polynomial time."
     },
     {
       "stage": "post",
-      "question": "Why does sub-pixel refinement around the argmax meaningfully improve keypoint accuracy?",
-      "options": [
-        "It smooths the heatmap before loss computation",
-        "It prevents overfitting by adding regularisation",
-        "Integer argmax rounds to the nearest grid cell; fitting a local parabola or using the offset dx = 0.25*(heatmap[y,x+1] - heatmap[y,x-1]) recovers the continuous peak position, often halving L2 error for cleanly predicted keypoints",
-        "It normalises the output to [0, 1]"
-      ],
-      "correct": 2,
-      "explanation": "A well-predicted heatmap has a smooth Gaussian peak whose true centre is usually between grid cells. Integer argmax introduces up to 0.5 px quantisation error. Fitting a parabola or using the first-difference offset `0.25 * (h[y,x+1] - h[y,x-1])` recovers the continuous peak. For sports analytics, medical landmarks, or any task requiring sub-pixel precision, this post-processing step is mandatory."
+      "question": "Why does sub-pixel refinement around the argmax meaningfully lift keypoint accuracy?",
+      "options": ["It smooths the heatmap", "Integer argmax rounds to the nearest grid cell; fitting a local parabola or using the offset dx = 0.25*(heatmap[y,x+1] - heatmap[y,x-1]) recovers the continuous peak position, often halving the L2 error for cleanly predicted keypoints", "It prevents overfitting", "It normalises the output"],
+      "correct": 1,
+      "explanation": "A well-predicted heatmap has a smooth Gaussian peak whose centre is usually between grid cells. Integer argmax loses that sub-pixel information (up to 0.5 px error). Fitting a parabola or using the first-difference offset recovers the continuous peak. For sports analytics, medical landmarks, or anything requiring precise coordinates, this step is mandatory."
+    },
+    {
+      "stage": "post",
+      "question": "OKS (Object Keypoint Similarity) is the pose-estimation analogue of what object-detection metric?",
+      "options": ["Inference latency", "IoU — both measure geometric match between prediction and ground truth, with OKS using keypoint distances weighted by each keypoint's annotation variance; COCO reports mAP@OKS 0.5:0.95 for pose", "Classification accuracy", "Cross-entropy loss"],
+      "correct": 1,
+      "explanation": "OKS ranges 0 to 1 like IoU and plays the same role: it decides whether a prediction matches a ground-truth pose at a given strictness level. Each keypoint has a variance (COCO publishes them) that scales its contribution — invariant joints like nose and eyes weigh more than wrists, which are annotated less consistently. COCO Pose AP @ OKS 0.5:0.95 is the 2026 community benchmark."
     }
   ]
 }

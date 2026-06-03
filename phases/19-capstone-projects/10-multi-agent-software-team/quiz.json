@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does a single-agent harness hit a ceiling on large tasks even with a 200k-token context?",
+      "options": [
+        "Single agents cannot make tool calls",
+        "Sandboxes refuse to host more than one process",
+        "Context cannot hold the architecture plan, four parallel codebase slices, reviewer commentary, and test output at once",
+        "Models lack support for git"
+      ],
+      "correct": 2,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What does the architect role own in this factory shape?",
       "options": [
         "Reviewing the merged diff for hallucinations",
@@ -12,7 +24,7 @@
         "Force-merging branches when coders disagree"
       ],
       "correct": 1,
-      "explanation": "Role specialization assigns specific capabilities to agents: Planner (breaks down tasks), Critic (reviews code), Executor (implements changes), and Verifier (tests and validates results)."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "The architect requires worktree IDs"
       ],
       "correct": 2,
-      "explanation": "Task decomposition uses hierarchical planning to split high-level requirements into atomic subtasks with clear dependencies and success criteria for each agent."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "It must be the same model as the architect"
       ],
       "correct": 1,
-      "explanation": "Communication protocols define how agents share information: shared state objects for plan status, message passing for handoffs, and consensus mechanisms for decisions."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Token cost is unrelated to performance"
       ],
       "correct": 1,
-      "explanation": "Coordination patterns include sequential workflows (agents work in series), parallel swarms (agents work on independent subtasks), and debate topologies (agents propose and critique solutions)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "A handoff-failure histogram identifying which role boundary broke (plan, merge, review, test)"
       ],
       "correct": 3,
-      "explanation": "The capstone measures task completion rate (percentage of requirements fully implemented), coordination overhead (time spent on agent communication vs actual work), and role effectiveness (contribution of each agent type)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "MigrationBench"
       ],
       "correct": 0,
-      "explanation": "Failure mode analysis identifies bottlenecks (slow agent responses), deadlocks (circular dependencies), and miscommunication (ambiguous handoffs) with remediation strategies."
+      "explanation": ""
     }
   ]
 }

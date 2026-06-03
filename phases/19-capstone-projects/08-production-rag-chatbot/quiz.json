@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does prompt caching matter so much in a regulated-domain RAG chatbot?",
+      "options": [
+        "It removes the need for a vector database",
+        "At 60-80% hit rate it cuts per-query cost 3-5x by discounting stable prefix tokens",
+        "It eliminates hallucinations",
+        "It improves recall on the rerank stage"
+      ],
+      "correct": 1,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What goes into the cache header versus the uncached suffix of each request?",
       "options": [
         "Random text padding to hit cache size",
@@ -12,7 +24,7 @@
         "System prompt and static policies in the cache header, reranked context as cache extension, user question as the uncached suffix"
       ],
       "correct": 3,
-      "explanation": "Chunking preserves entity boundaries and sentence boundaries, while re-rankers use cross-encoders to score retrieved chunks for relevance to the specific query."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Role and jurisdiction filters apply before the hybrid search merge so chunks outside the user's scope are never reranked"
       ],
       "correct": 3,
-      "explanation": "Citation tracking extracts entity mentions from retrieved chunks and links them to source documents, enabling users to verify information and navigate to primary sources."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "A single LLM-judge faithfulness check"
       ],
       "correct": 1,
-      "explanation": "The合规 layer filters responses against regulatory policies (PII redaction, medical disclaimer checks, financial advice restrictions) before presenting to users."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Any new document added to the index"
       ],
       "correct": 2,
-      "explanation": "Conversation history is stored with vector embeddings and retrieved alongside current queries, enabling context-aware responses that remember previous interactions."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "2000 synthetic questions"
       ],
       "correct": 1,
-      "explanation": "The capstone measures answer relevance (semantic similarity to ground truth), citation accuracy (correct linking of claims to sources), and合规 rate (percentage of responses passing policy checks)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Token count and dollar cost"
       ],
       "correct": 2,
-      "explanation": "Audit logging captures all queries, retrieved chunks, and responses with timestamps, enabling compliance auditing and system monitoring for regulated verticals."
+      "explanation": ""
     }
   ]
 }

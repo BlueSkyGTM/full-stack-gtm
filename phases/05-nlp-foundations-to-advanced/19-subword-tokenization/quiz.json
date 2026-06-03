@@ -15,6 +15,18 @@
       "explanation": "Subword tokens cover any input by decomposition, removing the OOV problem of word-level vocab."
     },
     {
+      "stage": "pre",
+      "question": "Why does GPT-2 use byte-level BPE rather than character-level BPE?",
+      "options": [
+        "Required by transformers",
+        "Byte BPE skips merges",
+        "A 256-byte base vocabulary covers any UTF-8 input, guaranteeing no [UNK] tokens",
+        "Bytes are smaller"
+      ],
+      "correct": 2,
+      "explanation": "Byte-level BPE starts from 256 bytes so every input encodes; nothing is OOV."
+    },
+    {
       "stage": "check",
       "question": "How does the Unigram tokenizer build its vocabulary?",
       "options": [
@@ -73,6 +85,18 @@
       ],
       "correct": 1,
       "explanation": "Composite emojis encode as several bytes; byte-level tokenizers may use multiple tokens per glyph."
+    },
+    {
+      "stage": "post",
+      "question": "What heuristic guides vocabulary size for a new monolingual transformer?",
+      "options": [
+        "Always 8000",
+        "Always 1M",
+        "Roughly 32k for models under 1B parameters; 50-100k for 1-10B; 200k+ for multilingual or frontier models",
+        "Match training corpus size"
+      ],
+      "correct": 2,
+      "explanation": "Vocab size scales with model and language coverage; these are rough community defaults."
     }
   ]
 }

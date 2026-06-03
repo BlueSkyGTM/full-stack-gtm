@@ -1,78 +1,39 @@
 {
-  "lesson": "19-ocr-document-understanding",
-  "title": "OCR & Document Understanding",
   "questions": [
     {
       "stage": "pre",
       "question": "Why does OCR use CTC loss instead of plain cross-entropy?",
-      "options": [
-        "CTC converges faster on GPU",
-        "Cross-entropy overflows for sequences longer than 32 characters",
-        "CTC is required by PyTorch's ONNX export path",
-        "OCR maps a fixed-length feature sequence to a variable-length character sequence without per-timestep alignment; CTC marginalises over all alignments that reduce to the target after merging repeats and removing blanks, so you can train on (image, text) pairs without knowing where each character starts in the image"
-      ],
-      "correct": 3,
-      "explanation": "CTC (Graves et al., 2006) allows training sequence models when only the final label sequence is known, not the per-frame alignment. The model emits a distribution over (vocab + blank) at every time step; the loss sums over all paths that collapse to the target via merge-repeats-remove-blanks. This is why CRNNs can be trained on just text strings with no character bounding box annotations."
-    },
-    {
-      "stage": "check",
-      "question": "In the classical OCR pipeline, after the text detector produces bounding boxes, what does the recognition stage output for each region?",
-      "options": [
-        "Pixel coordinates of each individual character centroid within the region",
-        "A binary foreground/background mask for each word bounding box",
-        "A character sequence for each cropped region, produced by a CNN+BiLSTM+CTC that processes the fixed-height crop as a temporal sequence",
-        "A font-family classification used to select a downstream language model"
-      ],
-      "correct": 2,
-      "explanation": "The recognition stage crops each detected box to a fixed height, runs a CNN to extract per-column features, passes those through a BiLSTM to model context, then applies CTC to produce a character sequence. No per-character timing labels are needed. PaddleOCR and EasyOCR both follow this CRNN+CTC architecture."
-    },
-    {
-      "stage": "check",
-      "question": "In TinyCRNN.forward(), after the CNN produces features shaped (N, C, H', W'), how is the BiLSTM input prepared?",
-      "options": [
-        "Global average pooling over all spatial dimensions to produce (N, C), then projected to hidden size",
-        "Average-pool the height dimension to 1 with f.mean(dim=2), then transpose to (N, W', C) so that W' becomes the time dimension fed to the BiLSTM",
-        "Flatten to (N, C×H'×W') and project down to the hidden dimension with a linear layer",
-        "Max-pool over width to collapse to (N, C, 1), then squeeze for the recurrent layer"
-      ],
+      "options": ["CTC is faster", "OCR maps a fixed-length feature sequence to a variable-length character sequence without per-timestep alignment; CTC loss marginalises over all alignments that reduce to the target after removing repeats and blanks, so you can train without character-level timing labels", "CTC is required by PyTorch", "Cross-entropy overflows for long sequences"],
       "correct": 1,
-      "explanation": "TinyCRNN's CNN is designed to reduce height to 1 via stacked MaxPool2d. f.mean(dim=2) finishes that collapse, giving (N, C, W'). Transposing to (N, W', C) puts width — the horizontal scan direction across the text — as the sequence dimension for the BiLSTM. This is the CRNN design: spatial features become a time series for the recurrent stage."
+      "explanation": "Recognition produces one distribution per time step, but the target text has no per-step alignment. CTC handles that by summing over every alignment that reduces to the target via the merge-repeats-and-remove-blanks operation. This is why CRNNs can be trained on just (image, text) pairs without knowing where each character starts and ends in the image."
     },
     {
-      "stage": "check",
-      "question": "Donut (Kim et al., 2022) skips the classical detect→recognise→layout pipeline entirely. What is its architecture?",
-      "options": [
-        "A CNN feature extractor plus a conditional random field sequence decoder for structured output",
-        "Two BiLSTM encoders processing spatial and temporal features in parallel",
-        "PaddleOCR's DB text detector paired with a transformer-based recogniser",
-        "A ViT encoder that processes the full document image plus a text decoder that auto-regressively emits the target JSON, learning localisation and recognition implicitly through end-to-end training"
-      ],
-      "correct": 3,
-      "explanation": "Donut has no explicit text detection or CTC recognition module. The ViT encoder sees the whole document; the transformer decoder emits the target string or JSON token-by-token. This eliminates error accumulation across pipeline stages but requires sufficient labelled (image, JSON) training pairs for the specific document type you are parsing."
+      "stage": "pre",
+      "question": "In CTC decoding, what does the blank token do?",
+      "options": ["Pads the sequence to a fixed length", "Separates adjacent identical characters so that outputs like 'hello' with a double L can be produced by the model emitting 'h e l _ l o' — without the blank, 'l l' would collapse to one 'l'", "Masks noisy regions", "Indicates end of sequence"],
+      "correct": 1,
+      "explanation": "The blank is the mechanism that lets CTC encode double characters. 'll' needs a blank between the two l's so the 'merge repeats' step keeps them distinct: 'l _ l' survives merging, 'l l' does not. Without the blank, CTC cannot represent any word containing adjacent identical characters."
     },
     {
       "stage": "post",
-      "question": "Why is greedy CTC decoding sometimes better in practice than beam search on clean printed-text datasets?",
-      "options": [
-        "Greedy decoding is always superior to beam search for CTC models",
-        "When the model is confident at every time step — which is typical for clean printed fonts — greedy's per-step argmax is almost always the beam winner; beam search adds latency without meaningful CER improvement. Beam search helps on noisy or handwritten inputs where per-step probabilities are ambiguous",
-        "Beam search requires an external language model that is rarely available",
-        "Greedy always achieves lower character error rate than beam width 5"
-      ],
+      "question": "Why is greedy CTC decoding sometimes better than beam search on simple datasets?",
+      "options": ["Greedy is always better", "When the model is confident at every step (clean handwriting, printed fonts), greedy's argmax is usually the beam winner; beam search adds latency with no accuracy gain. On noisy or ambiguous inputs, beam search helps", "Beam search requires a language model", "Greedy is easier to implement"],
       "correct": 1,
-      "explanation": "Beam search only wins when per-step probabilities are uncertain. For clean printed text, the CRNN is highly confident at each column position. The greedy_ctc_decode in this lesson achieves within ~1% CER of beam width 5 on synthetic digit strings. Always benchmark both: the latency cost of beam search is real, and the accuracy gain depends entirely on input noise level."
+      "explanation": "Beam search only wins when the per-step argmax is unreliable — ambiguous characters, overlapping letters, degraded scans. For clean printed text, the model is confident at each step and greedy is within 1% CER of beam. Always benchmark both; the latency trade is real."
     },
     {
       "stage": "post",
-      "question": "For a task measuring whether the model correctly extracted 'invoice_total: 42.50' from a receipt image, which evaluation metric is most appropriate — and why is CER insufficient?",
-      "options": [
-        "CER (Character Error Rate) is sufficient because it measures every character in the output",
-        "WER (Word Error Rate) is sufficient because invoice fields are single words",
-        "F1 on structured fields is the right metric; it tests whether the correct semantic key-value pair appears in the output, not character-level transcription accuracy. CER would reward outputs that transcribe background text perfectly while missing the target field entirely",
-        "BLEU score, because it handles variable-length outputs robustly"
-      ],
-      "correct": 2,
-      "explanation": "The three skill layers have different metrics. Raw OCR accuracy → CER/WER. Key-value extraction → F1 on structured fields ({item: price} pairs) or normalised tree edit distance on JSON (used in the Donut paper). CER is indifferent to semantic structure: a model that outputs every word correctly but in the wrong field mapping scores 100% CER but 0% field F1."
+      "question": "Donut skips explicit text detection and character recognition. How?",
+      "options": ["It uses an external OCR engine internally", "It is a ViT encoder + text decoder trained to produce the final output string (often JSON) directly from the image; the model learns both localisation and recognition implicitly through the training objective", "It is limited to document categories with fixed layouts", "It preprocesses images with a CNN text detector"],
+      "correct": 1,
+      "explanation": "Donut is an end-to-end model: the ViT encoder sees the whole document, the transformer decoder emits the target text or JSON auto-regressively. No pipeline of detector + recogniser + layout module. This skips error accumulation across stages but requires large labelled training sets for the specific document types you care about."
+    },
+    {
+      "stage": "post",
+      "question": "For extracting `invoice_total` from receipts, which approach is typically best in 2026?",
+      "options": ["A hand-crafted regex on Tesseract output", "Fine-tuned Donut or a VLM on a small labelled set of the target receipts; both handle layout and semantic extraction in one model and generalise across receipt variants better than pipeline-based approaches", "Only classical OCR is reliable enough", "A separate CNN for each field"],
+      "correct": 1,
+      "explanation": "Structured-field extraction used to be the domain of LayoutLM + heuristics. End-to-end models (Donut, Qwen-VL-OCR) have overtaken that path: they accept an image and produce the JSON directly. For a small set of labelled receipts (100-1000), fine-tuning Donut reaches higher F1 than any pipeline of OCR + rules."
     }
   ]
 }

@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the critic score across five fixed dimensions instead of returning a freeform paragraph?",
+      "options": [
+        "Because models cannot generate paragraphs reliably",
+        "Because a fixed vector lets the harness detect per-dimension regressions across rounds",
+        "Because LaTeX requires a score field",
+        "Because the reviser only accepts JSON"
+      ],
+      "correct": 1,
+      "explanation": "A fixed dimension vector turns critique into structured data the harness can compare across rounds. Freeform criticism is unverifiable; vectors make regressions visible."
+    },
+    {
+      "stage": "pre",
       "question": "In what order does the loop check stop conditions at the end of a round?",
       "options": [
         "Budget, then plateau, then target",
@@ -37,18 +49,6 @@
       ],
       "correct": 1,
       "explanation": "Reviser.__call__ takes (paper, suggestions). Each Suggestion carries a dimension, target section, and an edit instruction. The reviser does not see scores. That separation lets either side be swapped without touching the other."
-    },
-    {
-      "stage": "check",
-      "question": "Why does plateau detection require two consecutive flat rounds instead of one?",
-      "options": [
-        "To reduce the total number of revision rounds and save compute",
-        "Because the first round always produces unreliable scores",
-        "A single-round plateau may be noise from scoring variance; two consecutive rounds confirms the draft has genuinely stopped improving",
-        "To give the reviser time to apply complex edit instructions across rounds"
-      ],
-      "correct": 2,
-      "explanation": "Deterministic scoring still varies based on which suggestions were applied and in what order. Requiring two consecutive plateau rounds filters out that noise."
     },
     {
       "stage": "post",

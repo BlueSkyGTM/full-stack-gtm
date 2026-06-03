@@ -1,78 +1,64 @@
 {
-  "lesson": "24-sam3-open-vocab-segmentation",
-  "title": "SAM 3 & Open-Vocabulary Segmentation",
   "questions": [
     {
       "stage": "pre",
       "question": "What is Promptable Concept Segmentation (PCS), introduced by SAM 3?",
       "options": [
         "Segmenting all instances of a concept described by a short noun phrase or image exemplar in a single forward pass, returning masks plus unique instance IDs",
-        "A visual-prompt (point/box) segmentation like classic SAM — one prompt per instance",
-        "A multi-step cascade: a text detector produces boxes, then SAM segments each box",
-        "A tracking-only mode that propagates a mask through video frames"
+        "A visual prompt (point/box) segmentation like classic SAM",
+        "A multi-step chain of a detector followed by SAM",
+        "A tracking-only mode"
       ],
       "correct": 0,
-      "explanation": "PCS is SAM 3's signature capability. Pass 'yellow school bus' or an image exemplar; SAM 3 returns every matching instance with its own mask and unique ID, plus a presence score indicating whether the concept exists at all. Classic SAM needed one click or box prompt per instance. PCS collapses the entire detect-then-segment cascade into one forward pass."
+      "explanation": "PCS is SAM 3's signature capability. You pass 'yellow school bus' or an image exemplar of a bus; SAM 3 returns every matching instance with its own mask and unique ID, plus a presence score. Classic SAM needed one prompt per instance; PCS produces all matches end-to-end."
     },
     {
-      "stage": "check",
-      "question": "SAM 3 uses a shared ViT backbone read by both the detector head and the memory-based tracker. How does this differ from the Grounded SAM 2 cascade, and what advantage does it provide?",
+      "stage": "pre",
+      "question": "Why keep a decoupled detector + SAM 2 pipeline (Grounded SAM 2) in 2026 if SAM 3 already does text-prompted segmentation?",
       "options": [
-        "A shared backbone skips self-attention, making it faster for high-resolution images",
-        "The shared backbone gives detector and tracker access to the same feature map, eliminating redundant image encoding and error accumulation; the Grounded SAM 2 cascade runs Grounding DINO and SAM 2 as two separate forward passes with independent encoders",
-        "A shared backbone always produces larger masks than a two-model cascade",
-        "A shared ViT backbone requires half the GPU memory of any cascade approach"
+        "Grounded SAM 2 is always more accurate",
+        "Modularity \u2014 you can swap in different open-vocabulary detectors (DINO-X, Florence-2, Grounding DINO 1.5) for different domains, license constraints, or threshold behaviour; SAM 3's architecture is monolithic",
+        "SAM 3 does not support video",
+        "SAM 3 is only available in the cloud"
       ],
       "correct": 1,
-      "explanation": "Grounded SAM 2 runs a separate open-vocabulary detector (e.g. Grounding DINO) followed by SAM 2 — two full image encodings with independent feature extractors, meaning errors from the detector compound into SAM 2. SAM 3's shared backbone computes image features once, then both the detector head and the memory-based tracker read from the same representation. This removes redundant computation and enables end-to-end training on the full detect-segment objective."
+      "explanation": "Grounded SAM 2 is a composition of a detector and SAM 2 with frozen weights. That modularity is sometimes exactly what you need \u2014 a medical-imaging detector, a license-friendly detector, or tight threshold control. SAM 3 is more accurate end-to-end for common use but harder to customise. Both have production roles in 2026."
     },
     {
-      "stage": "check",
-      "question": "The `split_concepts(sentence)` helper processes the input 'cats, dogs and balloons'. What does it return, and why is this necessary for SAM 3?",
+      "stage": "post",
+      "question": "SAM 3's presence head produces what?",
       "options": [
-        "A dictionary mapping each concept to its expected bounding box region",
-        "The sentence unchanged, since SAM 3 handles multi-concept strings natively",
-        "['cats', 'dogs', 'balloons'] — individual noun phrases split on comma and 'and', because SAM 3 accepts one concept prompt per forward pass and multi-concept queries must be looped or batched",
-        "An image crop for each noun phrase extracted by the vision encoder"
+        "The list of candidate bounding boxes",
+        "A tracking memory bank",
+        "A scalar probability that the queried concept exists in the image, decoupled from localisation; lets the model say 'not present' cleanly and reduces false positives on absent concepts",
+        "The final mask"
       ],
       "correct": 2,
-      "explanation": "`split_concepts` heuristically replaces 'and ' with ',' then splits on comma/semicolon separators, stripping whitespace. For 'cats, dogs and balloons' it produces ['cats', 'dogs', 'balloons']. This is necessary because SAM 3's API accepts one concept per call — a single prompt produces all matching instances of that concept. To segment multiple concepts in one image, callers must loop over the list and merge results."
+      "explanation": "The presence head separates the 'is this here?' decision from the 'where is it?' decision. A model that must produce boxes whenever asked tends to hallucinate matches for absent concepts. With a presence head, SAM 3 can return zero detections cleanly. This also improves discrimination between closely related prompts (e.g., 'a player in white' vs 'a player in red')."
     },
     {
-      "stage": "check",
-      "question": "SAM 3 was trained on 4 million unique concepts using an iterative AI+human data engine, and evaluated on the SA-CO benchmark. What makes SA-CO's 270K concepts significant?",
+      "stage": "post",
+      "question": "SAM 3.1 Object Multiplex (March 2026) introduced a shared-memory mechanism for tracking. What does it replace?",
       "options": [
-        "SA-CO is the first benchmark to include tracking alongside segmentation",
-        "SA-CO was created specifically to expose Grounded SAM 2's failure modes",
-        "SA-CO uses video-only inputs, ruling out static-image models",
-        "270K concepts is 50× larger than prior open-vocabulary benchmarks, testing genuine generalisation beyond common-concept memorisation; SAM 3 reaches 75-80% of human performance on SA-CO and doubles existing systems"
+        "SAM 2 altogether",
+        "Per-instance separate memory banks; Multiplex collapses them into one shared memory with per-instance queries so tracking N objects runs substantially faster while keeping accuracy",
+        "The whole presence head",
+        "The ViT backbone"
+      ],
+      "correct": 1,
+      "explanation": "Prior SAM 2 / SAM 3 tracking maintained one memory bank per tracked instance, so cost grew linearly with object count. Object Multiplex introduces a single shared memory plus per-instance queries that fetch instance-specific features. Many-instance tracking is now efficient \u2014 essential for crowds and dense multi-object scenes."
+    },
+    {
+      "stage": "post",
+      "question": "You need real-time open-vocabulary DETECTION (boxes only, no masks) on an edge device. Which 2026 model family is the right choice?",
+      "options": [
+        "SAM 3",
+        "A custom CLIP + detector chain",
+        "Grounded SAM 2",
+        "YOLO-World (and related real-time open-vocab detectors); SAM 3 produces masks and is heavier, while YOLO-World is designed specifically for boxes at high fps on edge hardware"
       ],
       "correct": 3,
-      "explanation": "Prior open-vocabulary benchmarks covered a few thousand concepts, making it easy for models trained on large web data to appear to generalise when they are actually memorising common categories. SA-CO's 270K unique concepts stress-test true compositional and rare-concept generalisation. SAM 3's 75-80% human performance and 2× improvement over prior systems on this harder benchmark is what substantiates its open-vocabulary claims."
-    },
-    {
-      "stage": "post",
-      "question": "SAM 3's presence head produces what output, and why is it architecturally separate from the localisation head?",
-      "options": [
-        "A ranked list of candidate bounding boxes, reranked by concept similarity",
-        "A shared memory bank that replaces per-instance tracking state",
-        "A scalar probability that the queried concept exists in the image at all, decoupled from localisation; this lets the model return zero detections cleanly and reduces false positives on absent concepts",
-        "The final binary mask, output directly without further decoding"
-      ],
-      "correct": 2,
-      "explanation": "The presence head separates the 'is this here?' decision from the 'where is it?' decision. A model that must produce boxes whenever prompted tends to hallucinate matches for absent concepts. With a presence head, SAM 3 can return zero detections cleanly. This also improves discrimination between closely related prompts (e.g. 'a player in white' vs 'a player in red') and is one of the architectural innovations that distinguish SAM 3 from the Grounded SAM 2 cascade."
-    },
-    {
-      "stage": "post",
-      "question": "SAM 3.1 Object Multiplex (March 2026) introduced a shared-memory mechanism for video tracking. What does it replace, and what is the practical benefit?",
-      "options": [
-        "It replaces the ViT backbone with a lighter CNN for edge deployment",
-        "Per-instance separate memory banks; Multiplex collapses them into one shared memory with per-instance queries so tracking N objects costs substantially less memory and compute while keeping accuracy",
-        "The presence head, which was found to cause false negatives in crowded scenes",
-        "The decoupled detector — Multiplex merges detection and tracking into a single head"
-      ],
-      "correct": 1,
-      "explanation": "Prior SAM 2 / SAM 3 tracking maintained one memory bank per tracked instance, so memory and compute grew linearly with the number of tracked objects. Object Multiplex introduces a single shared memory with per-instance queries that fetch instance-specific features from that shared store. Many-instance tracking (crowds, dense multi-object scenes) is now efficient — essential for real annotation and robotics workloads that track dozens of objects simultaneously."
+      "explanation": "YOLO-World and similar models (OV-DINO, LLMDet) are real-time open-vocabulary detectors. They do not produce masks but they hit 30-60 fps at 640x640 on modest GPUs. SAM 3 is the right choice when masks and tracking matter. Always match tool weight to the task: detection-only is fine without mask overhead."
     }
   ]
 }

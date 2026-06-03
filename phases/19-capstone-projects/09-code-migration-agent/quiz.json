@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the pipeline combine a deterministic substrate with an agent layer rather than using just one?",
+      "options": [
+        "OpenRewrite or libcst handles 70-80% of mechanical rewrites safely and cheaply, leaving the agent for the ambiguous long tail",
+        "Agents alone are faster than recipes",
+        "Deterministic recipes are slower than LLMs",
+        "Determinism is needed only for the build system"
+      ],
+      "correct": 0,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What signal does the pipeline use as ground truth for a successful migration?",
       "options": [
         "Agent self-grading on a rubric",
@@ -12,7 +24,7 @@
         "Green CI in the sandbox without a coverage regression beyond a small threshold"
       ],
       "correct": 3,
-      "explanation": "Static analysis uses tree-sitter parsers to build an abstract syntax tree of the original codebase, identifying language constructs and dependencies for migration planning."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "30 minutes wall-clock, $8 cost, and 20 agent turns"
       ],
       "correct": 3,
-      "explanation": "The migration plan breaks down the project into phases: library translation, syntax refactoring, type system adaptation, and test suite migration, with dependency tracking between phases."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "The agent automatically force-pushes a fix"
       ],
       "correct": 1,
-      "explanation": "The agent applies automated refactors (string replacement, AST transformations) followed by LLM-assisted semantic corrections for idiomatic language patterns."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "It satisfies a compliance checklist"
       ],
       "correct": 1,
-      "explanation": "Validation runs the test suite after each phase, with differential analysis to identify breaking changes and roll back failed migrations incrementally."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "ViDoRe v3"
       ],
       "correct": 0,
-      "explanation": "The capstone measures migration accuracy (percentage of code correctly translated), test pass rate (post-migration test suite success), and rollback frequency (number of phase reverts)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "The fraction of fixes handled by OpenRewrite versus authored by the agent layer"
       ],
       "correct": 3,
-      "explanation": "Complexity metrics include lines of code migrated, number of semantic errors requiring manual review, and total migration time across the project."
+      "explanation": ""
     }
   ]
 }

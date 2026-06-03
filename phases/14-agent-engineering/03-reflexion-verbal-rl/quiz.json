@@ -7,11 +7,11 @@
       "question": "What does Reflexion replace in standard reinforcement learning?",
       "options": [
         "Reward shaping with a constant reward",
-        "Policy networks with random search",
         "Gradient updates with natural-language reflections stored between trials",
+        "Policy networks with random search",
         "Episodic memory with parametric memory"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "Reflexion uses natural-language reflections in episodic memory instead of weight updates."
     },
     {
@@ -19,23 +19,23 @@
       "question": "What three components define a Reflexion system?",
       "options": [
         "Planner, Worker, Solver",
-        "Selector, Expander, Backpropagator",
+        "Actor, Evaluator, Self-Reflector",
         "Generator, Critic, Optimizer",
-        "Actor, Evaluator, Self-Reflector"
+        "Selector, Expander, Backpropagator"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Reflexion factors the agent into an Actor that runs trajectories, an Evaluator that scores them, and a Self-Reflector that writes lessons."
     },
     {
       "stage": "check",
       "question": "Which evaluator type uses an external binary signal like a unit test or a known correct answer?",
       "options": [
-        "Scalar",
         "Heuristic",
+        "Scalar",
         "Self-evaluated",
         "Vote-based"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "Scalar evaluators read pass/fail signals from ground truth (ALFWorld success, HumanEval tests)."
     },
     {
@@ -55,11 +55,11 @@
       "question": "Which case does the lesson list as a place where Reflexion does NOT help?",
       "options": [
         "Code generation where tests can score",
-        "ALFWorld navigation tasks",
         "An external transient failure like the network being down",
+        "ALFWorld navigation tasks",
         "HotpotQA multi-hop questions"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "Reflecting on a transient external outage produces a reflection that does not help future runs."
     },
     {
@@ -67,23 +67,23 @@
       "question": "What is memory rot in the Reflexion pattern?",
       "options": [
         "Losing reflections when the process restarts",
-        "The reflection prompt exceeds the context window",
+        "Episodic buffer fills with obsolete or wrong reflections and slows or biases future trials",
         "Reflections get encrypted by the provider",
-        "Episodic buffer fills with obsolete or wrong reflections and slows or biases future trials"
+        "The reflection prompt exceeds the context window"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Accumulated stale or wrong reflections degrade behavior; mitigate with compaction or TTL."
     },
     {
       "stage": "post",
       "question": "Which production pattern is the lesson's clearest match for Reflexion?",
       "options": [
-        "Claude Code's CLAUDE.md learnings prepended to future sessions",
         "Cursor's apply-edits flow",
+        "Claude Code's CLAUDE.md learnings prepended to future sessions",
         "OpenAI's batch API",
         "Anthropic's prompt caching"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "CLAUDE.md learnings, pro-workflow's learn-rule, and Letta's sleep-time compute all externalize the episodic reflection buffer."
     }
   ]

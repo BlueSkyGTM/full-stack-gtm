@@ -1,78 +1,39 @@
 {
-  "lesson": "16-vision-pipeline-capstone",
-  "title": "Build a Complete Vision Pipeline — Capstone",
   "questions": [
     {
       "stage": "pre",
       "question": "Why do production vision pipelines use Pydantic models (or equivalent) at every stage boundary?",
-      "options": [
-        "Pydantic is faster than dict access",
-        "It helps with GPU allocation",
-        "Pydantic is required by FastAPI",
-        "Typed schemas catch interface mismatches at the boundary; a detector returning (cx, cy, w, h) when the downstream expects (x1, y1, x2, y2) fails loudly with a validation error instead of silently producing empty crops"
-      ],
-      "correct": 3,
+      "options": ["Pydantic is faster than dict access", "Typed schemas catch interface mismatches at the boundary; a detector returning (cx, cy, w, h) when the downstream expects (x1, y1, x2, y2) fails loudly with a validation error instead of silently producing empty crops", "Pydantic is required by FastAPI", "It helps with GPU allocation"],
+      "correct": 1,
       "explanation": "Silent interface bugs are the defining pain of ML pipelines. Every boundary has a coordinate system, a channel order, a value range, and a shape. Validating at the boundary with Pydantic turns every mismatch into an immediate error. The cost is a few microseconds; the savings are hours of debugging."
     },
     {
-      "stage": "check",
-      "question": "The 7-stage pipeline (decode → preprocess → detect → crop → classify → aggregate → validate) labels which two stages as 'expensive'?",
-      "options": [
-        "Preprocessing and postprocessing (NMS, RLE) — both are CPU-bound",
-        "Aggregation and schema validation — they touch the most data",
-        "The detector (YOLO / Mask R-CNN) and the classifier (ConvNeXt-Tiny) — both are model inference stages; the five non-model stages are cheaper but are where interface bugs live",
-        "Preprocessing and the detector — preprocessing dominates on CPU"
-      ],
-      "correct": 2,
-      "explanation": "The doc explicitly marks the detector and classifier stages as expensive (filled nodes in the Mermaid diagram) because they run neural network forward passes. The remaining five stages — decode, crop, aggregate, validate, respond — are where the bugs live, but they are not the latency bottleneck on GPU."
-    },
-    {
-      "stage": "check",
-      "question": "The VisionPipeline.preprocess() method accepts a PIL Image or numpy HWC uint8 array. What does it return?",
-      "options": [
-        "A CHW float32 tensor normalised to [0, 1] and moved to the configured device — the standard format expected by torchvision detection models",
-        "A dict with 'image' and 'shape' keys compatible with Pydantic",
-        "A list of resized crops ready for the classifier",
-        "A PIL Image rescaled to the model's minimum input size"
-      ],
-      "correct": 0,
-      "explanation": "preprocess() converts to RGB via PIL, casts to float with torch.from_numpy, reorders channels from HWC to CHW with .permute(2,0,1), divides by 255.0, and moves the tensor to self.device. This matches what torchvision detection models expect as input."
-    },
-    {
-      "stage": "check",
-      "question": "The 'Where latency goes' section states three truths. Which correctly describes GPU postprocessing (NMS, RLE) vs CPU postprocessing?",
-      "options": [
-        "Postprocessing always dominates because it follows every forward pass",
-        "NMS and RLE encoding are cheap on GPU but expensive on CPU; always profile with the actual deployment target before optimising",
-        "Preprocessing dominates GPU time more than the detector forward pass",
-        "Postprocessing cost is negligible everywhere and can be ignored in benchmarks"
-      ],
+      "stage": "pre",
+      "question": "On a CPU-only vision pipeline, which stage is most often the biggest latency block?",
+      "options": ["The detector's final NMS", "Image preprocessing (JPEG decode, colour conversion, resize); it is CPU-bound and often dominates when no GPU is involved or when the GPU model is small", "Writing the JSON response", "Reading the HTTP request body"],
       "correct": 1,
-      "explanation": "The doc states postprocessing is 'cheap on GPU, expensive on CPU'. NMS is parallelisable and vectorisable on GPU but sequential on CPU. The lesson's benchmark function measures preprocess, detect, and classify stages separately so you can see the real distribution on your hardware before deciding what to optimise."
+      "explanation": "On CPU, preprocessing is frequently the biggest single cost. JPEG decode can take milliseconds, colour conversion more, resizing to model input another chunk. The rule is simple: profile before optimising. On GPU the detector typically dominates, but do not assume that on CPU."
     },
     {
       "stage": "post",
-      "question": "The pipeline classifier crashes when a detection has box size 3×4 pixels. What is the correct fix in VisionPipeline?",
-      "options": [
-        "Add a global try/except and return empty classifications",
-        "Set a min_crop threshold (e.g. 32 pixels) and skip classification for detections smaller than that; include the detection in the response without a classification entry so the output is complete and honest",
-        "Retrain the classifier on smaller images",
-        "Increase batch size to dilute the bad crop"
-      ],
+      "question": "The pipeline classifier crashes when a detection has box size 3x4 pixels. What is the correct fix?",
+      "options": ["Add a global try/except and return empty classifications", "Set a min_crop threshold (e.g. 16 or 32 pixels) and skip classification for detections smaller than that; log the skip and include the detection in the response without a classification field", "Retrain the classifier on smaller images", "Increase batch size"],
       "correct": 1,
-      "explanation": "The VisionPipeline constructor accepts min_crop (default 32). In run(), any crop with width or height below min_crop is skipped: it is excluded from crops[] and valid_indices[], so classify() never sees it. The detection is still added to detections[]; the caller gets a full result with a missing classification entry rather than a crash."
+      "explanation": "Tiny crops are a legitimate failure mode: the classifier was trained on 224x224 inputs and cannot reliably classify 3-pixel patches. A threshold (min_crop) skips those, preserves the detection, and produces a complete, honest response. Generic try/except hides the condition; returning no classification at all hides real failures; the right move is a named, logged skip."
     },
     {
       "stage": "post",
-      "question": "Your FastAPI endpoint returns a 500 error when a user uploads a corrupted JPEG. How should you fix it?",
-      "options": [
-        "Ignore it; the user will retry with the same file",
-        "Move image decoding inside the classifier to isolate failures",
-        "Always return 200 with an empty detections list",
-        "Catch image-decode failures early in preprocessing and return HTTP 400 with a specific error code like 'image_decode_failed' — 500 implies a server fault and triggers client retry with the same bad input, amplifying load"
-      ],
-      "correct": 3,
-      "explanation": "A 500 from bad user input is an API contract bug. 4xx signals 'client problem, don't retry with the same data'; 5xx signals 'server problem, retry.' The FastAPI service in the lesson catches Image.open failures and raises HTTPException(status_code=400). Named failure codes (image_decode_failed, unsupported_content_type) let clients react correctly and log precisely."
+      "question": "You add batching to the classifier (wait up to 10 ms, batch all pending crops, one GPU forward). What is the expected effect?",
+      "options": ["Latency strictly decreases", "Throughput increases significantly, per-request latency increases by up to the batching window (~10ms) plus a smaller amount from larger tensor ops; the right answer depends on whether the service is throughput-bound or latency-bound", "Throughput decreases because of the wait", "No effect"],
+      "correct": 1,
+      "explanation": "Batching is a throughput-latency trade. Each request waits up to the window, which adds latency. The batched forward pass is more efficient per image, so throughput scales with batch size. Use batching when QPS is high and individual latency has slack; avoid it when latency SLA is under 50ms."
+    },
+    {
+      "stage": "post",
+      "question": "Your pipeline response is a 500 error when a user uploads a corrupted JPEG. How should you fix it?",
+      "options": ["Ignore it; the user will retry", "Catch image-decode failures early in preprocessing, return a 400 with a specific error code like 'image_decode_failed' so the client can retry with a different file instead of a 500 that implies server error", "Always return 200 with an empty result", "Move decoding to the classifier"],
+      "correct": 1,
+      "explanation": "A 500 from corrupt user input is an API contract bug. Bad inputs should return 4xx so the client knows it is their problem; 5xx responses signal a server problem and trigger the client's retry logic with the same bad input, amplifying load. Named failure codes (image_decode_failed, image_too_large, unsupported_content_type) let clients react correctly."
     }
   ]
 }

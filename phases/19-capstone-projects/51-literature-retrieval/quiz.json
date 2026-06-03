@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the retrieval client run a BM25 pass and a citation graph pass?",
+      "options": [
+        "Because BM25 needs the graph to build its index",
+        "Because lexical hits miss foundational papers with different vocabulary, and graph hits miss papers that share no citation with the seed",
+        "Because the mock APIs require it",
+        "Because the parser fails otherwise"
+      ],
+      "correct": 1,
+      "explanation": "Each pass catches what the other misses. Lexical covers shared vocabulary; the graph covers ancestor and descendant papers regardless of vocabulary."
+    },
+    {
+      "stage": "pre",
       "question": "Why is the citation graph traversal capped at two hops?",
       "options": [
         "Because beyond two hops the result set tends to drift off topic and overwhelm downstream ranking",
@@ -13,6 +25,18 @@
       ],
       "correct": 0,
       "explanation": "Two hops is the practical ceiling. Three hops blows up the result set on a connected graph and rarely returns more on topic papers."
+    },
+    {
+      "stage": "check",
+      "question": "What does idf evaluate to for a term that appears in every document?",
+      "options": [
+        "A large positive value",
+        "A value near zero",
+        "Negative infinity",
+        "Undefined; the BM25 implementation skips it"
+      ],
+      "correct": 1,
+      "explanation": "When df equals N the numerator and denominator inside the log are close, and the +1 keeps the term non negative but small. The contribution of universally common terms is near zero."
     },
     {
       "stage": "check",
@@ -49,30 +73,6 @@
       ],
       "correct": 1,
       "explanation": "Index construction is the expensive step. Reusing the index amortises that cost across every query the client handles."
-    },
-    {
-      "stage": "post",
-      "question": "Why implement BM25 from scratch instead of using a library?",
-      "options": [
-        "To understand the scoring mechanics and avoid external dependencies in a research workflow",
-        "BM25 is not available in any Python library",
-        "Library implementations are always slower",
-        "BM25 cannot be implemented in Python"
-      ],
-      "correct": 0,
-      "explanation": "Building BM25 from scratch teaches the TF-IDF and document length normalization mechanics that underpin lexical retrieval. It also keeps the research system dependency-light, which is valuable for reproducibility and deployment flexibility."
-    },
-    {
-      "stage": "post",
-      "question": "How does citation graph traversal complement lexical BM25 retrieval?",
-      "options": [
-        "It finds related papers that BM25 misses by following citation and reference links up to 2 hops",
-        "It replaces BM25 entirely",
-        "It only retrieves the most recent papers",
-        "It speeds up the BM25 scoring"
-      ],
-      "correct": 0,
-      "explanation": "Lexical search (BM25) finds papers with matching keywords but misses semantically related work. Citation graph traversal exploits the scientific network: if Paper A cites Paper B, and Paper C cites Paper B, then A and C are likely related even without keyword overlap."
     }
   ]
 }

@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is the distributional hypothesis?",
+      "options": [
+        "You shall know a word by the company it keeps",
+        "Words are uniformly distributed across documents",
+        "All words can be embedded in 300 dimensions",
+        "Frequent words carry the most meaning"
+      ],
+      "correct": 0,
+      "explanation": "Firth's (1957) distributional hypothesis: similar contexts imply similar meanings."
+    },
+    {
+      "stage": "pre",
       "question": "Why is plain softmax over the vocabulary impractical in Word2Vec?",
       "options": [
         "Computing softmax over 100k+ vocabulary terms is prohibitively expensive per training step",
@@ -28,7 +40,7 @@
     },
     {
       "stage": "check",
-      "question": "In train_pair with negative sampling, what is the objective for the positive pair (center, context)?",
+      "question": "In negative sampling, what is the objective for the positive pair (center, context)?",
       "options": [
         "Maximize sigmoid(W[center] dot W'[context]) so it is close to 1",
         "Force them to be orthogonal",
@@ -36,7 +48,7 @@
         "Decorrelate the vectors"
       ],
       "correct": 0,
-      "explanation": "train_pair pushes positive pairs toward sigmoid 1 and sampled negatives toward sigmoid 0 via the same dot-product score."
+      "explanation": "Positive pairs train sigmoid near 1; sampled negatives train sigmoid near 0."
     },
     {
       "stage": "check",
@@ -61,6 +73,18 @@
       ],
       "correct": 3,
       "explanation": "Static embeddings cannot disambiguate senses; contextual embeddings (ELMo/BERT) fix this."
+    },
+    {
+      "stage": "post",
+      "question": "When would you still reach for Word2Vec over a transformer in 2026?",
+      "options": [
+        "Lightweight, on-device, domain-specific retrieval where a single row lookup is the latency budget",
+        "When you need contextual disambiguation",
+        "When inputs are very long",
+        "When dialog quality matters"
+      ],
+      "correct": 0,
+      "explanation": "Word2Vec wins on tiny latency budgets, on-device inference, or fast domain-specific training."
     },
     {
       "stage": "post",

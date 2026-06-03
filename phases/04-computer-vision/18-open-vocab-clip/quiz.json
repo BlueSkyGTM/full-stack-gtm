@@ -1,78 +1,39 @@
 {
-  "lesson": "18-open-vocab-clip",
-  "title": "Open-Vocabulary Vision — CLIP",
   "questions": [
     {
       "stage": "pre",
-      "question": "Zero-shot classification with CLIP requires no task-specific training. How does it work at inference?",
-      "options": [
-        "Run a classifier head trained on ImageNet and remap class indices",
-        "Fine-tune the image encoder on a single labelled example per class",
-        "Encode a natural-language prompt like 'a photo of a {class}' for each candidate class, encode the test image, take argmax of cosine similarities between the image embedding and all class text embeddings",
-        "Search a database of labelled prototype images using nearest-neighbour lookup"
-      ],
-      "correct": 2,
-      "explanation": "Zero-shot means no task-specific training: encode one prompt per class, encode the query image, argmax over cosine similarities. The only tuning lever is prompt engineering — using multiple templates per class and averaging their embeddings typically gains 1–3 top-1 points on ImageNet, as the OpenAI CLIP paper showed with 80 templates."
-    },
-    {
-      "stage": "check",
-      "question": "CLIP's training objective builds an N×N similarity matrix from a batch of N (image, caption) pairs. What is the target for the diagonal vs off-diagonal entries?",
-      "options": [
-        "The diagonal (matching pairs) should have high similarity and off-diagonal (non-matching) should have low similarity; the symmetric cross-entropy loss trains both encoders to achieve this simultaneously for image-to-text and text-to-image retrieval",
-        "All entries should converge to the same value for a well-calibrated model",
-        "The diagonal should be zero for numerical stability during early training",
-        "Only the first row and column are optimisation targets; the rest are regularisation"
-      ],
-      "correct": 0,
-      "explanation": "The NxN matrix has N correct (i, i) pairs on the diagonal and N²-N incorrect (i, j≠i) pairs off-diagonal. The symmetric loss treats the diagonal row as the positive class for both loss_i2t (classify columns) and loss_t2i (classify rows). This directly trains both retrieval directions to be correct."
-    },
-    {
-      "stage": "check",
-      "question": "In the TwoTower model, logit_scale is initialised as nn.Parameter(torch.ones([]) * 2.6592). Why that specific value?",
-      "options": [
-        "It is the default PyTorch parameter initialisation for scalar parameters",
-        "It ensures gradient stability by keeping the scale parameter greater than 1.0",
-        "It matches the CLIP paper's reported learning rate schedule",
-        "ln(1/0.07) ≈ 2.6592, so logit_scale.exp() starts at 1/0.07 ≈ 14.3 — the CLIP default temperature tau=0.07 expressed as a learned inverse-temperature that the optimiser can adjust during training"
-      ],
-      "correct": 3,
-      "explanation": "CLIP makes tau a learned parameter (logit_scale = 1/tau). Initialising at ln(1/0.07) means the model starts at the manually-tuned temperature from the original paper. Because it is a nn.Parameter, the optimiser can raise or lower it. The paper clips logit_scale.exp() at 100 to prevent collapse to zero temperature."
-    },
-    {
-      "stage": "check",
-      "question": "In the zero_shot_classify function, after computing sim = i @ t.T, what produces the final class prediction?",
-      "options": [
-        "Apply softmax to sim and sample from the resulting distribution",
-        "Take sim.argmax(dim=-1) to get the index of the most similar class text embedding, then look up the name in class_names",
-        "Run beam search over the text encoder conditioned on the top-5 similarity scores",
-        "Compute L2 distance between image and text embeddings and return the argmin"
-      ],
+      "question": "CLIP's contrastive loss is symmetric (image-to-text + text-to-image). Why both directions?",
+      "options": ["Numerical stability", "You want both queries to work at inference: text-to-image retrieval and image-to-text retrieval. Training only one direction makes the other direction's accuracy drop significantly", "Because loss must sum to zero", "Symmetry is required by PyTorch"],
       "correct": 1,
-      "explanation": "zero_shot_classify computes the cosine similarity between the image embedding and all class text embeddings in one matrix multiply. argmax on dim=-1 picks the class with the highest similarity for each query image, then indexes into class_names. No softmax is needed because we only want the argmax, not calibrated probabilities."
+      "explanation": "The embedding space needs to be symmetric across modalities because downstream tasks query in both directions. Zero-shot classification is text-to-image (classify image given text prompts). Retrieval can go either way. Training with only i2t or only t2i leaves the other direction weak."
+    },
+    {
+      "stage": "pre",
+      "question": "Zero-shot classification with CLIP works by... ?",
+      "options": ["Running a classifier head trained on ImageNet", "Encoding prompts like 'a photo of a dog' for each candidate class, encoding the test image, and taking argmax of cosine similarities between the image embedding and all class text embeddings", "Fine-tuning the image encoder on the class", "Searching a database of labelled examples"],
+      "correct": 1,
+      "explanation": "Zero-shot means no task-specific training: the model's representations already let you compare images to arbitrary text descriptions. Write one prompt per class, encode all prompts and the test image, cosine similarity, argmax. The only 'trick' is prompt engineering — using multiple templates per class and averaging their embeddings gains 1-3 top-1 on ImageNet."
     },
     {
       "stage": "post",
-      "question": "SigLIP replaces CLIP's softmax with a per-pair sigmoid loss. What practical benefit does this give?",
-      "options": [
-        "Faster GPU kernels that reduce wall-clock training time by 3×",
-        "Better accuracy specifically on the COCO object detection benchmark",
-        "Lower peak GPU memory because the NxN matrix is never materialised",
-        "The sigmoid loss is per-pair and needs no batch-level normalisation denominator, so SigLIP trains well at small batch sizes where CLIP's softmax starves for negatives"
-      ],
-      "correct": 3,
-      "explanation": "CLIP's symmetric cross-entropy is a softmax over the full batch: effective negatives = batch_size − 1. At batch 128, that is only 127 negatives. SigLIP treats each (image, caption) pair as a binary classification — match or not — with no dependence on other pairs in the batch. This decoupling lets SigLIP match CLIP quality at 10–100× smaller batch sizes."
+      "question": "SigLIP replaces CLIP's softmax with a sigmoid loss per pair. What benefit does that give?",
+      "options": ["Faster GPU kernels", "The sigmoid loss is per-pair, so it does not depend on the batch as a normalisation denominator. SigLIP trains well at smaller batch sizes where CLIP's softmax loss starves for negatives", "Lower memory use", "Better accuracy on COCO only"],
+      "correct": 1,
+      "explanation": "CLIP's symmetric cross-entropy is a softmax over the whole batch, so effective negatives = batch_size - 1. Small batches starve it. SigLIP is per-pair: each (image, caption) pair gets a binary decision (match or not). No batch-level normalisation, so SigLIP works at batch 128 while CLIP needs 8192. At equal scale SigLIP matches or beats CLIP."
     },
     {
       "stage": "post",
-      "question": "A practitioner reports 88% zero-shot top-1 on CIFAR-10 with one template and 90% with 80 templates per class. Why does template averaging help?",
-      "options": [
-        "Different templates activate different aspects of the text encoder's learned distribution; averaging smooths the class embedding over the manifold of plausible natural-language descriptions, producing a more robust centroid that is less sensitive to individual-prompt quirks",
-        "Averaging 80 templates effectively doubles the training dataset seen by the model",
-        "It reduces variance in logit_scale because the text encoder sees more inputs",
-        "80 is the magic number discovered by the CLIP paper; fewer or more templates degrade performance"
-      ],
-      "correct": 0,
-      "explanation": "'A photo of a dog' emphasises one visual context; 'a blurry photo of a dog' another; 'a sketch of a dog' yet another. Averaging text embeddings over templates gives a smoother, more central representation of the concept that handles diverse test-image styles. The CLIP paper published 80 per-class templates that lift ImageNet zero-shot accuracy by ~2 points over a single template."
+      "question": "A practitioner reports 88% zero-shot top-1 on CIFAR-10 with CLIP ViT-B/32 and 90% with the same model using 80 prompt templates per class. Why does template averaging help?",
+      "options": ["It doubles the dataset", "Different templates activate different aspects of the text encoder's learned distribution; averaging smooths the class embedding over the manifold of plausible natural-language descriptions of the class, producing a more robust centroid", "It reduces variance in logit_scale", "80 is the magic number for CLIP"],
+      "correct": 1,
+      "explanation": "Each template is a different natural-language cue. 'a photo of a dog' emphasises one aspect; 'a blurry photo of a dog' another; 'a sketch of a dog' yet another. Averaging the text embeddings gives a smoother representation of the concept 'dog' that is less sensitive to individual-prompt quirks. The OpenAI CLIP paper published 80 templates that lift ImageNet zero-shot by ~2 points."
+    },
+    {
+      "stage": "post",
+      "question": "Why do modern VLMs (LLaVA, Qwen-VL, InternVL) use a CLIP-family vision encoder instead of a supervised ImageNet ResNet?",
+      "options": ["CLIP encoders are faster", "CLIP features are aligned with natural language, so the LLM can reason about them with less adaptation; supervised ImageNet features were never trained against captions and need heavy projection layers to bridge to text", "ResNets cannot see colour", "It is a licensing requirement"],
+      "correct": 1,
+      "explanation": "A VLM bolts a vision encoder to a language model and trains a small projection. CLIP-style encoders were trained against text, so their outputs already live in a space the LLM can consume with a few linear layers of adaptation. Supervised ImageNet encoders have no notion of natural-language structure and require much larger bridging MLPs to work with an LLM. This is why every SOTA VLM uses a CLIP-family vision tower."
     }
   ]
 }

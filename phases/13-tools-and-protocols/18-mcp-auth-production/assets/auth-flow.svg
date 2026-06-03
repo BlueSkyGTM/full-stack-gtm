@@ -8,7 +8,7 @@
       .cool { fill: #e6f4ea; stroke: #2e7d32; stroke-width: 1.5; }
       .cold { fill: #dfe9ff; stroke: #2c5ea9; stroke-width: 1.5; }
       .hot  { fill: #fff1d6; stroke: #c0392b; stroke-width: 1.5; }
-      .iii  { fill: #fff7c2; stroke: #8a6d00; stroke-width: 1.5; stroke-dasharray: 4 2; }
+      .aux  { fill: #fff7c2; stroke: #8a6d00; stroke-width: 1.5; stroke-dasharray: 4 2; }
       .title { font-size: 17px; font-weight: 700; fill: #1a1a1a; }
       .head  { font-size: 13px; font-weight: 700; fill: #1a1a1a; }
       .label { font-size: 12px; fill: #1a1a1a; font-weight: 600; }
@@ -20,7 +20,7 @@
     </style>
   </defs>
 
-  <text x="480" y="28" text-anchor="middle" class="title">MCP auth in production on iii primitives — DCR + JWKS rotation + audience pinning</text>
+  <text x="480" y="28" text-anchor="middle" class="title">MCP auth in production — enrollment + JWKS refresh + audience pinning</text>
   <text x="480" y="48" text-anchor="middle" class="caption">RFC 8414 metadata · RFC 7591 DCR · RFC 7636 PKCE · RFC 8707 resource · RFC 9728 protected resource · MCP 2025-11-25</text>
 
   <rect x="30"  y="80" width="180" height="500" class="cool"/>
@@ -57,21 +57,21 @@
   <text x="766" y="248" class="small">- 401/403 with</text>
   <text x="766" y="264" class="small">  WWW-Authenticate</text>
 
-  <rect x="220" y="380" width="160" height="170" class="iii"/>
-  <text x="300" y="402" text-anchor="middle" class="head">iii primitives</text>
-  <text x="232" y="424" class="small">registerTrigger("http",</text>
-  <text x="232" y="438" class="small">  /.well-known/asm)</text>
-  <text x="232" y="452" class="small">registerTrigger("http",</text>
-  <text x="232" y="466" class="small">  /register)</text>
-  <text x="232" y="480" class="small">registerTrigger("cron",</text>
-  <text x="232" y="494" class="small">  "0 */6 * * *")</text>
-  <text x="232" y="510" class="small">registerFunction(</text>
-  <text x="232" y="524" class="small">  auth::validate-jwt)</text>
-  <text x="232" y="538" class="small">state::set("auth/jwks/...")</text>
+  <rect x="220" y="380" width="160" height="170" class="aux"/>
+  <text x="300" y="402" text-anchor="middle" class="head">resource server logic</text>
+  <text x="232" y="424" class="small">GET /.well-known/</text>
+  <text x="232" y="438" class="small">  oauth-protected-resource</text>
+  <text x="232" y="452" class="small">POST /mcp</text>
+  <text x="232" y="466" class="small">  (validate, then dispatch)</text>
+  <text x="232" y="480" class="small">scheduled refresh_jwks</text>
+  <text x="232" y="494" class="small">  "0 */6 * * *"</text>
+  <text x="232" y="510" class="small">validate(token,</text>
+  <text x="232" y="524" class="small">  required_scope)</text>
+  <text x="232" y="538" class="small">cache[iss] = {keys, ...}</text>
 
-  <rect x="580" y="380" width="160" height="170" class="iii"/>
-  <text x="660" y="402" text-anchor="middle" class="head">iii state</text>
-  <text x="592" y="424" class="small">key: auth/jwks/&lt;iss&gt;</text>
+  <rect x="580" y="380" width="160" height="170" class="aux"/>
+  <text x="660" y="402" text-anchor="middle" class="head">JWKS cache</text>
+  <text x="592" y="424" class="small">key: &lt;iss&gt;</text>
   <text x="592" y="442" class="small">value: {</text>
   <text x="592" y="456" class="small">  keys: [</text>
   <text x="592" y="470" class="small">    {kid: k_2026_03},</text>
@@ -103,7 +103,7 @@
 
   <path d="M210,608 L750,608" class="edge" marker-end="url(#arrow)" transform="translate(0,-40)"/>
   <text x="480" y="562" text-anchor="middle" class="small">Authorization: Bearer eyJ... (call tool)</text>
-  <text x="480" y="582" text-anchor="middle" class="caption">(4) MCP request — server triggers iii function auth::validate-jwt</text>
+  <text x="480" y="582" text-anchor="middle" class="caption">(4) MCP request — server runs validate before dispatch</text>
 
   <path d="M570,470 L580,470" class="edge-cron" marker-end="url(#arrow)"/>
   <text x="575" y="462" text-anchor="middle" class="caption">cron writes</text>

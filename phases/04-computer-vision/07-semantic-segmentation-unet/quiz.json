@@ -1,78 +1,39 @@
 {
-  "lesson": "07-semantic-segmentation-unet",
-  "title": "Semantic Segmentation — U-Net",
   "questions": [
     {
       "stage": "pre",
       "question": "Why does U-Net need skip connections between the encoder and decoder?",
-      "options": [
-        "The encoder compresses spatial detail to gain context; the decoder cannot reconstruct sharp boundaries without access to the encoder's high-resolution feature maps, and skip connections supply exactly that",
-        "To speed up training by sharing gradients",
-        "Because transposed convolutions require extra inputs to function",
-        "To match PyTorch's expected tensor shape conventions"
-      ],
-      "correct": 0,
-      "explanation": "Without skip connections, a U-Net decoder produces H×W predictions from a very low-resolution bottleneck, which cannot resolve crisp edges. Skip connections splice the encoder's high-resolution, low-semantic features into the decoder's low-resolution, high-semantic features so both context and spatial detail are available at every output stage."
-    },
-    {
-      "stage": "check",
-      "question": "The Dice score is `2 * |p ∩ y| / (|p| + |y|)`. A predicted mask has 80 positive pixels, the ground-truth has 100, and their overlap is 60 pixels. What is the Dice score?",
-      "options": [
-        "0.50 — overlap divided by the larger mask",
-        "0.60 — overlap divided by ground-truth size (recall only)",
-        "0.67 — 2×60 / (80 + 100) = 120 / 180",
-        "0.75 — overlap divided by the predicted-mask size"
-      ],
-      "correct": 2,
-      "explanation": "Dice = 2 × intersection / (|pred| + |gt|) = 2 × 60 / (80 + 100) = 120 / 180 ≈ 0.667. Unlike plain recall (60/100) or precision (60/80), Dice is symmetric in pred and gt and is scale-free with respect to class imbalance, which is why it is the preferred mask-quality metric in medical imaging and industrial segmentation."
-    },
-    {
-      "stage": "check",
-      "question": "In `Up.forward`, the skip and upsampled feature maps are combined with `torch.cat([skip, x], dim=1)`. What would break if you concatenated along `dim=2` (spatial height) instead?",
-      "options": [
-        "No change — the DoubleConv following the cat is agnostic to which dimension grew",
-        "The channel count fed into DoubleConv would be unchanged, so it could not fuse the skip and decoder features; the spatial height would unexpectedly double, producing an incorrectly shaped feature map throughout the rest of the decoder",
-        "Memory usage would halve because fewer channels are allocated",
-        "PyTorch would broadcast the tensors automatically to match shapes"
-      ],
+      "options": ["To speed up training", "The encoder compresses spatial detail to gain context; the decoder cannot reconstruct sharp boundaries without access to the encoder's high-resolution feature maps, and skips supply exactly that", "Because transposed convolutions require extra inputs", "To match PyTorch shape conventions"],
       "correct": 1,
-      "explanation": "U-Net fuses features by channel concatenation: each Up block expects (encoder_channels + decoder_channels) input channels for DoubleConv. Concatenating on the spatial axis leaves channel count unchanged while doubling height, so every subsequent 3×3 conv processes a misshapen tensor and the network cannot learn to merge context and detail."
+      "explanation": "Without skips, a U-Net's decoder is producing H x W predictions from a very low-resolution bottleneck, which cannot resolve crisp edges. Skip connections splice the encoder's high-resolution, low-semantic features into the decoder's low-resolution, high-semantic features so both context and detail are available at every output stage."
     },
     {
-      "stage": "check",
-      "question": "In `iou_per_class`, classes absent from a batch return `float('nan')` rather than `0.0`. Why does this choice matter for computing mean IoU?",
-      "options": [
-        "NaN triggers a gradient skip that prevents unused classes from accumulating zero gradients",
-        "PyTorch's tensor API does not support 0.0 in integer class index tensors",
-        "Returning 0 causes an overflow in the batch normalisation running statistics",
-        "Treating an absent class as IoU=0 would artificially lower mIoU by penalising the model for a class that simply did not appear in that batch; NaN lets callers skip absent classes with nanmean, giving an honest average over evaluated classes only"
-      ],
-      "correct": 3,
-      "explanation": "If class 5 has no pixels in a batch, both intersection and union are zero and IoU = 0/0 is undefined. It should not count toward the mean. Returning NaN and averaging with torch.nanmean gives the correct aggregate over represented classes. Returning 0 silently drags mIoU down whenever class distribution varies across batches — a common source of misleadingly low validation metrics."
+      "stage": "pre",
+      "question": "A segmentation task has 99% background pixels and 1% tumour pixels. You train with plain cross-entropy and reach 99% pixel accuracy. What happened?",
+      "options": ["The model converged", "The model learned to predict background for every pixel; pixel accuracy is dominated by the majority class and ignores the class you actually care about", "The loss function was implemented incorrectly", "The optimizer failed"],
+      "correct": 1,
+      "explanation": "Pixel accuracy on an imbalanced dataset is a useless metric. The network collects the easy 99% by always predicting background and produces empty tumour masks. The fix: combine cross-entropy with Dice loss (overlap-based, scale-free) and report IoU/Dice per foreground class."
     },
     {
       "stage": "post",
-      "question": "You swap U-Net's bilinear upsample + 3×3 conv for a ConvTranspose2d with kernel_size=2, stride=2 and observe checkerboard artifacts in the output. Why?",
-      "options": [
-        "Transposed convolution is broken in PyTorch when padding is zero",
-        "Batch normalisation must be added before transposed conv to prevent artifacts",
-        "The learning rate was too low for the transposed conv weights to initialise properly",
-        "When kernel_size is not an integer multiple of stride, output pixels receive unequal contributions from input pixels, producing a periodic magnitude pattern that looks like a checkerboard"
-      ],
-      "correct": 3,
-      "explanation": "Checkerboard artifacts arise from uneven overlap in the transposed convolution's receptive field across output positions. Using kernel_size = stride × n (e.g. kernel 4, stride 2) distributes contributions evenly and eliminates the artifacts. Bilinear upsample + conv is the modern default precisely because it produces smooth gradients with no periodic artifacts."
+      "question": "Which task type separates individual cars of the same class from each other?",
+      "options": ["Semantic segmentation", "Instance segmentation", "Both produce the same output", "Neither — that requires a detection model instead"],
+      "correct": 1,
+      "explanation": "Semantic segmentation labels every pixel with a class but merges touching instances of the same class into one blob. Instance segmentation keeps instance IDs, so each car, each person, each apple is a separate predicted mask. Panoptic segmentation unifies both: semantic labels for stuff, instance IDs for things."
+    },
+    {
+      "stage": "post",
+      "question": "You swap U-Net's bilinear upsample + 3x3 conv for a ConvTranspose2d with kernel_size=2, stride=2 and see checkerboard artifacts in the output. Why?",
+      "options": ["Transposed conv is broken in PyTorch", "When kernel_size is not evenly divisible by stride, output pixels receive unequal contributions from input pixels, producing a periodic pattern in the output that looks like a checkerboard", "The learning rate was too low", "Batch norm has to be added before transposed conv"],
+      "correct": 1,
+      "explanation": "Checkerboard artifacts come from uneven overlap of the transposed convolution's receptive field across output positions. Using kernel_size = stride * n (e.g. kernel 4, stride 2) or replacing transposed conv with bilinear upsample + conv eliminates the artifacts. The modern default is bilinear + conv for this reason."
     },
     {
       "stage": "post",
       "question": "You report mIoU = 0.78 on a 10-class segmentation task. Why should you also publish per-class IoU?",
-      "options": [
-        "Mean IoU hides individual class failures; a mIoU of 0.78 is consistent with eight classes at 0.9 and two at 0.3, which is a very different deployment story than all classes near 0.78",
-        "Per-class IoU is required by the PyTorch segmentation API",
-        "Per-class IoU is always numerically higher than mIoU",
-        "It is only relevant for medical imaging where class counts are small"
-      ],
-      "correct": 0,
-      "explanation": "An aggregate mean compresses the distribution of per-class scores, hiding exactly the information needed to decide whether the model is deployable. Two weak classes in an otherwise strong model may make the system unusable for the intended task. A flat per-class profile means the model needs a uniform data upgrade. Always publish per-class metrics alongside the mean."
+      "options": ["Per-class IoU is required by PyTorch", "Mean IoU hides individual class failures; a mIoU of 0.78 is consistent with eight classes at 0.9 and two at 0.3, which is a very different deployment story than all classes near 0.78", "Per-class IoU is always higher than mIoU", "It is only needed for medical imaging"],
+      "correct": 1,
+      "explanation": "An aggregate mean compresses the distribution of per-class scores, which is exactly what the reader needs to decide whether the model is ready to ship. Two weak classes in an otherwise strong model may make the system unusable for the intended task; a flat profile means the model needs a uniform data upgrade. Always publish per-class metrics alongside the mean."
     }
   ]
 }

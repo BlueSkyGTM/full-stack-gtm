@@ -1,78 +1,39 @@
 {
-  "lesson": "23-diffusion-transformers-rectified-flow",
-  "title": "Diffusion Transformers & Rectified Flow",
   "questions": [
     {
       "stage": "pre",
       "question": "Why did 2024+ SOTA text-to-image models (SD3, FLUX, Z-Image) replace the U-Net denoiser with a Diffusion Transformer (DiT)?",
-      "options": [
-        "Transformers are easier to write than U-Nets",
-        "DiT has fewer parameters, making training cheaper",
-        "U-Net is no longer supported on modern GPUs",
-        "DiT scales more predictably (same regime as LLMs), handles long-range spatial dependencies better for prompt-accurate generation, and integrates naturally with transformer text encoders via joint or cross-attention"
-      ],
-      "correct": 3,
-      "explanation": "DiT treats diffusion as a sequence-modelling task. It scales like language models, avoids the fixed convolutional inductive bias that can bottleneck long-range structure, and integrates cleanly with transformer text encoders. Every 2026 SOTA model — SD3, FLUX.1, FLUX.2, SD4, Z-Image, Qwen-Image — is a DiT. U-Net DDPM is now primarily pedagogical."
-    },
-    {
-      "stage": "check",
-      "question": "Rectified flow defines the forward interpolation as `x_t = (1 - t) * x_0 + t * epsilon` (t in [0,1]). What target does the model learn to predict, and why?",
-      "options": [
-        "The clean image x_0 directly, so sampling is a single step",
-        "The noise epsilon, identical to DDPM",
-        "The velocity v = epsilon - x_0, which is dx_t/dt — the direction of the straight-line path from data to noise; integrating this backward produces clean samples and the near-straight ODE needs far fewer steps",
-        "The timestep t itself, used to schedule the noise level"
-      ],
-      "correct": 2,
-      "explanation": "The velocity target v = epsilon - x_0 is the derivative of x_t with respect to t. Predicting v means the model estimates the direction along the straight-line interpolation. During sampling, an Euler integrator steps backward: x = x - dt * v(x, t). Because the learned ODE is approximately straight (unlike DDPM's curved SDE), 20 Euler steps produce samples that required 1000 steps in DDPM."
-    },
-    {
-      "stage": "check",
-      "question": "In `rectified_flow_train_step`, `target_velocity = epsilon - x0` and `pred_velocity = model(x_t, t)`. How does this training objective differ from a DDPM noise-prediction step?",
-      "options": [
-        "DDPM also predicts epsilon - x0; they are the same objective under different names",
-        "DDPM predicts the noise epsilon using a cosine beta schedule over discrete steps, while rectified flow predicts the velocity epsilon - x0 along a linear interpolation — a simpler loss on a straighter ODE trajectory",
-        "Rectified flow predicts x0 directly; DDPM predicts the velocity",
-        "DDPM does not use MSE; it uses a KL divergence loss instead"
-      ],
+      "options": ["Transformers are easier to write", "DiT scales more predictably than U-Net (same scaling-law regime as LLMs), handles long-range spatial dependencies better for prompt-accurate generation, and pairs naturally with text encoders via cross or joint attention", "U-Net is not supported on GPUs anymore", "DiT has fewer parameters"],
       "correct": 1,
-      "explanation": "DDPM defines x_t by adding schedule noise and trains the model to predict that noise epsilon. Rectified flow defines x_t as a linear interpolation and the target is the velocity v = epsilon - x_0. Both use MSE loss. The difference is the trajectory: DDPM's reverse is a curved SDE requiring many small steps; rectified flow's near-straight ODE allows Euler integration in 20 steps with comparable quality."
+      "explanation": "DiT treats diffusion as just another sequence-modelling task. It scales like language models, avoids the fixed inductive bias of convolutions that can bottleneck long-range structure, and integrates cleanly with transformer text encoders. Every 2026 SOTA model — SD3, FLUX.1, FLUX.2, SD4, Z-Image, Qwen-Image — is a DiT."
     },
     {
-      "stage": "check",
-      "question": "MMDiT (SD3) uses separate weight streams for text and image tokens that share one joint attention layer. Which architecture described in this lesson extends that design with alternating double-stream then single-stream blocks for efficiency?",
-      "options": [
-        "FLUX (Black Forest Labs 2024) — first N blocks keep separate text and image streams (double-stream, like MMDiT), then later blocks concatenate and share weights (single-stream), reducing parameters at depth while retaining per-modality encoding early",
-        "DiT (Peebles & Xie 2023) — plain ViT-style with AdaLN conditioning only",
-        "Z-Image — a fully single-stream design at 6B parameters",
-        "AdaLN-Zero — the zero-init conditioning module, not an architecture variant"
-      ],
-      "correct": 0,
-      "explanation": "FLUX's insight is that deep processing is cheaper with shared weights. The first N blocks maintain separate text and image streams (richer per-modality encoding, like MMDiT) while later blocks concatenate the streams and use shared weights for efficiency at higher depth. This double-then-single pattern gives FLUX its characteristic architecture and distinguishes it from both plain DiT and MMDiT."
+      "stage": "pre",
+      "question": "Rectified flow trains the model to predict velocity `v = epsilon - x_0` along a straight-line interpolation between data and noise. Why does this enable 20-step sampling instead of 1000?",
+      "options": ["It does not; rectified flow also needs 1000 steps", "The learned ODE is closer to a straight line than DDPM's curved SDE, so few-step Euler integration produces accurate samples; combined with distillation you get 1-4 step variants like FLUX schnell", "Euler is strictly better than DDIM", "It requires a bigger model"],
+      "correct": 1,
+      "explanation": "DDPM's reverse process is a stochastic curved path that needs many small steps. Rectified flow defines a straight-line interpolation; the learned velocity is approximately constant along the trajectory. Integrating a near-straight ODE takes few steps. SD3 and FLUX sample at 20-30 steps full quality; schnell/turbo/LCM distil this further to 1-4 steps."
     },
     {
       "stage": "post",
-      "question": "What does AdaLN-Zero mean in a DiT block, and why does the zero initialisation help training?",
-      "options": [
-        "A LayerNorm with epsilon set to zero, preventing division by zero",
-        "A LayerNorm applied only to 50% of tokens during training",
-        "Adaptive LayerNorm whose modulation MLP is initialised to zero so the block starts as an identity mapping; training then gradually learns the scale, shift, and gate, which stabilises very deep diffusion transformers at the start of training",
-        "A LayerNorm with zero mean forcing — equivalent to centering the activations"
-      ],
-      "correct": 2,
-      "explanation": "AdaLN predicts scale, shift, and gate from the conditioning vector (timestep + text embedding). 'Zero' means the MLP is initialised to all zeros, so gate starts at 0 and the entire block acts as identity. Gradients slowly move the modulation away from zero, preventing the deep stack from diverging early in training. It is the DiT-equivalent of ResNet's residual zero-init and is used in every modern diffusion transformer."
+      "question": "MMDiT (SD3) uses two sets of weights, one for text tokens and one for image tokens, that share a single joint attention layer. Why?",
+      "options": ["To save memory", "Text and image embeddings are conceptually different distributions; separate weights let each modality process its own representation while the joint attention lets them interact; the result is better text-image alignment and prompt following than a single shared stream", "It is a legacy design", "Only image tokens actually go through the attention"],
+      "correct": 1,
+      "explanation": "Stable Diffusion 3's MMDiT keeps per-modality weight streams to preserve the different statistics of text and image tokens while a joint self-attention layer lets them fuse. This is structurally more expressive than concatenate-and-share (which SD1/2 used), and empirically lifts prompt adherence and text rendering. FLUX extends this to alternating double-stream / single-stream blocks for efficiency."
     },
     {
       "stage": "post",
-      "question": "FLUX.1-schnell produces an image in 4 steps. Which technique enables this, and how does it relate to FLUX.1-dev?",
-      "options": [
-        "Schnell uses a different base architecture than dev — fewer transformer blocks",
-        "Schnell uses smaller image patches, reducing token count",
-        "Schnell runs in 4-bit precision; dev runs in bfloat16",
-        "Distillation — schnell is trained from the 12B FLUX.1-dev teacher using adversarial/consistency-style objectives so that 1-4 denoising steps match the teacher's 20-30 step output; same architecture and parameter count as dev"
-      ],
-      "correct": 3,
-      "explanation": "Schnell / Turbo / LCM variants use step distillation. A student (same architecture as the teacher) learns to match the slow many-step teacher's output in 1-4 steps. FLUX.1-dev and FLUX.1-schnell are both 12B parameters with identical architecture — distillation is what makes sub-1-second inference practical. This same idea underlies SDXL Turbo, SD Turbo, and Latent Consistency Models."
+      "question": "What does AdaLN-Zero mean in a DiT block, and why does it help?",
+      "options": ["A layer norm with zero epsilon", "Adaptive LayerNorm whose modulation MLP is initialised to zero so the block starts as identity; training then learns the scale/shift/gate, which stabilises very deep diffusion transformers", "A LayerNorm that is only applied 50% of the time", "A LayerNorm with zero mean"],
+      "correct": 1,
+      "explanation": "AdaLN predicts scale, shift, and gate from the conditioning vector. 'Zero' means the MLP is initialised to zero, so the gate starts at 0 and the block acts as identity. Gradients slowly nudge the modulation away from zero, which prevents the deep stack from diverging early in training. It is the DiT-equivalent of ResNet's residual zero-init and is used in every modern diffusion transformer."
+    },
+    {
+      "stage": "post",
+      "question": "FLUX.1-schnell can produce an image in 4 steps. Which technique lets it do that?",
+      "options": ["A different base architecture than FLUX.1-dev", "Distillation — schnell is trained from a slow many-step teacher using adversarial / consistency-style objectives so that 1-4 denoising steps match the teacher's 20-30 step output", "Lower precision weights", "Smaller parameter count"],
+      "correct": 1,
+      "explanation": "Schnell / Turbo / LCM variants use step distillation. A small-step student learns to match the many-step teacher's output. The base architecture and parameter count are often identical (FLUX.1-dev and schnell are both 12B). Distillation is what makes sub-1-second inference practical. This is the same idea as SDXL Turbo, SD Turbo, and Latent Consistency Models."
     }
   ]
 }

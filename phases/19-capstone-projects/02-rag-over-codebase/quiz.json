@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why is naive cosine search over raw chunks insufficient for cross-repo code retrieval?",
+      "options": [
+        "It poisons results on generated code, monorepo duplication, and rarely imported symbols",
+        "Cosine similarity is undefined on code embeddings",
+        "Vector indexes cannot store payloads larger than 1KB",
+        "Embedding models do not see code as tokens"
+      ],
+      "correct": 0,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "What does AST-aware chunking mean in the ingestion pipeline?",
       "options": [
         "Compressing chunks with gzip before storage",
@@ -12,7 +24,7 @@
         "Splitting code into fixed 256-token windows"
       ],
       "correct": 2,
-      "explanation": "AST-aware chunking parses each file with tree-sitter and extracts function and class nodes, cutting code at node boundaries rather than fixed token windows to preserve semantic units."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Dense embedding, BM25 terms, and a natural-language summary"
       ],
       "correct": 3,
-      "explanation": "Each chunk gets three retrievable modalities: source code, AST syntax, and documentation comments, enabling richer semantic search."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "It scores each query-candidate pair together for higher accuracy than cosine alone"
       ],
       "correct": 3,
-      "explanation": "Incremental indexing uses git diff to identify changed files and re-embeds only those chunks, avoiding full-repo re-embedding on every push."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Anchors are required by the vector database schema"
       ],
       "correct": 0,
-      "explanation": "Hybrid retrieval combines dense vector similarity with sparse BM25 keyword matching, with dense queries weighted 0.7 and sparse 0.3 in the final scoring."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Throwing away the BM25 index and rebuilding it from scratch"
       ],
       "correct": 0,
-      "explanation": "The capstone benchmark uses recall@10 (whether the correct function appears in top-10 results) and latency (time to retrieve and re-rank results)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "p95 query latency"
       ],
       "correct": 1,
-      "explanation": "Pipeline robustness is measured by MTEB code retrieval benchmark scores (search quality) and reindexing latency (time to process a 10k-commit push)."
+      "explanation": ""
     }
   ]
 }

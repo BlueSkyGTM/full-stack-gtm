@@ -15,6 +15,18 @@
       "explanation": "Vectara's 2025 study showed chunking quality matches or exceeds embedding-model impact on retrieval quality."
     },
     {
+      "stage": "pre",
+      "question": "What does LangChain's RecursiveCharacterTextSplitter try in order?",
+      "options": [
+        "Always split on character N",
+        "Split on token IDs",
+        "Try splitting on paragraph breaks, then newlines, then sentence boundaries, then spaces",
+        "Split on whitespace only"
+      ],
+      "correct": 2,
+      "explanation": "Recursive splitting falls back through paragraph -> newline -> sentence -> space to preserve structure."
+    },
+    {
       "stage": "check",
       "question": "Why does the parent-document pattern improve answer quality?",
       "options": [
@@ -73,6 +85,18 @@
       ],
       "correct": 1,
       "explanation": "Semantic chunkers can over-segment; enforcing a min size prevents low-signal fragments."
+    },
+    {
+      "stage": "post",
+      "question": "What does 'late chunking' do differently from traditional chunking?",
+      "options": [
+        "Skips chunking entirely",
+        "Embeds the whole document at the token level first, then pools token embeddings into chunk vectors to preserve cross-chunk context",
+        "Chunks after retrieval",
+        "Uses BM25 instead"
+      ],
+      "correct": 1,
+      "explanation": "Late chunking embeds first and pools second, preserving contextual interactions across chunk boundaries."
     }
   ]
 }

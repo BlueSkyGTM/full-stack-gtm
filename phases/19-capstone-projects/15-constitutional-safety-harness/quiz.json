@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What does layered safety in this capstone mean?",
+      "options": [
+        "Manual review of every response",
+        "Running one strong classifier on the input only",
+        "A single rule-based regex over outputs",
+        "Defense in depth across input sanitize, policy rails, classifier gate, model, output filter, and HITL tier"
+      ],
+      "correct": 3,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Which classifier handles multilingual coverage across roughly 132 languages?",
       "options": [
         "Nemotron 3 Content Safety",
@@ -12,7 +24,7 @@
         "Llama Guard 4"
       ],
       "correct": 2,
-      "explanation": "The constitutional AI system uses a set of principles (harmlessness, helpfulness, honesty) to guide model responses, with a critic loop that detects violations and triggers revisions."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "To track false-positive blocks so the model stays helpful while improving harmlessness"
       ],
       "correct": 3,
-      "explanation": "Red-teaming uses adversarial prompts (jailbreaks, toxic content generation, bias elicitation) to test safety boundaries, with automated scoring of model responses against safety rubrics."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Critic LLM scores drafts against a written constitution, prompts the model rewrites the objected outputs, and SFT runs on the improved pairs"
       ],
       "correct": 3,
-      "explanation": "The safety intercept layer sits between the user query and the model, analyzing queries for policy violations and blocking or modifying them before they reach the model."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "On a hand-tuned 1-10 scale chosen by the operator"
       ],
       "correct": 1,
-      "explanation": "Refusal responses are generated with explanations for why a request was blocked, providing transparency and helping users understand policy boundaries."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "PSI, KL, MMD, KS, JS, and Wasserstein"
       ],
       "correct": 1,
-      "explanation": "The capstone measures safety coverage (percentage of adversarial prompts blocked), false positive rate (benign prompts incorrectly blocked), and response quality (helpfulness of compliant responses)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Automation is required to disable Llama Guard 4"
       ],
       "correct": 1,
-      "explanation": "Audit logging captures all blocked requests, policy violations, and red-team test results, enabling compliance reporting and continuous improvement of safety measures."
+      "explanation": ""
     }
   ]
 }

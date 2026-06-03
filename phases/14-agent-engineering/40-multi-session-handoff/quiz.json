@@ -6,12 +6,12 @@
       "stage": "pre",
       "question": "Which field is the load-bearing one in a handoff packet?",
       "options": [
-        "next_action (without it, the document is a status report, not a handoff)",
         "summary",
+        "next_action (without it, the document is a status report, not a handoff)",
         "commands_run",
         "verdict_pointer"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "A handoff with everything except next_action is a status report; the next concrete step is what makes the next session productive."
     },
     {
@@ -43,23 +43,23 @@
       "question": "How does the lesson distinguish compaction from handoff?",
       "options": [
         "They are the same",
-        "Handoff requires GPU",
+        "Compaction extends a session; handoff closes one cleanly and starts the next in fresh context. The packet is what makes that transition cheap",
         "Compaction is paid, handoff is free",
-        "Compaction extends a session; handoff closes one cleanly and starts the next in fresh context. The packet is what makes that transition cheap"
+        "Handoff requires GPU"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "Hermes Issue 20372 framing: write a compact handoff before in-place compression degrades quality, then resume in a fresh session."
     },
     {
       "stage": "check",
       "question": "What does the lesson recommend about when to wrap up a session?",
       "options": [
-        "Before 50-75% context budget, while context is intact; cheap to write before compression artifacts pollute state",
         "At 100% context, then panic",
+        "Before 50-75% context budget, while context is intact; cheap to write before compression artifacts pollute state",
         "Only at midnight",
         "Only after a merge"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "Wrapping up early keeps the generator's inputs clean."
     },
     {
@@ -79,11 +79,11 @@
       "question": "What metadata makes coordination across multi-agent sessions work?",
       "options": [
         "Top secret encryption",
-        "A shared Slack channel",
         "branch, last_known_good_commit, and status (active | superseded | archived); only one active handoff per branch and topic",
+        "A shared Slack channel",
         "A central queue"
       ],
-      "correct": 2,
+      "correct": 1,
       "explanation": "Stale handoffs are the dominant multi-agent failure; status + branch + LKG keep the active set small."
     }
   ]

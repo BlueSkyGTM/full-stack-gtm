@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What does a Socratic tutor policy do when a learner asks for the answer outright?",
+      "options": [
+        "Asks a leading question that scaffolds the learner toward the answer",
+        "Logs the request and goes silent",
+        "Provides the answer immediately and moves on",
+        "Switches to a different concept node"
+      ],
+      "correct": 0,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Which structure does the curriculum graph encode?",
       "options": [
         "A directed graph of concepts with prerequisite edges, attached to OER content",
@@ -12,7 +24,7 @@
         "Only the most recently studied node"
       ],
       "correct": 0,
-      "explanation": "Adaptive difficulty adjusts question complexity based on user performance, increasing difficulty for correct answers and providing scaffolding hints for incorrect answers."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Per-concept mastery probability via Bayesian knowledge tracing or a similar variant"
       ],
       "correct": 3,
-      "explanation": "The knowledge graph maps concepts to lessons, enabling personalized learning paths that address gaps in understanding and skip topics the user has mastered."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Episodic holds embeddings; semantic holds raw audio"
       ],
       "correct": 0,
-      "explanation": "Multimodal input supports text questions, image uploads (for diagram analysis), and voice input (for verbal explanations), with modality-specific processing pipelines."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "COPPA-aware retention with auto-deletion after a defined window and parental access"
       ],
       "correct": 3,
-      "explanation": "Memory tracking records user interactions, learning progress, and concept mastery over time, enabling longitudinal learning and spaced repetition practice."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "A single one-hour session with one learner"
       ],
       "correct": 2,
-      "explanation": "The capstone measures learning efficacy (pre/post test score improvement), personalization quality (relevance of recommended content), and engagement metrics (session duration, return frequency)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Text typed, voice via LiveKit + Whisper, and photo math via dots.ocr or PaliGemma 2"
       ],
       "correct": 3,
-      "explanation": "Privacy is ensured by storing user data locally or in encrypted form, with clear data retention policies and user control over data deletion."
+      "explanation": ""
     }
   ]
 }

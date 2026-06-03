@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What problem in seq2seq did Bahdanau attention solve?",
+      "options": [
+        "Tokenization mismatch",
+        "The fixed-size context-vector bottleneck where the decoder only saw the encoder's final state",
+        "Vanishing gradients in encoders",
+        "Beam search latency"
+      ],
+      "correct": 1,
+      "explanation": "Attention lets the decoder consult every encoder state, not just the last one."
+    },
+    {
+      "stage": "pre",
       "question": "What is the attention context vector at decoder step t?",
       "options": [
         "The decoder's input embedding",
@@ -12,7 +24,7 @@
         "A random projection"
       ],
       "correct": 1,
-      "explanation": "Context c_t = Σ α_{t,i} * h_i — a step-dependent weighted average of all encoder states, not just the last one. The weights α change at every decoder step."
+      "explanation": "Context = sum of alpha_i * h_i, a step-dependent weighted average of encoder states."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "It biases the softmax"
       ],
       "correct": 1,
-      "explanation": "v_a dot-products with tanh(W_a s + U_a h) to collapse a d_attn-dimensional vector into a scalar score — the projection that makes each encoder position comparable."
+      "explanation": "v_a dot-products with tanh(W_a s + U_a h) to collapse a d_attn vector into a scalar score."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Beam search is required"
       ],
       "correct": 0,
-      "explanation": "Luong dot uses s^T h with no projection matrix, so dimensions must match exactly — skip dot and use the 'general' variant when the encoder is bidirectional."
+      "explanation": "dot uses s^T h with no projection, so dimensions must match exactly."
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "Q = decoder state; K and V = encoder states (same tensor)"
       ],
       "correct": 3,
-      "explanation": "In classical attention, keys and values are both the encoder states (same tensor); transformers split K and V via separately learned projections — the key architectural divergence."
+      "explanation": "In classical attention, keys and values are both encoder states; transformers split K and V via learned projections."
     },
     {
       "stage": "post",
@@ -60,11 +72,11 @@
         "Attention weights are not differentiable"
       ],
       "correct": 2,
-      "explanation": "Attention weights correlate with predictions but are not faithful causal explanations — always verify with ablation or counterfactual checks before reporting them as reasoning evidence."
+      "explanation": "Attention weights are correlated with predictions but not faithful explanations without ablation/counterfactual checks."
     },
     {
       "stage": "post",
-      "question": "When adapting `additive_attention` toward transformer self-attention, which is the key conceptual pivot?",
+      "question": "Which step bridges Bahdanau attention to transformer self-attention?",
       "options": [
         "Dropping beam search",
         "Adding more RNN layers",
@@ -72,7 +84,19 @@
         "Querying a sequence against itself with separately learned Q, K, and V projections, run in parallel heads"
       ],
       "correct": 3,
-      "explanation": "Self-attention queries the same sequence, splits K and V into separate learned projections, and runs attention in parallel across multiple heads — the math of additive_attention remains; only the source of Q/K/V changes."
+      "explanation": "Self-attention queries the same sequence, with split K and V projections, parallelized across heads."
+    },
+    {
+      "stage": "post",
+      "question": "What is one practical use case for masking in attention?",
+      "options": [
+        "Replacing dropout",
+        "Setting attention weight for padding tokens to zero so they do not contribute to the context vector",
+        "Encoding positions",
+        "Reducing model size"
+      ],
+      "correct": 1,
+      "explanation": "Masking padding (or future tokens in a decoder) prevents the softmax from spreading weight onto invalid positions."
     }
   ]
 }

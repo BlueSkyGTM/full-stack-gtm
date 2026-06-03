@@ -4,26 +4,38 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the writer declare sections, figures, and citations as data before any prose is written?",
+      "options": [
+        "Because LaTeX requires a forward declaration",
+        "Because the structure is the contract: the harness can validate completeness before prose generation",
+        "Because the model needs a system prompt",
+        "Because BibTeX cannot resolve forward references"
+      ],
+      "correct": 1,
+      "explanation": "Structure-first lets the harness validate uniqueness, citation coverage, and figure coverage before invoking the prose generator. The skeleton is the contract."
+    },
+    {
+      "stage": "pre",
       "question": "What does the figure-injection step produce from an experiment manifest?",
       "options": [
         "A PDF compiled from artifacts",
-        "A bibliography stub",
+        "A list of Figure records with stable ids and paths normalised to the paper directory",
         "A model prompt with figure descriptions",
-        "A list of Figure records with stable ids and paths normalised to the paper directory"
+        "A bibliography stub"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "read_experiment_manifest returns Figure records. Ids are deterministic, paths are normalised, captions come from the manifest."
     },
     {
       "stage": "check",
       "question": "Which validation failure raises PaperValidationError before any file is written?",
       "options": [
-        "A section that cites a key not declared in the bibliography",
         "An odd number of authors",
+        "A section that cites a key not declared in the bibliography",
         "An abstract longer than 200 words",
         "A figure path that does not exist on disk"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "Missing bibliography keys, duplicate figure ids, empty title, empty abstract, and unknown figure refs all raise PaperValidationError. Existence on disk is not enforced because the LaTeX compiler enforces it later."
     },
     {
@@ -39,39 +51,27 @@
       "explanation": "The writer takes the prose generator as a dependency. The test substitutes MockProseGenerator. Production substitutes a model call. The writer is unchanged."
     },
     {
-      "stage": "check",
-      "question": "What happens when one of the writer's validation gates (duplicate figure id, missing citation, empty abstract/title) fails?",
-      "options": [
-        "A partially written paper.tex is emitted with missing sections marked TODO",
-        "The invalid element is silently skipped and the rest is rendered",
-        "PaperValidationError is raised and no output files are written",
-        "A warning is logged and the paper is written without the offending figure or citation"
-      ],
-      "correct": 2,
-      "explanation": "The writer's contract is atomic: either all three files (tex, bib, manifest) are emitted, or none. A failed validation gate raises PaperValidationError with a precise reason."
-    },
-    {
       "stage": "post",
       "question": "What three files does PaperWriter.write emit on success?",
       "options": [
         "paper.tex, paper.pdf, references.bib",
-        "manifest.json, prose.txt, paper.pdf",
+        "paper.tex, references.bib, manifest.json",
         "outline.json, paper.tex, figures.tar",
-        "paper.tex, references.bib, manifest.json"
+        "manifest.json, prose.txt, paper.pdf"
       ],
-      "correct": 3,
+      "correct": 1,
       "explanation": "paper.tex is the LaTeX source. references.bib is the bibliography. manifest.json is the structured artifact the critic loop reads next."
     },
     {
       "stage": "post",
       "question": "Why is the manifest part of the writer's contract instead of just the LaTeX file?",
       "options": [
-        "Because downstream tooling (critics, dashboards) reads structured manifests, not LaTeX",
         "Because LaTeX is too large to parse",
+        "Because downstream tooling (critics, dashboards) reads structured manifests, not LaTeX",
         "Because manifest.json is the only file BibTeX accepts",
         "Because LaTeX compilers reject untyped sections"
       ],
-      "correct": 0,
+      "correct": 1,
       "explanation": "The manifest is a stable interface for downstream stages. Critics and dashboards inspect manifest.json. LaTeX is the human-readable artifact, not the machine interface."
     }
   ]

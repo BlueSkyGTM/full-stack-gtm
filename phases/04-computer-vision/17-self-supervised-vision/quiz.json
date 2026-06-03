@@ -1,78 +1,39 @@
 {
-  "lesson": "17-self-supervised-vision",
-  "title": "Self-Supervised Vision — SimCLR, DINO, MAE",
   "questions": [
     {
       "stage": "pre",
-      "question": "Why does SimCLR need batch sizes of 512–8192 while supervised ImageNet training works with batch 256?",
-      "options": [
-        "Each sample needs many negative examples to produce a useful contrastive signal; the batch itself is the pool of negatives. Small batches starve the InfoNCE loss of negatives and training collapses or stalls",
-        "SimCLR is slower and needs more GPU memory per step",
-        "Batch normalisation statistics require large batches",
-        "Contrastive loss divides by batch size so small batches cause gradient explosion"
-      ],
-      "correct": 0,
-      "explanation": "InfoNCE ranks the positive pair against all other samples in the batch. A batch of 32 gives 30 negatives per positive; 1024 gives 2046. More negatives = sharper contrastive signal. MoCo introduced a momentum queue of past features so effective negatives scale beyond the batch size — this is the standard trick when GPU memory limits batch size."
-    },
-    {
-      "stage": "check",
-      "question": "In the InfoNCE loss formula, temperature tau=0.1 is the SimCLR default. What is the effect of increasing tau to 0.5?",
-      "options": [
-        "Training collapses immediately because the loss becomes zero",
-        "Each positive pair receives a larger gradient regardless of its current distance",
-        "The softmax distribution becomes softer (more uniform), reducing the penalty on negatives and weakening the contrastive signal; lower tau sharpens the distribution and forces more precise embedding alignment",
-        "The number of effective negatives increases, improving sample efficiency"
-      ],
-      "correct": 2,
-      "explanation": "tau divides the cosine similarities before the softmax. Lower tau → sharper distribution → the loss strongly penalises any negative that is not far from the anchor. Higher tau → flatter distribution → the loss treats all negatives similarly and the contrastive signal weakens. The SimCLR paper found tau=0.1 optimal across architectures."
-    },
-    {
-      "stage": "check",
-      "question": "In MAE, the small decoder receives the encoder's visible-patch features. What else does it receive at the masked positions?",
-      "options": [
-        "Zero vectors at every masked position",
-        "Mask tokens — shared learned embeddings that represent hidden patches; the decoder uses these plus the visible features to reconstruct the original pixels at masked locations",
-        "The original unmasked pixel values as a reconstruction shortcut",
-        "Random noise sampled from the encoder's feature distribution"
-      ],
+      "question": "Why does SimCLR need batch sizes of 512-8192 while supervised ImageNet training works with batch 256?",
+      "options": ["SimCLR is slower", "Each sample needs many negative examples to produce a useful contrastive signal; the batch itself is the pool of negatives. Small batches starve the InfoNCE loss of negatives and training collapses or stalls", "Batch norm requires it", "Contrastive loss divides by batch size"],
       "correct": 1,
-      "explanation": "MAE's asymmetric design: the encoder only processes the visible 25% of patches. The decoder receives encoder outputs at visible positions and a single shared learnable mask token at each of the 75% masked positions. The decoder must infer the hidden content from these tokens, forcing the encoder to capture global semantics in its visible-patch representations."
+      "explanation": "InfoNCE loss ranks the positive pair against all other samples in the batch. A batch of 32 gives 30 negatives per positive; 1024 gives 2046. More negatives = sharper contrastive signal. MoCo introduced a momentum queue of past features so effective negatives scale beyond the batch size; this is the standard trick when GPU memory limits batch size."
     },
     {
-      "stage": "check",
-      "question": "The TwoViewDataset.__getitem__ method applies two different random augmentations to the same image and returns them without labels. Why are class labels not used during self-supervised pretraining?",
-      "options": [
-        "The base dataset has no labels available",
-        "Labels cannot be loaded from disk efficiently enough for SSL training",
-        "Including labels would bias the augmentation policy toward class-discriminative features",
-        "Self-supervised learning defines its training signal from the data structure itself — two augmented views of the same image are positives, all other batch items are negatives — so class labels are unnecessary during pretraining and would limit applicability to unlabelled data"
-      ],
-      "correct": 3,
-      "explanation": "The power of SSL is that it works on completely unlabelled data: web crawls, webcam footage, satellite imagery. The pretext task (matching two views of the same image) provides the signal. Labels are only used later for linear probing or fine-tuning evaluation, not during pretraining itself."
+      "stage": "pre",
+      "question": "What prevents DINO from collapsing to a constant output?",
+      "options": ["Strong augmentation alone", "A combination of centring (subtract per-dimension EMA mean from the teacher output) and sharpening (low teacher temperature); centring stops one dimension from dominating, sharpening stops the output collapsing to uniform", "Large batch size", "The momentum schedule"],
+      "correct": 1,
+      "explanation": "DINO does not use explicit negatives. Without centring, one output dimension can dominate and the student learns to always predict it. Without sharpening (low teacher temperature), the teacher's output becomes near-uniform and the student learns to match uniform, which is also collapse. The two together keep the output diverse across dimensions and peaked per sample."
     },
     {
       "stage": "post",
-      "question": "MAE masks 75% of patches while BERT masks only 15% of tokens. Why the difference?",
-      "options": [
-        "75% is an arbitrary hyperparameter that was not carefully ablated",
-        "BERT's architecture requires exactly 15% by design",
-        "Image patches have low entropy — neighbouring pixels are highly correlated — so masking only 15% would be trivially solvable by local spatial extrapolation. Masking 75% forces the encoder to build semantic representations to reconstruct the hidden patches",
-        "Text tokens carry more information per unit than image patches so fewer can be masked"
-      ],
-      "correct": 2,
-      "explanation": "Information density governs the right mask ratio. Natural language: 15% is sufficient because each masked token has many plausible completions requiring genuine language understanding. Images: unmasked neighbours almost determine a masked patch's pixels, so low mask ratios are solved by interpolation without representation learning. The MAE paper ablates mask ratio and finds performance peaks near 75% for ViT."
+      "question": "MAE masks 75% of patches. BERT masks 15% of tokens. Why the difference?",
+      "options": ["75% is arbitrary", "Image patches have low entropy — neighbours are highly correlated — so masking only 15% would be trivially solvable by local extrapolation. Masking 75% forces the encoder to learn global semantic features to reconstruct the missing patches", "BERT requires 15% by design", "Text tokens are larger than image patches"],
+      "correct": 1,
+      "explanation": "The mask ratio should match the information density of the modality. Text: 15% is enough because each token has many plausible completions. Images: neighbouring pixels almost determine each other, so low mask ratios are solvable without real representation learning. MAE's 75% is calibrated to force semantic understanding."
     },
     {
       "stage": "post",
       "question": "After self-supervised pretraining, the 'linear probe' evaluation trains only what?",
-      "options": [
-        "The entire encoder with a very low learning rate",
-        "The positional embedding layer of the frozen ViT",
-        "A full MLP classifier head with 3 hidden layers",
-        "A single linear classifier on top of the frozen encoder features; this isolates feature quality from fine-tuning dynamics and is the standard SSL benchmark"
-      ],
-      "correct": 3,
-      "explanation": "Linear probe freezes all encoder weights and fits Linear(feature_dim → num_classes) on a labelled downstream dataset. Accuracy measures the linear separability of the learned feature space — a direct proxy for feature quality. Fine-tuning the full backbone adds non-linear adaptation capacity and typically gains 2–5 points, but mixes in optimisation effects; both numbers are reported in SSL papers."
+      "options": ["The entire encoder", "A single linear classifier on top of the frozen encoder features; this isolates feature quality from fine-tuning dynamics", "A full MLP classifier head", "The positional embedding"],
+      "correct": 1,
+      "explanation": "Linear probe freezes the encoder and fits Linear(features -> num_classes) on a labelled downstream dataset. The accuracy is a direct measure of the feature space's linear separability — a proxy for feature quality. Fine-tuning the whole backbone adds nonlinear capacity and usually lifts accuracy a few points, but mixes in optimisation effects. Both numbers are reported in SSL papers."
+    },
+    {
+      "stage": "post",
+      "question": "Why does MAE use an asymmetric encoder-decoder design (big encoder on 25% visible patches, small decoder on all tokens)?",
+      "options": ["Memory constraints", "The encoder never processes mask tokens; a small decoder only handles reconstruction. This makes encoder FLOPs proportional to visible patches (1/4 of full input) and lets pretraining run 3x faster than naive designs that process all tokens through the full encoder", "Masked tokens confuse self-attention", "The decoder needs its own backbone"],
+      "correct": 1,
+      "explanation": "The key efficiency win in MAE: the expensive encoder only ever sees visible patches, which is 25% of the input. Mask tokens appear only in the shallow decoder. This makes pretraining roughly 3x faster than BEiT (which processes all tokens through the encoder) with equal or better downstream accuracy."
     }
   ]
 }

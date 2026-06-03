@@ -1,78 +1,39 @@
 {
-  "lesson": "05-transfer-learning",
-  "title": "Transfer Learning & Fine-Tuning",
   "questions": [
     {
       "stage": "pre",
       "question": "You have 500 labelled images for a new task close to the ImageNet distribution. Which regime makes the most sense?",
-      "options": [
-        "Train a ResNet-50 from scratch",
-        "Fine-tune every layer with the same large learning rate",
-        "Freeze an ImageNet-pretrained backbone and train only a new linear head",
-        "Ignore pretrained weights; small datasets work best with small custom models"
-      ],
-      "correct": 2,
+      "options": ["Train a ResNet-50 from scratch", "Freeze an ImageNet-pretrained backbone and train only a new linear head", "Fine-tune every layer with the same large LR", "Ignore pretrained weights; small datasets work best with small models"],
+      "correct": 1,
       "explanation": "With 500 images you do not have enough signal to train a deep network from scratch or to safely fine-tune all layers end-to-end without destroying pretrained features. Freezing the backbone and training only a new head (linear probe) uses the pretrained features directly and is the standard recipe for small, close-domain datasets."
     },
     {
-      "stage": "check",
-      "question": "In `make_feature_extractor`, why is `model.fc = nn.Linear(model.fc.in_features, num_classes)` called *after* `for p in model.parameters(): p.requires_grad = False`?",
-      "options": [
-        "PyTorch raises an error if you replace the head before freezing parameters",
-        "A newly assigned `nn.Linear` defaults to `requires_grad=True`, so placing the assignment after the freeze leaves only the new head trainable — if the order were reversed, the head would also be frozen and you would have to manually unfreeze it",
-        "Freezing after head replacement destroys the backbone's pretrained weights",
-        "PyTorch's optimizer ignores parameters added after the freeze call"
-      ],
+      "stage": "pre",
+      "question": "Why do early conv layers of an ImageNet-pretrained network transfer well to medical images even though ImageNet contains no X-rays?",
+      "options": ["PyTorch re-initialises early layers automatically", "Early layers encode generic visual primitives — edges, orientations, contrast — that are shared across almost any visual domain; only late layers specialise to ImageNet categories", "ImageNet secretly contains medical data", "Transfer only works when domains match"],
       "correct": 1,
-      "explanation": "When you do `for p in model.parameters(): p.requires_grad = False`, that loop covers all parameters that exist at that moment. A subsequent `model.fc = nn.Linear(...)` creates a fresh module whose parameters default to requires_grad=True. This ordering ensures backbone is frozen and the new head is the only thing the optimizer updates."
-    },
-    {
-      "stage": "check",
-      "question": "In `discriminative_param_groups(model, base_lr=1e-3, decay=0.3)` with 6 stages (indices 0–5), each stage's LR is `base_lr * decay^(5 - i)`. The stem (`conv1+bn1`) is at index 0. What LR does the stem receive?",
-      "options": [
-        "1e-3 — the stem gets the full base LR",
-        "3e-4 — one decay step below the head",
-        "2.43e-5 — four decay steps below the head",
-        "2.43e-6 — five decay steps: 1e-3 × 0.3^5 ≈ 2.43e-6, making the stem train at about 0.24% of the head's LR"
-      ],
-      "correct": 3,
-      "explanation": "With decay=0.3 and 5 steps below the head: 1e-3 × 0.3^5 = 1e-3 × 0.00243 ≈ 2.43e-6. The stem contains generic edge detectors that should barely move; the extreme ratio (0.24%) is deliberate. Empirically, this prevents catastrophic forgetting of early features while still allowing the backbone to adapt."
-    },
-    {
-      "stage": "check",
-      "question": "The `freeze_bn_stats` helper calls `m.eval()` on every BatchNorm module inside the training loop. Why must it be called at the start of each epoch, immediately after `model.train()`?",
-      "options": [
-        "`model.train()` switches all modules — including BN — to training mode, which would update ImageNet running statistics using your small target dataset and corrupt them; `freeze_bn_stats` reverts only BN layers to eval mode so the running buffers stay fixed",
-        "`model.train()` deletes BN running statistics; `freeze_bn_stats` reloads them from a checkpoint file",
-        "BN layers in eval mode run significantly faster, so calling this speeds up training",
-        "BN running stats must be frozen only during the first epoch; subsequent calls have no effect"
-      ],
-      "correct": 0,
-      "explanation": "model.train() resets every module's training flag, including BatchNorm. In training mode, BN updates its running_mean and running_var with exponential moving averages of the current batch statistics. On a small or distribution-shifted dataset those buffers would drift away from their ImageNet values, hurting every layer that follows. freeze_bn_stats reverses only the BN flip without touching the rest of the model."
+      "explanation": "Gabor-like filters and simple texture detectors are the features early CNN layers learn on any natural-image corpus. They reflect the statistics of light, shadow, and edges that hold across photography, medical imaging, microscopy, and satellite data. Late layers progressively specialise, which is why fine-tuning focuses on the last few blocks."
     },
     {
       "stage": "post",
       "question": "When fine-tuning end-to-end with discriminative learning rates, why should early layers get a smaller LR than late layers?",
-      "options": [
-        "Early layers encode general visual features you want to preserve; late layers encode task-specific features that must adapt; a smaller LR on early layers prevents feature drift and catastrophic forgetting",
-        "Early layers have fewer parameters so they need less gradient signal",
-        "PyTorch requires layer-wise LRs for numerical correctness",
-        "A smaller LR in early layers speeds up training by reducing the number of optimizer steps"
-      ],
-      "correct": 0,
-      "explanation": "Early layers already encode the right visual primitives (edges, textures, gradients); you want tiny updates so those features are preserved. Late layers need to move toward the new task. One learning rate for the whole model forces a compromise that hurts both ends. Discriminative LRs let each stage move at its own pace, which is the empirical sweet spot for fine-tuning."
+      "options": ["Early layers have fewer parameters", "Early layers encode general features you want to preserve; late layers encode task-specific features that must move; a smaller LR on early layers prevents feature drift and catastrophic forgetting", "PyTorch requires layer-wise LR for correctness", "A smaller LR in the early layers speeds up training"],
+      "correct": 1,
+      "explanation": "Early layers already encode the right visual primitives; you want tiny updates so those features are preserved. Late layers need to move toward the new task. One learning rate for the whole model forces a compromise that hurts both ends. Discriminative LRs let each stage move at its own pace, which is the empirical sweet spot for fine-tuning."
     },
     {
       "stage": "post",
-      "question": "You compare two runs: (a) linear probe on a frozen ImageNet backbone, 82% accuracy; (b) end-to-end fine-tune on the same data, 78% accuracy. What should you conclude?",
-      "options": [
-        "Fine-tuning is not helpful; ship the linear probe",
-        "The dataset is too large for transfer learning",
-        "A fine-tune that ends below the linear probe is almost always a training bug — LR too high on the backbone, BN mishandled, or scheduler misconfigured; diagnose before concluding anything about whether transfer learning works",
-        "The pretrained weights are poor quality and should be replaced"
-      ],
-      "correct": 2,
-      "explanation": "Fine-tuning should always beat or match the linear probe, since the linear probe is a special case of fine-tuning with backbone LR=0. If fine-tune is worse, the pipeline is actively destroying pretrained features. The fix is to lower backbone LR, apply discriminative LRs, or freeze BN — not to abandon fine-tuning. Printing the linear-probe baseline first is the standard sanity check before any end-to-end fine-tune."
+      "question": "You fine-tune a ResNet on a 10-class medical dataset of 800 grayscale images (replicated to 3 channels). Accuracy is 10% (random chance for 10 classes). What is the most likely cause?",
+      "options": ["You used the wrong loss function", "BatchNorm running statistics are from ImageNet RGB photos and badly mismatch the grayscale-medical distribution, so the first few BN layers produce noise that propagates forward", "ResNet cannot handle grayscale input", "800 images is simply too few for any transfer learning"],
+      "correct": 1,
+      "explanation": "BatchNorm keeps running_mean and running_var from ImageNet. On a small, distribution-shifted dataset those buffers never adapt fast enough during a short fine-tune, and BN normalises activations with the wrong stats. Fixes: freeze BN statistics, switch to GroupNorm, or pretrain BN stats with a BN-only warmup pass on the target dataset."
+    },
+    {
+      "stage": "post",
+      "question": "You compare two runs: (a) linear probe on frozen ImageNet backbone, 82% accuracy; (b) end-to-end fine-tune, 78% accuracy. What should you conclude?",
+      "options": ["Fine-tuning is not helpful; ship the linear probe", "A fine-tune that ends below the linear probe is almost always a training bug — LR too high, BN mishandled, or scheduler/optimizer misconfigured; diagnose before concluding anything about transfer", "The dataset is too large", "Pretrained weights are bad"],
+      "correct": 1,
+      "explanation": "Fine-tuning should always beat or match the linear probe, since the linear probe is a special case of fine-tuning with backbone LR = 0. If fine-tune is worse, the pipeline is actively destroying pretrained features. The fix is to lower backbone LR, apply discriminative LRs, or freeze BN — not to abandon fine-tuning."
     }
   ]
 }

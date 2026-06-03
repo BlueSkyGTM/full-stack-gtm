@@ -4,12 +4,12 @@
     "stage": "pre",
     "question": "What is the 'naive' assumption in Naive Bayes?",
     "options": [
-      "All features are conditionally independent given the class label",
       "The prior probability of each class is equal",
+      "All features are conditionally independent given the class label",
       "The data is normally distributed",
       "The model has no parameters to learn"
     ],
-    "correct": 0,
+    "correct": 1,
     "explanation": "Naive Bayes assumes every feature is independent of every other feature, conditioned on the class. This is mathematically wrong (e.g., 'machine' and 'learning' co-occur) but works well in practice."
   },
   {
@@ -31,11 +31,11 @@
     "question": "The naive independence assumption is clearly wrong for text. Why does Naive Bayes still classify well?",
     "options": [
       "It only works on very small vocabularies where independence holds",
-      "Modern implementations secretly remove the independence assumption",
       "Classification only needs correct class rankings, not correct probability estimates, and the assumption introduces stable errors that affect all classes similarly",
+      "Modern implementations secretly remove the independence assumption",
       "It only works when features are truly independent"
     ],
-    "correct": 2,
+    "correct": 1,
     "explanation": "NB needs to rank classes correctly, not estimate exact probabilities. The independence assumption is high bias but low variance, making it stable with limited data. Correlated features double-count evidence for the correct class too."
   },
   {
@@ -44,11 +44,11 @@
     "question": "When should you use Multinomial NB versus Gaussian NB?",
     "options": [
       "Multinomial for regression, Gaussian for classification",
-      "They are interchangeable -- always use whichever is faster",
+      "Multinomial for word count/frequency features, Gaussian for continuous real-valued features",
       "Multinomial for binary data, Gaussian for multi-class problems",
-      "Multinomial for word count/frequency features, Gaussian for continuous real-valued features"
+      "They are interchangeable -- always use whichever is faster"
     ],
-    "correct": 3,
+    "correct": 1,
     "explanation": "Multinomial NB models feature counts (word frequencies in text). Gaussian NB assumes features follow normal distributions, suitable for continuous features like measurements or sensor readings."
   },
   {
@@ -56,12 +56,12 @@
     "stage": "post",
     "question": "An email contains 'free' twice and 'money' once. In Multinomial NB with log probabilities, how is the spam score computed?",
     "options": [
-      "log P(spam) + 2 * log P(free|spam) + 1 * log P(money|spam)",
       "log P(spam) + log P(free|spam) + log P(money|spam)",
+      "log P(spam) + 2 * log P(free|spam) + 1 * log P(money|spam)",
       "P(spam) * P(free|spam) * P(money|spam)",
       "log P(spam) * 2 * log P(free|spam)"
     ],
-    "correct": 0,
+    "correct": 1,
     "explanation": "Multinomial NB multiplies the word likelihoods raised to their count. In log space: log P(spam) + 2*log P(free|spam) + 1*log P(money|spam). The word count acts as an exponent."
   }
 ]

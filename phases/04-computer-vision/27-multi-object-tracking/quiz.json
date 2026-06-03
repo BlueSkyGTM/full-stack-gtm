@@ -1,78 +1,39 @@
 {
-  "lesson": "27-multi-object-tracking",
-  "title": "Multi-Object Tracking & Video Memory",
   "questions": [
     {
       "stage": "pre",
       "question": "What does the Hungarian algorithm do in tracking-by-detection?",
-      "options": [
-        "It filters out low-confidence detections",
-        "It solves the minimum-cost one-to-one assignment between tracks and detections — typically using 1 - IoU as cost — to match each track to at most one detection and vice versa",
-        "It trains the detector",
-        "It predicts future trajectories"
-      ],
+      "options": ["It filters out low-confidence detections", "It solves the minimum-cost one-to-one assignment between tracks and detections — typically using 1 - IoU as cost — to match each track to at most one detection and vice versa", "It trains the detector", "It predicts future trajectories"],
       "correct": 1,
       "explanation": "Every tracking-by-detection frame does an assignment problem: M tracks, N detections, find the best one-to-one match. Hungarian is the optimal polynomial algorithm for this. Cost is usually 1 - IoU (higher overlap = lower cost). scipy.optimize.linear_sum_assignment is the standard implementation. SORT, DeepSORT, ByteTrack, BoT-SORT all use it."
     },
     {
-      "stage": "check",
-      "question": "The Kalman filter maintains per-track state (x, y, w, h, dx, dy, dw, dh) with a covariance matrix. What does the predict step do before any detection arrives at the new frame?",
-      "options": [
-        "Runs the detector to produce bounding boxes for the new frame",
-        "Discards tracks that have not been updated in max_age frames",
-        "Advances the state estimate one step using a constant-velocity model, increasing the covariance uncertainty to reflect elapsed time",
-        "Applies Hungarian assignment to match predicted states to detections"
-      ],
-      "correct": 2,
-      "explanation": "The predict step is separate from and prior to association. It projects the state forward using a linear constant-velocity model: state_{t|t-1} = F @ state_{t-1|t-1}, and expands the covariance (P_{t|t-1} = F P F^T + Q). This tells the filter where the track probably is in frame t. A larger covariance means the subsequent update will trust an incoming detection more. Without predict, brief occlusions cause immediate track death."
-    },
-    {
-      "stage": "check",
-      "question": "ByteTrack uses a high-confidence threshold θ_h and retains low-confidence detections. In its second association stage, which pairs are matched?",
-      "options": [
-        "High-confidence detections that found no track in stage 1 are assigned to new track IDs",
-        "Unmatched tracks from stage 1 (no high-confidence detection found) are matched against the low-confidence detections using a slightly looser IoU threshold",
-        "Low-confidence detections are merged into nearby high-confidence detections before stage 2",
-        "Unmatched high-confidence detections from stage 1 are re-matched to any remaining track"
-      ],
+      "stage": "pre",
+      "question": "ByteTrack's distinguishing contribution is what?",
+      "options": ["A new backbone", "A second-stage association that tries to match leftover tracks to low-confidence detections, recovering short occlusions and IDs that standard trackers would lose by dropping those detections", "A new Kalman filter", "An appearance embedding"],
       "correct": 1,
-      "explanation": "Standard trackers discard detections below ~0.5 confidence. ByteTrack's innovation is retaining them for a second pass: after stage 1 matches tracks to high-confidence detections, stage 2 takes the leftover unmatched tracks and tries to pair them with the discarded low-confidence detections at a slightly looser IoU threshold. This recovers IDs during brief occlusions and in crowded scenes where overlapping people temporarily depress detector confidence."
-    },
-    {
-      "stage": "check",
-      "question": "In `SimpleTracker.step`, the cost matrix sets `cost[iou < self.iou_threshold] = 1e6` before calling `linear_sum_assignment`. What does setting those entries to 1e6 achieve?",
-      "options": [
-        "It gates the assignment — pairs with insufficient overlap become effectively forbidden; after the Hungarian solve, any match with cost ≥ 1.0 is discarded as a false match",
-        "It speeds up the Hungarian algorithm by pruning the matrix to a sparse format",
-        "It marks cells as invalid for gradient computation in the tracker's loss",
-        "It forces all unmatched tracks to die on the same frame"
-      ],
-      "correct": 0,
-      "explanation": "By setting low-IoU cells to 1e6 (far above any real 0–1 cost), `SimpleTracker.step` makes those track-detection pairs so expensive that the solver strongly avoids them. After `linear_sum_assignment` returns, the code checks `if cost[r, c] < 1.0` to reject any match the solver was still forced to make. This two-step gating — large cost plus post-solve check — is the standard pattern for IoU-threshold-based association."
+      "explanation": "Most trackers discard detections below a confidence threshold (~0.5). ByteTrack keeps them and runs a second Hungarian pass to try to match them to tracks that did not match any high-confidence detection. This recovers brief occlusions and crossings, lifting IDF1 significantly on MOT17 without any learned appearance features. Its simplicity makes it the default in Ultralytics and Roboflow Supervision."
     },
     {
       "stage": "post",
       "question": "How does SAM 2's memory-based tracker avoid explicit Hungarian-style association?",
-      "options": [
-        "It runs SORT internally",
-        "It requires hand-labelled IDs per frame",
-        "It uses a Kalman filter",
-        "It stores per-instance spatio-temporal features in a memory bank; on each new frame, cross-attention between memory and current features directly produces the mask of the same instance, with association implicit in the attention operation"
-      ],
-      "correct": 3,
+      "options": ["It runs SORT internally", "It stores per-instance spatio-temporal features in a memory bank; on each new frame, cross-attention between memory and current features directly produces the mask of the same instance, with association implicit in the attention operation", "It uses a Kalman filter", "It requires hand-labelled IDs per frame"],
+      "correct": 1,
       "explanation": "SAM 2 replaces the detect-then-associate loop with a memory-conditional segmenter. The memory bank holds the instance's features from previous frames. At each new frame, the decoder cross-attends the new frame's features against the memory, and the resulting mask is the same instance — no external assignment step. This handles long occlusions gracefully because the memory stays even when the instance disappears for many frames."
     },
     {
       "stage": "post",
       "question": "For surveillance video where keeping each person's ID consistent is the primary requirement, which metric should you report?",
-      "options": [
-        "IDF1 — the harmonic mean of ID precision and recall; measures identity preservation over time rather than per-frame detection accuracy",
-        "MOTA",
-        "Top-1 accuracy",
-        "FID"
-      ],
-      "correct": 0,
+      "options": ["MOTA", "IDF1 — the harmonic mean of ID precision and recall; measures identity preservation over time rather than per-frame detection accuracy", "Top-1 accuracy", "FID"],
+      "correct": 1,
       "explanation": "MOTA conflates detection and association errors, so a tracker with many false positives can hide its ID failures. IDF1 is designed for the 'who is who over time' question: it matches predicted tracks to ground-truth tracks globally across the whole video and computes F1 on the identity labels. For surveillance and crowd analytics, IDF1 is the metric to report; HOTA is the broader academic standard."
+    },
+    {
+      "stage": "post",
+      "question": "SAM 3.1 Object Multiplex (March 2026) introduces shared memory across many tracked instances. What does that enable?",
+      "options": ["Lower accuracy", "Efficient multi-object tracking — one shared memory bank with per-instance query tokens replaces N separate memory banks, so cost scales sub-linearly in number of instances and concert-crowd-sized scenes become tractable", "Cloud-only inference", "A new training objective"],
+      "correct": 1,
+      "explanation": "Pre-Multiplex SAM 2 / SAM 3 tracked each object with its own memory bank; cost scaled linearly with the number of instances. Multiplex (March 2026) introduces one shared memory with per-instance query tokens that fetch instance-specific features. Many-object tracking — crowds, traffic, warehouse workers — becomes efficient for the first time with a memory-based tracker."
     }
   ]
 }

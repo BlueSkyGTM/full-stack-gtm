@@ -1,78 +1,39 @@
 {
-  "lesson": "03-cnns-lenet-to-resnet",
-  "title": "CNNs — LeNet to ResNet",
   "questions": [
     {
       "stage": "pre",
-      "question": "What single architectural change did AlexNet (2012) introduce that made training deep CNNs practical?",
-      "options": [
-        "Residual connections that bypass every other layer",
-        "Replacing tanh with ReLU, which does not saturate for positive inputs and speeds convergence by roughly 6×",
-        "Batch normalization after every conv layer",
-        "Depthwise separable convolutions to cut parameter count"
-      ],
+      "question": "What single architectural idea did AlexNet (2012) introduce that made training deep CNNs practical on GPUs?",
+      "options": ["Residual connections", "Replacing tanh with ReLU, which does not saturate and speeds convergence by roughly 6x", "Batch normalization", "Depthwise separable convolutions"],
       "correct": 1,
-      "explanation": "AlexNet's biggest training speedup came from ReLU. Tanh saturates for large positive or negative inputs, which kills gradients and caps trainable depth. ReLU is piecewise linear, does not saturate for positive inputs, and was the single change that took training from weeks to days. Dropout and GPU parallelism mattered, but ReLU is the one that unlocked depth."
+      "explanation": "AlexNet's biggest training speedup came from ReLU. Tanh saturates for large positive or negative inputs, which kills gradients and caps the depth you can train. ReLU is piecewise linear, does not saturate for positive inputs, and was the single change that took training from weeks to days. Dropout and GPU parallelism mattered, but ReLU is the one that unlocked depth."
     },
     {
-      "stage": "check",
-      "question": "Tracing through the lesson's `LeNet5`, a `(1, 1, 32, 32)` input passes conv1(5×5) → pool(2×2) → conv2(5×5) → pool(2×2). What is the tensor shape immediately before `torch.flatten`?",
-      "options": [
-        "(1, 16, 5, 5) — conv1 gives (1,6,28,28), pool gives (1,6,14,14), conv2 gives (1,16,10,10), pool gives (1,16,5,5)",
-        "(1, 6, 14, 14) — only the first pool layer has been applied",
-        "(1, 16, 8, 8) — spatial dimensions halve twice from 32 to 8",
-        "(1, 32, 4, 4) — channels double and spatial dims quarter at each block"
-      ],
-      "correct": 0,
-      "explanation": "5×5 conv (no padding) on 32×32 → 28×28. Pool 2×2 → 14×14. 5×5 conv → 10×10. Pool 2×2 → 5×5. Channel counts follow the LeNet spec: 6 after conv1, 16 after conv2. Flattening (1,16,5,5) gives 400, which feeds fc1 with in_features=16*5*5=400."
-    },
-    {
-      "stage": "check",
-      "question": "Why does the degradation problem cause a 100-layer plain network to have higher training loss than a 20-layer one, even though it has strictly more capacity?",
-      "options": [
-        "The 100-layer network overfits so severely that training loss appears higher",
-        "Gradients shrink multiplicatively through each layer — with activation gains below 1, the gradient signal reaching early layers is effectively zero, so the optimizer cannot usefully update the early blocks and gets stuck in worse solutions than the shallow network",
-        "PyTorch's SGD optimizer caps effective gradient updates to 20 effective layers",
-        "Extra conv layers compress spatial information until the classification head has nothing meaningful to read"
-      ],
+      "stage": "pre",
+      "question": "Why did VGG prefer stacks of 3x3 convolutions over a single larger kernel?",
+      "options": ["Smaller kernels run faster on CPU", "Two 3x3 convs cover the same 5x5 receptive field with fewer parameters (18C^2 vs 25C^2) and one extra ReLU between them", "3x3 convs are rotation-invariant; 5x5 is not", "Larger kernels cannot be trained with SGD"],
       "correct": 1,
-      "explanation": "In a plain deep network, the gradient of early weights is the product of all Jacobians from output back to that layer. Stack 100 layers with sub-unit activation gains and the product is vanishingly small. The network cannot learn even the identity function for extra layers, so a 100-layer plain network actively converges to a worse optimum than a 20-layer one — this is what He et al. measured."
-    },
-    {
-      "stage": "check",
-      "question": "In the lesson's `BasicBlock.__init__`, `self.shortcut` is `nn.Identity()` when `stride==1 and in_c==out_c`, otherwise a 1×1 conv. What property makes identity valid only in the first case?",
-      "options": [
-        "Identity is only valid when `bias=False` is set on the conv layers",
-        "An identity requires a learnable scaling factor to match activation magnitudes",
-        "When stride and channel count match, `F(x)` and `x` have the same shape and can be added element-wise; a dimension change requires a 1×1 projection so shapes are compatible for the residual addition",
-        "PyTorch's `nn.Identity` module has a built-in shape-matching fallback that handles mismatches silently"
-      ],
-      "correct": 2,
-      "explanation": "The residual addition `out + self.shortcut(x)` requires both tensors to have identical shape. When in_c==out_c and stride==1, x passes through unchanged and shapes match. When out_c differs or stride=2 halves the spatial size, the 1×1 conv projects x to (out_c, H/stride, W/stride) before adding. Without it, PyTorch raises a shape mismatch error."
+      "explanation": "Two stacked 3x3 convs see the same 5x5 patch as one 5x5 conv, but use fewer parameters (2 * 3 * 3 * C^2 = 18C^2 compared to 25C^2) and include an additional non-linearity. That extra ReLU increases expressive power. VGG turned this observation into an entire architecture with exactly one block type repeated."
     },
     {
       "stage": "post",
       "question": "ResNet introduced residual connections as y = F(x) + x. What problem does this solve?",
-      "options": [
-        "Overfitting in the classifier head",
-        "Vanishing activations in layers that use ReLU exclusively",
-        "The degradation problem — past ~20 plain conv layers, training loss starts getting worse because the optimizer struggles to learn an identity mapping through many non-linear layers",
-        "Memory consumption during backpropagation"
-      ],
+      "options": ["Overfitting in the classifier head", "Vanishing activations in layers with ReLU", "The degradation problem — past ~20 plain conv layers, training loss starts getting worse because the optimizer struggles to learn an identity mapping through many non-linear layers", "Memory consumption during backprop"],
       "correct": 2,
       "explanation": "Before ResNet, training loss started increasing past about 20 layers even though the network had more capacity — the degradation problem. A residual block can trivially represent identity by driving F to zero, giving the optimizer a safe default. With that escape hatch, every extra block can make the network slightly better, which is how 100+ layer networks became trainable."
     },
     {
       "stage": "post",
-      "question": "In a `BasicBlock` with in_channels=64, out_channels=128, stride=2, what is the role of the shortcut branch?",
-      "options": [
-        "It is always identity; the main branch handles the shape change internally",
-        "It is a 1×1 conv with stride=2 that matches the output channels and spatial size of the main branch so the two tensors can be added element-wise",
-        "It is a max-pool that halves the spatial dimensions and replicates channels",
-        "It is a no-op identity that is compiled away at inference time and contributes no parameters"
-      ],
+      "question": "In a ResNet BasicBlock with in_channels=64, out_channels=128, stride=2, what is the role of the shortcut branch?",
+      "options": ["It is always identity; the main branch handles the shape change", "It is a 1x1 conv with stride 2 that matches the output channels and spatial size of the main branch so the two can be added", "It is a max-pool that halves the spatial dimension", "It is a placeholder that is removed at inference time"],
       "correct": 1,
-      "explanation": "When a block changes channel count or spatial stride, the identity path cannot be added directly to the main branch because shapes differ. The shortcut becomes a 1×1 conv with stride=2 and C_out output channels, followed by batch norm, to produce the same (128, H/2, W/2) shape as the main path. Pass-through identity is used only when in_c==out_c and stride==1."
+      "explanation": "When a block changes channel count or spatial stride, the identity path cannot be added directly to the main branch because shapes differ. The shortcut becomes a 1x1 conv with stride=2 and C_out output channels, optionally followed by batch norm. Pass-through identity is used only when in_c == out_c and stride == 1."
+    },
+    {
+      "stage": "post",
+      "question": "ResNet-18 has ~11.7M parameters and matches or beats VGG-16 (138M params) on ImageNet. What does this imply about VGG?",
+      "options": ["VGG's kernels were too small to learn good features", "Most of VGG's parameters are wasted in the fully connected head and the redundant depth past the point where residual connections would let each layer contribute", "VGG was trained with a worse optimizer", "VGG's accuracy on ImageNet has been measured incorrectly"],
+      "correct": 1,
+      "explanation": "VGG-16's parameter count is dominated by its giant fully connected classifier (three dense layers on 25088 activations), and its plain deep stack cannot add layers as efficiently as a residual stack. ResNet-18 replaces the FC head with global average pool plus one linear layer and uses residual blocks, which together give roughly 12x parameter efficiency at similar accuracy."
     }
   ]
 }

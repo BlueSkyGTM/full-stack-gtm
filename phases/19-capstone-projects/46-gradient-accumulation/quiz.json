@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is the effective batch identity that gradient accumulation expresses?",
+      "options": [
+        "effective_batch = micro_batch / accum_steps",
+        "effective_batch = micro_batch * accum_steps",
+        "effective_batch = micro_batch + accum_steps",
+        "effective_batch = world_size only"
+      ],
+      "correct": 1,
+      "explanation": "Micro batch is what fits in memory; accumulation steps are how many forward + backward passes pile gradients into the same buffer before one optimizer step."
+    },
+    {
+      "stage": "pre",
       "question": "Why must the loss be divided by accum_steps before backward on each micro batch?",
       "options": [
         "It makes the loss curve prettier",
@@ -61,18 +73,6 @@
       ],
       "correct": 1,
       "explanation": "Each micro batch costs the same forward + backward. Accumulation buys statistical smoothing per optimizer step, not raw throughput; the curve is a useful reality check against folklore."
-    },
-    {
-      "stage": "post",
-      "question": "What is the mathematical relationship between micro-batch size, accumulation steps, and effective batch size?",
-      "options": [
-        "effective_batch = micro_batch * accum_steps",
-        "effective_batch = micro_batch / accum_steps",
-        "effective_batch = micro_batch + accum_steps",
-        "effective_batch = micro_batch ^ accum_steps"
-      ],
-      "correct": 0,
-      "explanation": "Gradient accumulation simulates a larger batch by accumulating gradients over multiple micro-batches before updating weights. The effective batch size is micro_batch_size multiplied by accumulation steps."
     }
   ]
 }

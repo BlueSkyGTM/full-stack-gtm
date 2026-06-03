@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "How is the async cloud coding agent triggered in production?",
+      "options": [
+        "A long-lived SSH session into a VM",
+        "A GitHub webhook fired by an issue label or PR comment, dispatched to a sandbox worker",
+        "A scheduled cron job hitting the repo",
+        "A manual file upload"
+      ],
+      "correct": 1,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Why must the agent run with a short-lived GitHub App installation token rather than a personal access token?",
       "options": [
         "Apps avoid GitHub rate limits entirely",
@@ -12,7 +24,7 @@
         "Apps require less code than PATs"
       ],
       "correct": 1,
-      "explanation": "The issue parser extracts structured information: problem description, reproduction steps, expected behavior, and relevant files from unstructured GitHub issue text."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Disabling git on the worker"
       ],
       "correct": 1,
-      "explanation": "Solution planning uses the repo's codebase context (read via GitHub API) to understand the project structure and propose a step-by-step implementation plan."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         ".github/workflows is a virtual path"
       ],
       "correct": 2,
-      "explanation": "The agent reads, edits, and creates files via GitHub API commits, with diff previews showing exactly what changes will be made before applying them."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "The repo is force-pushed to main"
       ],
       "correct": 1,
-      "explanation": "Validation runs the project's test suite (if available) and checks for common issues (broken imports, syntax errors) before opening the PR."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Only a turn cap"
       ],
       "correct": 2,
-      "explanation": "The capstone measures issue resolution accuracy (percentage of issues correctly addressed), PR quality (clean diffs, passing tests), and automation completeness (percentage of steps executed without human intervention)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Nothing; the PR has an empty body"
       ],
       "correct": 1,
-      "explanation": "Safety checks include permission validation (agent can only push to authorized branches), change limits (maximum files edited per issue), and rollback capability (automatic revert on test failures)."
+      "explanation": ""
     }
   ]
 }

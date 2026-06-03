@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What does the contamination check guard against during data preparation?",
+      "options": [
+        "Tokenizer drift between SFT and DPO stages",
+        "GPU driver mismatches between training and serving",
+        "GGUF version skew across llama.cpp builds",
+        "Test-set leakage from public benchmarks such as MMLU-Pro and MT-Bench-v2 into training data"
+      ],
+      "correct": 3,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Why does the pipeline compose SFT then DPO (or GRPO) rather than DPO alone?",
       "options": [
         "Axolotl does not implement DPO",
@@ -12,7 +24,7 @@
         "DPO cannot run on quantized weights"
       ],
       "correct": 1,
-      "explanation": "SFT establishes domain behavior on labeled completions while DPO or GRPO aligns the model against preference pairs or verifiable rewards as described in the pipeline stages."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Draft heads that predict N tokens ahead; the target verifies in one pass for 2-3x throughput"
       ],
       "correct": 3,
-      "explanation": "Axolotl is used because it provides pre-built configurations for SFT and DPO, supports LoRA/QLoRA for efficient fine-tuning, and integrates with vLLM for serving."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Perplexity"
       ],
       "correct": 0,
-      "explanation": "EAGLE-3 reduces inference latency by generating multiple tokens per draft step and verifying them in parallel, achieving 2-3x speedup on the served model."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "FP32, FP16, BF16"
       ],
       "correct": 1,
-      "explanation": "The pipeline stages are: data preparation (cleaning and deduplication), SFT (domain fine-tuning), DPO/GRPO (preference alignment), and vLLM serving (optimized inference)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "OpenAI's model card format"
       ],
       "correct": 1,
-      "explanation": "The capstone measures training efficiency (tokens/sec), alignment quality (reward model score on held-out preferences), and serving throughput (requests/sec at target latency)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Network egress bytes"
       ],
       "correct": 0,
-      "explanation": "Robustness is tested with data quality tests (checking for toxic content in training data), overfitting checks (evaluating on held-out datasets), and serving stability tests (long-running load tests)."
+      "explanation": ""
     }
   ]
 }

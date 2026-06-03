@@ -1,78 +1,39 @@
 {
-  "lesson": "02-convolutions-from-scratch",
-  "title": "Convolutions from Scratch",
   "questions": [
     {
       "stage": "pre",
-      "question": "You feed a 224×224 RGB image to a conv with kernel_size=3, stride=1, padding=0. What is the output spatial size?",
-      "options": [
-        "224×224",
-        "222×222",
-        "112×112",
-        "74×74"
-      ],
+      "question": "You feed a 224x224 RGB image to a conv with kernel_size=3, stride=1, padding=0. What is the output spatial size?",
+      "options": ["224x224", "222x222", "112x112", "74x74"],
       "correct": 1,
-      "explanation": "Output size = floor((H - K + 2P) / S) + 1 = floor((224 - 3 + 0) / 1) + 1 = 222. Without padding, every 3×3 convolution shrinks the feature map by 2 pixels on each axis — one pixel off each border. Memorise this formula; you will compute it dozens of times per architecture."
+      "explanation": "Output size = (H - K + 2P) / S + 1 = (224 - 3 + 0) / 1 + 1 = 222. Without padding, every 3x3 convolution shrinks the feature map by 2 pixels on each axis — one pixel off each border."
     },
     {
-      "stage": "check",
-      "question": "`pad2d(x, p)` uses `x.shape[:-2]` when computing the output shape. For input `x` of shape `(C, H, W)` and `p=1`, what is the shape of the returned array?",
-      "options": [
-        "(C, H+1, W+1) — one strip added per side",
-        "(C+1, H+2, W+2) — all axes including channels are padded",
-        "(C, H+2, W+2) — padding of p=1 adds one row/column on each side, so height and width both grow by 2",
-        "(C, H+1, W) — only the vertical axis is padded"
-      ],
-      "correct": 2,
-      "explanation": "pad2d adds p zeros to each of the four borders (top, bottom, left, right) of the spatial dimensions. Height grows from H to H+2p and width from W to W+2p. The `x.shape[:-2]` trick propagates the leading axes (C, or N,C) unchanged so the same function handles 2D, 3D, and 4D tensors without modification."
-    },
-    {
-      "stage": "check",
-      "question": "A 32×32 input is convolved with kernel_size=3, padding=1, stride=2. Applying the formula `floor((H - K + 2P) / S) + 1`, what is the output spatial size?",
-      "options": [
-        "32 — same-padding with stride 2 preserves spatial size",
-        "15 — computing floor((32-3+2)/2) and forgetting the +1",
-        "17 — incorrectly computing (32-3+2)/2 + 1 with wrong precedence",
-        "16 — floor((32 - 3 + 2×1) / 2) + 1 = floor(31/2) + 1 = 15 + 1 = 16"
-      ],
-      "correct": 3,
-      "explanation": "Plugging in: floor((32 - 3 + 2) / 2) + 1 = floor(31/2) + 1 = 15 + 1 = 16. Stride 2 with P=1 on a 32×32 input halves the spatial dimensions. This is the standard 'downsample-by-2' recipe used throughout ResNet and ConvNeXt."
-    },
-    {
-      "stage": "check",
-      "question": "Inside `conv2d_naive`, the line `out[oc, i, j] = np.sum(patch * w[oc])` where both `patch` and `w[oc]` have shape `(C_in, kh, kw)`. What arithmetic operation does this represent?",
-      "options": [
-        "The dot product (sum of element-wise products) across all input channels and kernel positions — producing one scalar, the activation for output channel `oc` at position `(i, j)`",
-        "The maximum value of the element-wise product across all kernel positions for that output channel",
-        "The L2 norm of the difference between the input patch and the kernel",
-        "The sum of only the centre element of each kernel slice, ignoring the surrounding weights"
-      ],
-      "correct": 0,
-      "explanation": "`np.sum(patch * w[oc])` first multiplies the two tensors element-wise (C_in × kh × kw multiplications) then sums all values to a single scalar. This is the dot product of two flattened vectors of length C_in×kh×kw — the mathematically correct definition of one convolutional output pixel."
+      "stage": "pre",
+      "question": "A conv layer has in_channels=3, out_channels=64, kernel_size=3, with bias. How many learnable parameters?",
+      "options": ["1,728", "1,792", "576", "192"],
+      "correct": 1,
+      "explanation": "C_out * C_in * K * K + C_out = 64 * 3 * 3 * 3 + 64 = 1,728 + 64 = 1,792. The +C_out is one bias per output channel. Compare that to a dense layer on the same input (224*224*3 -> 64 = about 9.6M params) and you see why convolution is the right prior for images."
     },
     {
       "stage": "post",
-      "question": "What does the `im2col` transformation actually do?",
-      "options": [
-        "It compresses the image to fit in GPU cache",
-        "It extracts every kernel-sized receptive window from the input and stacks them as columns so that convolution becomes a single matrix multiply",
-        "It converts float32 pixels to int8 for faster arithmetic",
-        "It concatenates all images in a batch into a single 2D matrix"
-      ],
+      "question": "Why do modern CNNs prefer stacks of 3x3 convolutions over a single 5x5 or 7x7 conv?",
+      "options": ["3x3 convolutions are hardware-accelerated; larger ones are not", "Two 3x3 convs cover the same 5x5 receptive field with fewer parameters (2 * 9 vs 25) and add an extra non-linearity between them", "Large kernels overflow GPU registers", "3x3 is the only kernel size that supports padding"],
       "correct": 1,
-      "explanation": "im2col reshapes the input so that each column is one flattened receptive field of size C_in×kh×kw. Flattening the kernels into rows reduces convolution to a single GEMM call (w_flat @ cols), which GPUs execute orders of magnitude faster than a Python quadruple loop. Every production conv library — cuDNN, oneDNN, MLX — is some variant of this."
+      "explanation": "Stacking 3x3 convs gives the same receptive field as one large conv but with fewer parameters and more non-linearities, which increases expressive power. VGG proved this empirically and every modern family (ResNet, ConvNeXt) inherited the design."
     },
     {
       "stage": "post",
-      "question": "You stack four 3×3 convolutions (all stride 1, no pooling). What is the receptive field of a neuron in the final layer?",
-      "options": [
-        "3×3 — each conv is 3×3 and depth does not compound",
-        "5×5 — two convs give 5×5 and additional depth adds nothing",
-        "9×9 — each conv adds 2 to each side: RF = 1 + L×(K-1) = 1 + 4×2 = 9",
-        "15×15 — every conv triples the receptive field"
-      ],
+      "question": "What does the im2col transformation actually do?",
+      "options": ["It compresses the image to fit in GPU cache", "It extracts every kernel-sized receptive window from the input and stacks them as columns so that convolution becomes a single matrix multiply", "It converts float32 pixels to int8 for faster arithmetic", "It concatenates all images in a batch into a single 2D matrix"],
+      "correct": 1,
+      "explanation": "im2col reshapes the input so that each column is one flattened receptive field. Flattening the kernel into a row reduces convolution to cols @ w_flat.T, a single GEMM call that GPUs execute thousands of times faster than a quadruple Python loop. Every production conv library is some variant of this."
+    },
+    {
+      "stage": "post",
+      "question": "You stack four 3x3 convolutions (all stride 1, no pooling). What is the receptive field of a neuron in the final layer?",
+      "options": ["3x3 — each conv is 3x3", "5x5 — two convs give 5x5 and depth does not help", "9x9 — every conv adds 2 on each side: 1 + 4*(3-1) = 9", "15x15 — every conv triples the receptive field"],
       "correct": 2,
-      "explanation": "For L stacked K×K convs with stride 1, RF = 1 + L×(K-1). With L=4 and K=3 that is 1 + 4×2 = 9. The same formula generalises with stride: receptive field grows multiplicatively through strided layers, which is why a deep network with downsampling can cover the whole image in ten or fifteen blocks."
+      "explanation": "For L stacked K x K convs with stride 1, receptive field = 1 + L * (K - 1). With L=4 and K=3 that is 1 + 4*2 = 9. The same formula generalises with stride: receptive field grows multiplicatively through strided layers, which is why a deep network with downsampling can cover the whole image in ten or fifteen blocks."
     }
   ]
 }

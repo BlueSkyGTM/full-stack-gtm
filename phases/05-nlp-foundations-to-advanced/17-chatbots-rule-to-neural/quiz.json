@@ -15,6 +15,18 @@
       "explanation": "Slot filling iteratively collects the structured parameters a task handler needs."
     },
     {
+      "stage": "pre",
+      "question": "Why is retrieval-based chat resistant to hallucination?",
+      "options": [
+        "It uses embeddings",
+        "It rejects all queries",
+        "It returns a canned response from a curated set rather than generating new text",
+        "It uses BM25"
+      ],
+      "correct": 2,
+      "explanation": "Retrieval surfaces pre-written answers; no generation means no fabricated content."
+    },
+    {
       "stage": "check",
       "question": "What defines an LLM agent loop versus a single-shot LLM call?",
       "options": [
@@ -73,6 +85,18 @@
       ],
       "correct": 1,
       "explanation": "PVE checks each step against the agreed plan, so injected instructions from tool outputs are rejected."
+    },
+    {
+      "stage": "post",
+      "question": "Why must destructive actions (payments, deletions) route through a structured flow even in an LLM-agent system?",
+      "options": [
+        "LLMs are slow",
+        "Beam search is unsafe",
+        "Tools cannot be called",
+        "Confident fabrication, prompt injection, and scope creep mean the LLM cannot be the sole authority for irreversible side effects"
+      ],
+      "correct": 3,
+      "explanation": "Hallucination and injection make irreversible actions through pure LLM agents unsafe; require deterministic confirmation flows."
     }
   ]
 }

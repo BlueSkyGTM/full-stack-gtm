@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "Why does the evaluator use a paired t test instead of comparing two single numbers?",
+      "options": [
+        "Because numpy requires paired arrays",
+        "Because pairing the same seed across candidate and baseline isolates the configuration change from random initialisation noise",
+        "Because the runner cannot emit a single number",
+        "Because t tests are always required by IRB"
+      ],
+      "correct": 1,
+      "explanation": "Pairing by seed cancels out random initialisation effects. The remaining difference is attributable to the configuration change, which is what the test measures."
+    },
+    {
+      "stage": "pre",
       "question": "Why does the evaluator carry a direction field on every metric?",
       "options": [
         "Because accuracy and loss point in opposite ways; the sign of the improvement depends on which direction is better for the metric being compared",
@@ -13,6 +25,18 @@
       ],
       "correct": 0,
       "explanation": "Higher is better metrics improve when they go up; lower is better metrics improve when they go down. The direction field tells the improvement function which sign convention to apply."
+    },
+    {
+      "stage": "check",
+      "question": "What does the verdict path return when |improvement| is below the threshold even if the p value is significant?",
+      "options": [
+        "improved",
+        "regressed",
+        "noise",
+        "failed"
+      ],
+      "correct": 2,
+      "explanation": "A statistically significant change that is too small to act on is still noise from the loop's point of view. The threshold gate runs before the significance gate."
     },
     {
       "stage": "check",
@@ -49,30 +73,6 @@
       ],
       "correct": 1,
       "explanation": "A failed run invalidates the candidate set. The evaluator short circuits the verdict path and returns failed with the offending terminals listed, so the orchestrator does not draw a conclusion from a crashed run."
-    },
-    {
-      "stage": "post",
-      "question": "What statistical test helps distinguish real improvements from noise across repeated runs?",
-      "options": [
-        "Paired significance tests (e.g., paired t-test or Wilcoxon signed-rank) comparing baseline and new method",
-        "Taking the mean of all runs",
-        "Picking the best single run",
-        "Ignoring variance entirely"
-      ],
-      "correct": 0,
-      "explanation": "Repeated runs have variance due to randomness. A single run can be lucky or unlucky. Paired significance tests assess whether the improvement over baseline is statistically significant (i.e., unlikely due to chance), which is essential for claiming a method actually works."
-    },
-    {
-      "stage": "post",
-      "question": "Why aggregate multiple metrics when evaluating research results?",
-      "options": [
-        "To capture trade-offs: optimizing one metric often degrades another, so the full picture requires looking at all of them",
-        "To reduce file size",
-        "To simplify code",
-        "To increase randomness"
-      ],
-      "correct": 0,
-      "explanation": "Research systems are multi-dimensional. A method might improve accuracy but increase latency, or improve speed but decrease robustness. Aggregating metrics (accuracy, latency, memory, etc.) reveals these trade-offs and prevents cherry-picking a single favorable number to make claims."
     }
   ]
 }

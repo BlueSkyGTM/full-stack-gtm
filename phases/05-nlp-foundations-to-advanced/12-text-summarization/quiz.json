@@ -12,7 +12,19 @@
         "Extractive is slower than abstractive"
       ],
       "correct": 1,
-      "explanation": "Extractive lifts sentences verbatim (no hallucination possible); abstractive rewrites content and may confidently invent facts not in the source."
+      "explanation": "Extractive lifts sentences verbatim; abstractive rewrites and risks hallucination."
+    },
+    {
+      "stage": "pre",
+      "question": "What does ROUGE measure?",
+      "options": [
+        "Embedding similarity",
+        "N-gram and longest-common-subsequence overlap between system and reference summaries",
+        "Reading time",
+        "Token-level perplexity"
+      ],
+      "correct": 1,
+      "explanation": "ROUGE-1/2/L measure unigram, bigram, and LCS overlap with references."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "By embedding cosine to the question"
       ],
       "correct": 2,
-      "explanation": "TextRank uses PageRank over a sentence-similarity graph — highly connected sentences (similar to many others) score highest and are returned as the summary."
+      "explanation": "TextRank uses PageRank over a sentence-similarity graph; highly connected sentences score highest."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Stemming is required by the rouge-score package"
       ],
       "correct": 0,
-      "explanation": "Stemming merges morphological variants so ROUGE credits semantically equivalent forms — the rouge-score package exposes use_stemmer=True for exactly this reason."
+      "explanation": "Stemming merges morphological variants so ROUGE credits semantically equivalent forms."
     },
     {
       "stage": "check",
@@ -48,11 +60,11 @@
         "chrF"
       ],
       "correct": 2,
-      "explanation": "NLI-based faithfulness scoring checks whether each summary claim is entailed by the source — ROUGE and BLEU are blind to fabricated content that uses the right words."
+      "explanation": "NLI-based faithfulness scoring flags claims in the summary not entailed by the source."
     },
     {
       "stage": "post",
-      "question": "The lesson's `textrank` function ranks sentences via PageRank iteration. Why is this extractive approach preferred over abstractive generation for compliance-adjacent content?",
+      "question": "Why is extractive summarization preferred for compliance-adjacent content?",
       "options": [
         "Outputs are lifted verbatim from the source, eliminating the abstractive hallucination class",
         "It is faster",
@@ -60,7 +72,19 @@
         "ROUGE scores are higher"
       ],
       "correct": 0,
-      "explanation": "Verbatim extraction cannot invent content — entity swaps, number drift, polarity flips, and fact invention are impossible when every output sentence came from the source."
+      "explanation": "Verbatim extraction cannot invent content, which matters where factuality is regulated."
+    },
+    {
+      "stage": "post",
+      "question": "Which of these is an abstractive hallucination type to monitor for?",
+      "options": [
+        "Punctuation drift",
+        "Stopword removal",
+        "Long sentences",
+        "Entity swap (e.g. 'John Smith' rendered as 'John Brown'), number drift, polarity flip, or fact invention"
+      ],
+      "correct": 3,
+      "explanation": "Entity swaps, numeric drift, polarity flips, and invented facts are the canonical abstractive failure modes."
     },
     {
       "stage": "post",
@@ -72,7 +96,7 @@
         "For domains like scientific abstracts where Pegasus's gap-sentence pretraining objective is a closer fit"
       ],
       "correct": 3,
-      "explanation": "Pegasus's gap-sentence pretraining objective — masking and predicting entire salient sentences — makes it especially strong on long-form domain summarization (e.g. PubMed, arXiv) where BART-large-CNN underperforms."
+      "explanation": "Pegasus's gap-sentence objective excels at long-form domain summarization (e.g. pubmed)."
     }
   ]
 }

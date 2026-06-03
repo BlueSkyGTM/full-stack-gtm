@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What search shape does the AI-Scientist-class agent use to explore experiments?",
+      "options": [
+        "Beam search over token outputs",
+        "Best-first tree search over experiment nodes with a novelty x quality x budget score",
+        "Pure reinforcement learning from human feedback",
+        "Breadth-first expansion with random scoring"
+      ],
+      "correct": 1,
+      "explanation": ""
+    },
+    {
+      "stage": "pre",
       "question": "Why is the sandbox configured with --network=none and bounded resource caps?",
       "options": [
         "To force the agent to use prompt caching",
@@ -12,7 +24,7 @@
         "To prevent network egress and contain experiment side effects within a reproducible envelope"
       ],
       "correct": 3,
-      "explanation": "The hypothesis generator formulates testable research questions by identifying gaps in existing literature and proposing novel experimental approaches."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "Replaces matplotlib at render time"
       ],
       "correct": 1,
-      "explanation": "Literature retrieval uses semantic search over academic databases to find relevant papers, extract their contributions, and build a knowledge graph of the research space."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Five judges score on NeurIPS-style rubrics and the weighted aggregate must clear a threshold, otherwise the draft loops back to the writer"
       ],
       "correct": 3,
-      "explanation": "The experiment runner executes computational experiments (code runs, data analysis, simulations) based on the generated hypothesis and retrieves structured results."
+      "explanation": ""
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "GPU-hours tracked but never capped"
       ],
       "correct": 0,
-      "explanation": "The result evaluator compares experimental outcomes against the hypothesis, interprets statistical significance, and determines whether the hypothesis should be accepted or revised."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Output length and token count"
       ],
       "correct": 0,
-      "explanation": "The capstone measures hypothesis novelty (originality of generated research questions), experimental validity (soundness of designed experiments), and iteration efficiency (number of cycles to reach a valid conclusion)."
+      "explanation": ""
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "Sandbox-escape attempts such as fork bombs, network exfiltration, and filesystem escapes"
       ],
       "correct": 3,
-      "explanation": "Autonomy is evaluated by measuring the number of human interventions required, the diversity of explored hypotheses, and the ability to identify when to stop research."
+      "explanation": ""
     }
   ]
 }

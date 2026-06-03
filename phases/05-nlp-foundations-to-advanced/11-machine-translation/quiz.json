@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What does BLEU measure?",
+      "options": [
+        "Language identification accuracy",
+        "N-gram precision (typically 1-4) between hypothesis and reference, with a brevity penalty",
+        "Character-level F-score",
+        "Embedding cosine similarity"
+      ],
+      "correct": 1,
+      "explanation": "BLEU is the geometric mean of 1-4-gram precision against references, plus a brevity penalty."
+    },
+    {
+      "stage": "pre",
       "question": "Why use sacrebleu instead of rolling your own BLEU?",
       "options": [
         "It is more accurate",
@@ -12,7 +24,7 @@
         "It supports streaming"
       ],
       "correct": 2,
-      "explanation": "sacrebleu freezes tokenization — without it, different tokenizers produce incomparable BLEU numbers, a common source of misleading benchmark comparisons."
+      "explanation": "sacrebleu freezes tokenization, removing a common source of incomparable BLEU numbers."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "src_lang"
       ],
       "correct": 1,
-      "explanation": "NLLB forces the first decoded token to a target-language code via forced_bos_token_id; without it the model may decode into any language (off-target generation)."
+      "explanation": "NLLB forces the first decoded token to a target-language code via forced_bos_token_id."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Latency"
       ],
       "correct": 2,
-      "explanation": "Learned metrics like COMET correlate more strongly with human judgment than heuristic metrics like BLEU or chrF alone, making them the 2026 production standard."
+      "explanation": "Learned metrics like COMET correlate more strongly with human judgment than BLEU/chrF alone."
     },
     {
       "stage": "check",
@@ -48,7 +60,19 @@
         "Whenever a reference exists"
       ],
       "correct": 0,
-      "explanation": "Character F-score captures partial morphological matches — inflected forms, compound splits — that word-level BLEU counts as completely wrong."
+      "explanation": "Character F-score captures partial morphological matches that word-level BLEU undercounts."
+    },
+    {
+      "stage": "post",
+      "question": "What is off-target generation in multilingual MT?",
+      "options": [
+        "Output that drops named entities",
+        "Output that misses punctuation",
+        "The model decodes into the wrong target language (e.g. NLLB outputting Spanish when French was requested)",
+        "Output that is too short"
+      ],
+      "correct": 2,
+      "explanation": "Off-target generation is common on rare language pairs; a post-translation language-ID check catches it."
     },
     {
       "stage": "post",
@@ -60,7 +84,7 @@
         "Quality and domain match dominate volume; noisy parallel data introduces drift and hallucination"
       ],
       "correct": 3,
-      "explanation": "Clean domain-aligned pairs are the largest production quality lever; noisy web-scraped data introduces mistranslation patterns and hallucination that corrupt fine-tuning."
+      "explanation": "Clean domain-aligned pairs are the largest production lever; noisy data degrades adaptation."
     },
     {
       "stage": "post",
@@ -72,7 +96,7 @@
         "Small-language pairs with millions of parallel sentences"
       ],
       "correct": 2,
-      "explanation": "LLMs win on idiomatic phrasing, long-context coherence, and style-controlled translation; specialized MT models win on throughput, latency, and cost."
+      "explanation": "LLMs win on idiomatic, long-context, or style-controlled translation; specialized MT wins on throughput and latency."
     }
   ]
 }

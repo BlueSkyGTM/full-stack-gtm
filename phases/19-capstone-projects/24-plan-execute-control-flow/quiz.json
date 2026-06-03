@@ -4,6 +4,18 @@
   "questions": [
     {
       "stage": "pre",
+      "question": "What is the planner's responsibility in a plan-execute agent?",
+      "options": [
+        "To call the dispatcher on each step",
+        "To produce an ordered list of typed steps the executor will run",
+        "To enforce timeouts",
+        "To handle the JSON-RPC transport"
+      ],
+      "correct": 1,
+      "explanation": "Planner emits structured plans. The executor runs them. Mixing the two is the chain-of-thought trap this lesson is moving away from."
+    },
+    {
+      "stage": "pre",
       "question": "Why is expected_outcome part of the Step shape even though the executor does not check it?",
       "options": [
         "Because the dispatcher uses it as a cache key",
@@ -12,7 +24,7 @@
         "Because the model trains on it"
       ],
       "correct": 1,
-      "explanation": "Plan representation uses a hierarchical task graph with nodes representing operations and edges representing dependencies, enabling visualization and manipulation of execution order."
+      "explanation": "The replanner reads it when revising. The tracer renders it on the timeline. It is a human-readable contract on the step."
     },
     {
       "stage": "check",
@@ -24,7 +36,7 @@
         "tool.error followed by session.start"
       ],
       "correct": 2,
-      "explanation": "Dependency resolution topologically sorts the task graph, identifying which tasks can run in parallel and which must wait for predecessors to complete."
+      "explanation": "plan.diff makes the revision visible. A silent rewrite is the bug we are avoiding."
     },
     {
       "stage": "check",
@@ -36,7 +48,7 @@
         "Because the registry counts replans"
       ],
       "correct": 0,
-      "explanation": "Error recovery strategies include: retry on transient failures, skip non-critical tasks with fallback values, abort on critical failures, and rerun failed subtrees after fixing."
+      "explanation": "max_replans catches a planner that keeps returning the same broken plan. max_steps catches a runaway plan that keeps growing."
     },
     {
       "stage": "check",
@@ -48,7 +60,7 @@
         "no_plan"
       ],
       "correct": 3,
-      "explanation": "Checkpointing saves plan state after each task completion, enabling resumption from intermediate states after crashes or interruptions."
+      "explanation": "No plan, no execution. The session ends with reason=no_plan and status=failed."
     },
     {
       "stage": "post",
@@ -60,7 +72,7 @@
         "Step ids the planner asked to skip"
       ],
       "correct": 2,
-      "explanation": "The capstone measures plan execution efficiency (parallelism utilization), recovery reliability (successful resumption from checkpoints), and abort safety (clean shutdown on critical failures)."
+      "explanation": "revised is the set of ids whose (tool_name, args) signature changed across the revision."
     },
     {
       "stage": "post",
@@ -72,7 +84,7 @@
         "no_plan"
       ],
       "correct": 2,
-      "explanation": "Visualization provides real-time plan progress updates, showing completed, in-progress, and pending tasks with their status and dependencies."
+      "explanation": "replan_budget. The status is failed. History carries every step that ran, including the failures that triggered replans."
     }
   ]
 }

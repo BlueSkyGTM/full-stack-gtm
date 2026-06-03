@@ -1,76 +1,37 @@
 {
-  "lesson": "04-image-classification",
-  "title": "Image Classification",
   "questions": [
     {
       "stage": "pre",
       "question": "Your model outputs raw logits of shape (N, C). You write `loss = cross_entropy(softmax(logits), y)`. What goes wrong?",
-      "options": [
-        "Nothing — that is the correct API",
-        "cross_entropy re-applies softmax inside, so you end up computing softmax(softmax(logits)), producing nearly-uniform probabilities and near-zero gradients",
-        "cross_entropy raises a ValueError about the input shape",
-        "Accuracy drops by exactly 1/C"
-      ],
+      "options": ["Nothing — that is the correct API", "cross_entropy re-applies softmax inside, so you end up computing softmax(softmax(logits)), producing nearly-uniform probabilities and useless gradients", "cross_entropy raises a ValueError about the shape", "Accuracy drops by exactly 1/C"],
       "correct": 1,
       "explanation": "PyTorch's cross_entropy expects raw logits — it fuses log_softmax and NLL internally for numerical stability. Applying softmax first gives softmax(softmax(x)), which compresses logits toward uniform and makes gradients nearly zero. Training loss looks plausible for a few steps then stalls. Always pass raw logits."
     },
     {
-      "stage": "check",
-      "question": "In `mixup_batch`, `lam = float(np.random.beta(alpha, alpha))` with `alpha=0.2`. Beta(0.2, 0.2) is U-shaped, concentrating probability near 0 and 1. What does this imply for most training examples?",
-      "options": [
-        "Most images are blended 50/50 between two classes with equal weight",
-        "Every image is replaced by pure noise drawn from the Beta distribution",
-        "The model trains on uniform random mixtures, ignoring the original labels entirely",
-        "Most `lam` values are close to 0 or 1, so most images are predominantly one original with only a small contribution from a second — true 50/50 blends are rare"
-      ],
-      "correct": 3,
-      "explanation": "For small alpha (0.2), Beta(alpha, alpha) puts most of its mass near the endpoints. So lam is usually near 1 (mostly image_i) or near 0 (mostly image_j). The model still sees soft labels, which prevents overfitting to hard one-hot targets, but the visual signal stays close to one real image rather than being unintelligible noise."
-    },
-    {
-      "stage": "check",
-      "question": "The lesson lists five training-loop invariants. If `optimizer.zero_grad()` is removed from the inner loop, what silent failure occurs?",
-      "options": [
-        "The model stops updating because all gradients become zero",
-        "The model converges faster because accumulated gradients act like a larger batch size",
-        "Gradients from previous batches accumulate in `.grad` buffers each step, so each update is proportional to the sum of all past batches — appearing as if the learning rate is wildly too high and causing erratic or diverging loss",
-        "PyTorch raises a RuntimeError about incompatible gradient shapes"
-      ],
-      "correct": 2,
-      "explanation": "Without zero_grad(), `.grad` tensors are never reset. After step t, grad holds the sum of gradients from steps 1..t, so the effective update grows without bound as training progresses. The loss curve typically looks unstable or diverges, but no exception is raised. This is the second-most common silent bug after the double-softmax mistake."
-    },
-    {
-      "stage": "check",
-      "question": "In `print_confusion`, precision for class i is `tp[i] / (tp[i] + fp[i])`. Which entries in the confusion matrix `cm` contribute to `fp[i]` — false positives for class i?",
-      "options": [
-        "`cm[j, i]` for all j ≠ i — examples whose true class is j but were predicted as class i",
-        "`cm[i, j]` for all j ≠ i — examples of true class i predicted as some other class j",
-        "`cm[i, i]` — the true positives on the diagonal",
-        "The entire column i including the diagonal"
-      ],
-      "correct": 0,
-      "explanation": "In a confusion matrix, row = true class, column = predicted class. A false positive for class i is any example that was predicted as i but actually belongs to another class j — that is entry cm[j, i] for j≠i. Summing the column excluding the diagonal gives total false positives, which is what `cm.sum(dim=0)[i] - cm[i,i]` computes."
+      "stage": "pre",
+      "question": "You evaluate a 10-class classifier and get 92% accuracy. Class 0 has 9,000 examples; classes 1-9 share 1,000 examples (roughly 111 each, 10,000 total). What does the headline number hide?",
+      "options": ["Nothing — accuracy is accuracy", "The model could be predicting class 0 for every input and still score 90% (9000/10000); the remaining 2% could come from any other class. Per-class precision/recall tells you what is really happening", "The validation loss is wrong", "The model is definitely over-fitting"],
+      "correct": 1,
+      "explanation": "On a 9000/1000 split (90/10 imbalance with 10,000 total examples), always predicting the majority class gets 9000/10000 = 90% accuracy. A 92% number could hide nine minority classes at roughly 20% accuracy each. Per-class precision, recall, F1, and the confusion matrix are the diagnostics that surface this, which is why aggregate accuracy alone never justifies shipping a classifier."
     },
     {
       "stage": "post",
-      "question": "Mixup replaces one-hot labels with interpolated soft targets `lambda * y_i + (1-lambda) * y_j`. Why does this help generalisation?",
-      "options": [
-        "It doubles the effective batch size by combining two examples into one",
-        "The model is forced to produce smooth predictions between classes instead of memorising hard one-hot targets, which improves both calibration and test accuracy",
-        "It lets you train with a larger learning rate without diverging",
-        "It guarantees zero training loss by construction"
-      ],
+      "question": "Mixup replaces one-hot labels with interpolated soft targets like lambda * y_i + (1-lambda) * y_j. Why does this help generalisation?",
+      "options": ["It doubles the effective batch size", "The model is forced to produce smooth predictions between classes instead of memorising hard one-hot targets, which improves both calibration and test accuracy", "It lets you train with a larger learning rate", "It guarantees zero train loss"],
       "correct": 1,
       "explanation": "Training against hard one-hot targets pushes logits to be arbitrarily sharp at each training point, which hurts calibration and invites overfitting. Mixup's convex combination of inputs and labels forces the classifier to behave smoothly between training points, which is a reasonable prior for natural image classes and consistently improves test accuracy without extra data."
     },
     {
       "stage": "post",
+      "question": "You swap `RandomCrop(32, padding=4, padding_mode='zeros')` for `padding_mode='reflect'` on CIFAR-10. Why is reflect better here?",
+      "options": ["Reflect pad is faster", "Zero padding creates hard black borders that the model learns to depend on; reflect pad mirrors the edge pixels so augmented crops look like natural photographs", "Reflect pad changes the output size", "Reflect pad is required by batch normalization"],
+      "correct": 1,
+      "explanation": "Zero-padded crops have visible black borders that leak information about crop position into the features. The network can learn to look at the corner and implicitly undo the augmentation. Reflect pad mirrors real content, so every crop still looks like a natural image and the network cannot cheat on the augmentation."
+    },
+    {
+      "stage": "post",
       "question": "You train a classifier and the confusion matrix shows most errors are class 3 predicted as class 5 and class 5 predicted as class 3. What is the single most impactful next step?",
-      "options": [
-        "Add more training data across all classes equally",
-        "Increase batch size to reduce gradient noise",
-        "Inspect a sample of class-3 and class-5 images that confuse the model — the two classes may be genuinely ambiguous, mislabelled, or visually similar in a way that calls for targeted augmentation or a re-labelled training set",
-        "Switch from SGD to Adam optimizer"
-      ],
+      "options": ["Add more training data across all classes equally", "Increase batch size", "Look at a sample of class-3 and class-5 images that confuse the model; the two classes may be genuinely ambiguous, mislabelled, or visually similar in a way that calls for a targeted augmentation or a re-labelled training set", "Switch from SGD to Adam"],
       "correct": 2,
       "explanation": "A confusion matrix concentrated on one off-diagonal pair means the failure mode is specific. The right action is to inspect those images: you often find mislabelled data, near-duplicate classes, or a simple invariance the model has not learnt. Blanket changes (more data, new optimizer) rarely help when the failure is this localised."
     }
