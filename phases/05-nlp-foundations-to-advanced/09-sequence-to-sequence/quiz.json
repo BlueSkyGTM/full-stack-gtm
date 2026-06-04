@@ -15,18 +15,6 @@
       "explanation": "The encoder RNN compresses the source into a final hidden state used by the decoder."
     },
     {
-      "stage": "pre",
-      "question": "What is teacher forcing during seq2seq training?",
-      "options": [
-        "Adding a teacher network during inference",
-        "Doubling the batch size",
-        "Feeding the ground-truth previous token (instead of the model's prediction) as decoder input",
-        "Manually labeling each decoder step"
-      ],
-      "correct": 2,
-      "explanation": "Teacher forcing stabilizes training by using true previous tokens; without it early errors cascade."
-    },
-    {
       "stage": "check",
       "question": "Why does fixed context-vector seq2seq accuracy fall as input length grows?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 0,
       "explanation": "Scheduled sampling gradually mixes in model predictions to close the train/inference gap."
-    },
-    {
-      "stage": "post",
-      "question": "Why does greedy decoding alone often fail for user-facing generation?",
-      "options": [
-        "It cannot use embeddings",
-        "It always picks <EOS> first",
-        "Greedy can repeat or loop and cannot backtrack from a locally good but globally poor token choice",
-        "It requires more memory"
-      ],
-      "correct": 2,
-      "explanation": "Greedy decoding's irrevocable per-step choice causes loops and repetition without beam search or sampling."
     }
   ]
 }
