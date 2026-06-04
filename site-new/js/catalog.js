@@ -24,6 +24,8 @@
   const rows = [];
   PHASES.forEach((p) => p.lessons.forEach((l, i) => {
     if (l.status !== 'complete') return;  // hide lessons not yet live in curriculum
+    // Phase 19: only show the main capstone entries (P-prefixed combines), same as course view
+    if (p.id === 19 && !(l.combines && /^P/.test(l.combines))) return;
     rows.push({
       phase: p.id, phaseName: p.name, idx: i,
       name: l.name, type: l.type, lang: l.lang || '—',

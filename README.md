@@ -1,40 +1,28 @@
-# Epoch Academy
+# AI Engineering From Scratch
 
 > Build modern AI, by hand.
 
-A personal learning dashboard built on top of [AI Engineering from Scratch](https://github.com/rohitg00/ai-engineering-from-scratch) by Rohit Ghumare — one of the most thorough open-source AI engineering curricula that exists (27,000+ stars, MIT licensed).
-
-The curriculum is his. The dashboard is mine.
-
----
-
-## What the upstream curriculum is
-
-Rohit built 503 lessons across 20 phases — ~320 hours of AI engineering from linear algebra through autonomous agent swarms. Python, TypeScript, Rust, Julia. Every lesson follows the same six-beat structure:
+503 lessons across 20 chapters — ~320 hours of AI engineering from linear algebra through autonomous agent swarms. Python, TypeScript, Rust, Julia. Every lesson follows the same six-beat structure:
 
 ```
 MOTTO → PROBLEM → CONCEPT → BUILD IT → USE IT → SHIP IT
 ```
 
-The "Build It / Use It" split is the core idea: you implement the algorithm from raw math first, then run the same thing through PyTorch or scikit-learn. By the time the framework shows up, you already know what it's doing. 1,109 quiz questions across 200 lesson files are included. No hand-holding, no five-minute videos.
-
-The full curriculum lives at: https://github.com/rohitg00/ai-engineering-from-scratch
+The "Build It / Use It" split is the core idea: you implement the algorithm from raw math first, then run the same thing through PyTorch or scikit-learn. By the time the framework shows up, you already know what it's doing. Over 2,000 quiz questions across 351 lesson files. No hand-holding, no five-minute videos.
 
 ---
 
-## What I built on top
+## Dashboard
 
 Everything in `site-new/` is original. No framework. No build step. Opens directly in a browser.
-
-### Six-page dashboard
 
 | Page | What it does |
 |------|-------------|
 | **Course** | 20-chapter accordion. Per-lesson tick boxes. Live XP bar and rank. |
-| **Catalog** | All 498 indexed lessons. Filter by chapter, type, language, or search by name. Rows fully clickable — opens the lesson reader. |
+| **Catalog** | All lessons indexed. Filter by chapter, type, language, or search by name. Rows clickable — opens the lesson reader. |
 | **Lesson reader** | Fetches and renders lesson markdown from GitHub. Sidebar shows all lessons in the current chapter with completion state. Prev/next navigation. |
-| **Projects** | Every capstone build surfaced from every chapter — not just Phase 19. 60 builds, locked until you complete the lesson. |
-| **Library** | 110 curated free resources — books, videos, papers, courses, articles, and interactive tools — with topic and type filtering. |
+| **Projects** | 17 capstone builds from Phase 19, locked until you complete the prerequisite lessons. |
+| **Library** | 110+ curated free resources — books, videos, papers, courses, articles — with topic and type filtering. |
 | **Glossary** | 83 flip cards. What people say vs what it actually means. |
 
 ### Claude Code integration
@@ -90,7 +78,7 @@ Progress persists to `/wp-json/aischool/v1/progress` when a nonce is present. Fa
 | 16 Multi-Agent & Swarms | Coordination, parallelism, swarm patterns |
 | 17 Infrastructure & Production | Serving, monitoring, deployment pipelines |
 | 18 Ethics, Safety & Alignment | Red-teaming, constitutional AI, safety evals |
-| 19 Capstone Projects | 85 final builds across all major concept clusters |
+| 19 Capstone Projects | 17 final builds that combine concepts across all phases |
 
 **Languages:** Python · TypeScript · Rust · Julia
 
@@ -124,9 +112,7 @@ No install. No build. No config.
 
 | | |
 |--|--|
-| [rohitg00/ai-engineering-from-scratch](https://github.com/rohitg00/ai-engineering-from-scratch) | The curriculum — all 503 lessons, 1,109 quiz questions, the six-beat lesson format, phase architecture |
-| [GokuMohandas/Made-With-ML](https://github.com/GokuMohandas/Made-With-ML) | Queued for integration — practitioner-level MLOps exercises staged in `ai-school-expansion/` |
+| [rohitg00/ai-engineering-from-scratch](https://github.com/rohitg00/ai-engineering-from-scratch) | Original curriculum — lesson content, phase architecture, six-beat lesson format |
 | [EbookFoundation/free-programming-books](https://github.com/EbookFoundation/free-programming-books) | Library curation source |
-| [garrytan/gstack](https://github.com/garrytan/gstack) | Toolchain used throughout development — `/qa`, `/design-review`, `/investigate`, `/browse` |
-
-The dashboard, progress system, lesson reader, library, glossary, WordPress integration, and Claude Code integration were built from scratch.
+| [Synaptic Labs / Professor Synapse](https://github.com/ProfSynapse) | Prompt methodology and AI engineering guidance |
+| [garrytan/gstack / ICM](https://github.com/garrytan/gstack) | Toolchain and workspace methodology used throughout development |

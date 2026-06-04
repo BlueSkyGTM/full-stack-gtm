@@ -10,11 +10,11 @@
   const { el } = ui;
   const $ = (s) => document.querySelector(s);
 
-  /* Phase 19 is the capstone chapter — all its lessons are projects */
+  /* Phase 19 is the capstone chapter — show only the 17 main capstones (P-prefixed combines) */
   const phase19 = PHASES.find((p) => p.id === 19) || { lessons: [] };
-  const allCapstones = phase19.lessons.map((l, i) => ({
-    ph: phase19, l, i, done: store.isDone(phase19.id, i)
-  }));
+  const allCapstones = phase19.lessons
+    .map((l, i) => ({ ph: phase19, l, i, done: store.isDone(phase19.id, i) }))
+    .filter(({ l }) => l.combines && /^P/.test(l.combines));
 
   /* shipped first, then curriculum order */
   allCapstones.sort((a, b) => (b.done - a.done) || (a.i - b.i));
