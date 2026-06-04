@@ -15,18 +15,6 @@
       "explanation": "Pinned self-hosted apps make execution-based evaluation reliable and comparable over time."
     },
     {
-      "stage": "pre",
-      "question": "Why does OSWorld use real OS screenshots rather than accessibility APIs?",
-      "options": [
-        "Accessibility APIs are too fast",
-        "Screenshots force the agent to do real GUI grounding in 1920x1080, matching production constraints",
-        "Accessibility APIs leak PII",
-        "Screenshots cost less"
-      ],
-      "correct": 1,
-      "explanation": "Screenshot-driven evaluation forces pixel-to-element grounding, the actual production constraint."
-    },
-    {
       "stage": "check",
       "question": "What two primary failure modes does OSWorld surface?",
       "options": [
