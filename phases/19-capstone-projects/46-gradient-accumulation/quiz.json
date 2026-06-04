@@ -15,18 +15,6 @@
       "explanation": "Micro batch is what fits in memory; accumulation steps are how many forward + backward passes pile gradients into the same buffer before one optimizer step."
     },
     {
-      "stage": "pre",
-      "question": "Why must the loss be divided by accum_steps before backward on each micro batch?",
-      "options": [
-        "It makes the loss curve prettier",
-        "PyTorch sums gradients into param.grad by default, so without the division the accumulated gradient is N times too large and the optimizer step is N times too aggressive",
-        "It avoids NaNs",
-        "It is required for mixed precision only"
-      ],
-      "correct": 1,
-      "explanation": "The accumulation buffer is a sum. Per-micro-batch scaling by 1/N pushes that sum back into the same scale a single full-batch backward would produce."
-    },
-    {
       "stage": "check",
       "question": "When does the optimizer step run inside the accumulation loop?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "Each micro batch costs the same forward + backward. Accumulation buys statistical smoothing per optimizer step, not raw throughput; the curve is a useful reality check against folklore."
+    },
+    {
+      "stage": "post",
+      "question": "Why must the loss be divided by accum_steps before backward on each micro batch?",
+      "options": [
+        "It makes the loss curve prettier",
+        "PyTorch sums gradients into param.grad by default, so without the division the accumulated gradient is N times too large and the optimizer step is N times too aggressive",
+        "It avoids NaNs",
+        "It is required for mixed precision only"
+      ],
+      "correct": 1,
+      "explanation": "The accumulation buffer is a sum. Per-micro-batch scaling by 1/N pushes that sum back into the same scale a single full-batch backward would produce."
     }
   ]
 }
