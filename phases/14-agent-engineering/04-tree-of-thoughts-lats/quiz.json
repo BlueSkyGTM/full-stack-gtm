@@ -15,18 +15,6 @@
       "explanation": "Without branching, a wrong early subexpression poisons the rest of the chain; the paper measures only 4 percent for CoT."
     },
     {
-      "stage": "pre",
-      "question": "What is a node in a Tree of Thoughts search?",
-      "options": [
-        "A token produced by the model",
-        "A coherent intermediate step or thought, with K possible child expansions",
-        "A weight update during fine-tuning",
-        "A tool registered with the runtime"
-      ],
-      "correct": 1,
-      "explanation": "ToT treats reasoning as a tree where each node is an intermediate thought that can expand into K children."
-    },
-    {
       "stage": "check",
       "question": "Which of these three is NOT one of LATS's roles for the LLM?",
       "options": [
