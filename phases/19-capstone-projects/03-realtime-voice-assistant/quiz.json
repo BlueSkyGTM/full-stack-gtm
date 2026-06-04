@@ -15,18 +15,6 @@
       "explanation": ""
     },
     {
-      "stage": "pre",
-      "question": "What is the role of the turn-detector alongside VAD?",
-      "options": [
-        "Trains a custom voice clone for the agent",
-        "Reads partial transcripts and scores whether the user has actually finished their utterance",
-        "Detects which speaker is talking in a multi-party call",
-        "Mixes background music into the output stream"
-      ],
-      "correct": 1,
-      "explanation": ""
-    },
-    {
       "stage": "check",
       "question": "When the user starts speaking while the agent is mid-response, what must happen for barge-in to feel right?",
       "options": [
