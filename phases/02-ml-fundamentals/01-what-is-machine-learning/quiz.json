@@ -14,7 +14,7 @@
   },
   {
     "id": "ml-intro-pre-2",
-    "stage": "pre",
+    "stage": "check",
     "question": "What is the purpose of splitting data into training and test sets?",
     "options": [
       "To make training faster by using less data",
@@ -27,7 +27,7 @@
   },
   {
     "id": "ml-intro-post-1",
-    "stage": "post",
+    "stage": "check",
     "question": "A model gets 98% accuracy on training data but 55% on test data. What is this an example of?",
     "options": [
       "Underfitting: the model is too simple",
@@ -37,6 +37,18 @@
     ],
     "correct": 1,
     "explanation": "A large gap between training accuracy (high) and test accuracy (low) is the hallmark of overfitting. The model memorized the training data."
+  },
+  {
+    "stage": "check",
+    "question": "Which of the following best describes: the difference between supervised, unsupervised, and reinforcement...?",
+    "options": [
+      "a nearest centroid classifier from scratch and evaluate it against a random base",
+      "Explain the difference between supervised, unsupervised, and reinforcement learning...",
+      "between classification and regression tasks and select the appropriate loss func",
+      "whether a given business problem is suitable for ML or better solved with determ"
+    ],
+    "correct": 1,
+    "explanation": "Explain the difference between supervised, unsupervised, and reinforcement learning and identify which type applies to a given problem"
   },
   {
     "id": "ml-intro-post-2",
