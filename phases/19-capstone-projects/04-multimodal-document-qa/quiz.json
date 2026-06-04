@@ -15,18 +15,6 @@
       "explanation": ""
     },
     {
-      "stage": "pre",
-      "question": "What does late interaction mean in ColPali-style retrieval?",
-      "options": [
-        "Each query token scores against every patch token, and per-token maxima are summed via MaxSim",
-        "Embeddings are deferred until eval time",
-        "Embeddings are computed after the user clicks a result",
-        "The reranker only runs on the final candidate"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
-    {
       "stage": "check",
       "question": "Roughly how many patch vectors does a ColQwen embedding produce per page, and what storage problem does that create?",
       "options": [
