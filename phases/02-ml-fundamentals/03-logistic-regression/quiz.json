@@ -14,7 +14,7 @@
   },
   {
     "id": "logreg-pre-2",
-    "stage": "pre",
+    "stage": "check",
     "question": "Why is logistic regression called 'regression' even though it is used for classification?",
     "options": [
       "It predicts continuous values that are then rounded",
@@ -27,7 +27,7 @@
   },
   {
     "id": "logreg-post-1",
-    "stage": "post",
+    "stage": "check",
     "question": "Why is binary cross-entropy used instead of MSE for logistic regression?",
     "options": [
       "Cross-entropy is faster to compute",
@@ -37,6 +37,18 @@
     ],
     "correct": 1,
     "explanation": "MSE combined with the sigmoid activation creates a non-convex cost surface with many local minima. Binary cross-entropy with sigmoid is convex, guaranteeing a single global minimum."
+  },
+  {
+    "stage": "check",
+    "question": "Which of the following best describes: Compute and interpret precision, recall, F1 score, and the...?",
+    "options": [
+      "logistic regression from scratch using the sigmoid function and binary cross-ent",
+      "why MSE fails for classification and why binary cross-entropy produces a convex ",
+      "Compute and interpret precision, recall, F1 score, and the confusion matrix for binary...",
+      "a softmax regression model for multi-class classification and evaluate threshold"
+    ],
+    "correct": 2,
+    "explanation": "Compute and interpret precision, recall, F1 score, and the confusion matrix for binary classification"
   },
   {
     "id": "logreg-post-2",
