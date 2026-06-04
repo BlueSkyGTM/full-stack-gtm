@@ -13,28 +13,40 @@
       "explanation": "The adjacency matrix is the core representation of a graph. A[i][j] = 1 means there is an edge connecting node i to node j. For undirected graphs, the matrix is symmetric (A[i][j] = A[j][i])."
     },
     {
-      "stage": "pre",
+      "stage": "check",
       "question": "What data structure does BFS use and what does it find?",
       "options": [
         "Stack; finds connected components",
-        "Queue; finds shortest paths in unweighted graphs",
         "Priority queue; finds minimum spanning tree",
+        "Queue; finds shortest paths in unweighted graphs",
         "Hash map; finds duplicate nodes"
       ],
-      "correct": 1,
+      "correct": 2,
       "explanation": "BFS uses a queue (FIFO) to explore all neighbors at distance k before moving to distance k+1. This guarantees that the first time a node is discovered, it is via a shortest path from the source."
     },
     {
-      "stage": "post",
+      "stage": "check",
       "question": "The graph Laplacian L = D - A of a connected graph has how many zero eigenvalues?",
       "options": [
-        "Zero",
         "Exactly one",
+        "Zero",
         "Equal to the number of nodes",
         "Equal to the number of edges"
       ],
-      "correct": 1,
+      "correct": 0,
       "explanation": "The number of zero eigenvalues of the Laplacian equals the number of connected components. A connected graph has exactly one connected component, so exactly one zero eigenvalue. A graph with k disconnected pieces has k zero eigenvalues."
+    },
+    {
+      "stage": "check",
+      "question": "Which of the following best describes: a graph class with adjacency matrix/list representations and...?",
+      "options": [
+        "Compute the graph Laplacian and use its eigenvalues to detect connected componen",
+        "one round of GNN-style message passing as a normalized adjacency matrix multipli",
+        "spectral clustering to partition a graph using the Fiedler vector",
+        "Build a graph class with adjacency matrix/list representations and implement BFS and..."
+      ],
+      "correct": 3,
+      "explanation": "Build a graph class with adjacency matrix/list representations and implement BFS and DFS traversals"
     },
     {
       "stage": "post",
@@ -53,11 +65,11 @@
       "question": "How does spectral clustering use the Fiedler vector (eigenvector of the second-smallest eigenvalue of L)?",
       "options": [
         "Nodes with the largest Fiedler vector entries form one cluster",
-        "Nodes with positive Fiedler vector values go in one group, nodes with negative values go in the other",
         "The Fiedler vector is used as edge weights",
+        "Nodes with positive Fiedler vector values go in one group, nodes with negative values go in the other",
         "The Fiedler vector determines the number of clusters"
       ],
-      "correct": 1,
+      "correct": 2,
       "explanation": "The Fiedler vector encodes the smoothest non-trivial function on the graph. Nodes in the same tightly-connected cluster get similar values, while nodes separated by a bottleneck get values with opposite signs. The sign split partitions the graph into two clusters."
     }
   ]
