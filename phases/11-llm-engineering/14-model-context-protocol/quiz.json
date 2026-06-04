@@ -3,7 +3,7 @@
   "title": "Model Context Protocol",
   "questions": [
     {
-      "stage": "post",
+      "stage": "pre",
       "question": "What three primitives does an MCP server expose?",
       "options": [
         "Functions, types, classes",
@@ -15,7 +15,7 @@
       "explanation": ""
     },
     {
-      "stage": "post",
+      "stage": "check",
       "question": "What wire format does MCP use?",
       "options": [
         "GraphQL over HTTP",
@@ -27,7 +27,7 @@
       "explanation": ""
     },
     {
-      "stage": "post",
+      "stage": "check",
       "question": "Which metadata field signals a tool mutates state and should require human approval?",
       "options": [
         "readonly: false",
@@ -37,6 +37,18 @@
       ],
       "correct": 2,
       "explanation": ""
+    },
+    {
+      "stage": "check",
+      "question": "Which of the following best describes: Every LLM app built before 2025 invented its own tool schema. Then...?",
+      "options": [
+        "Skip validation and trust the input data",
+        "Every LLM app built before 2025 invented its own tool schema. Then Anthropic shi",
+        "Use the default settings without customization",
+        "Delegate this step to a downstream process"
+      ],
+      "correct": 1,
+      "explanation": "Every LLM app built before 2025 invented its own tool schema. Then Anthropic shi"
     },
     {
       "stage": "post",
