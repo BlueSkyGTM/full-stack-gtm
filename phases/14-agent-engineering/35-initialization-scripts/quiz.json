@@ -15,18 +15,6 @@
       "explanation": "The script pays the tax once and writes the answers into init_report.json the agent reads."
     },
     {
-      "stage": "pre",
-      "question": "What is the init script's failure-mode contract?",
-      "options": [
-        "Fail soft and continue",
-        "Fail loud, fail fast, fail in one place; refuse to start when the workbench is broken",
-        "Always succeed",
-        "Retry forever"
-      ],
-      "correct": 1,
-      "explanation": "The whole point is to refuse to start when the workbench is broken; silent fallback defeats the purpose."
-    },
-    {
       "stage": "check",
       "question": "Which is NOT one of the probes the lesson lists?",
       "options": [
