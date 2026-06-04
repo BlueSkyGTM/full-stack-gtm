@@ -15,18 +15,6 @@
       "explanation": "Langfuse is MIT, including LLM-as-a-judge, annotation queues, prompt experiments, and Playground after June 2025."
     },
     {
-      "stage": "pre",
-      "question": "What is Arize Phoenix strongest at according to the lesson?",
-      "options": [
-        "Prompt versioning",
-        "Deep agent-specific evaluation: trace clustering, anomaly detection, RAG retrieval relevancy, OpenInference auto-instrumentation",
-        "Automated optimization loop",
-        "Static analysis of code"
-      ],
-      "correct": 1,
-      "explanation": "Phoenix focuses on behavioral drift and RAG evaluation with OpenInference auto-instrumentation."
-    },
-    {
       "stage": "check",
       "question": "Which platform pairs automated prompt optimization with guardrails (PII redaction, topical constraints) and LLM-judge hallucination detection?",
       "options": [
