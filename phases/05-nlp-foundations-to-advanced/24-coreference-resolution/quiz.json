@@ -15,18 +15,6 @@
       "explanation": "Coref clusters mention spans that all refer to the same entity."
     },
     {
-      "stage": "pre",
-      "question": "Which type of expression is a 'nominal' mention?",
-      "options": [
-        "A proper noun only",
-        "A noun phrase such as 'the CEO' or 'the company'",
-        "A pronoun like 'she'",
-        "A verb"
-      ],
-      "correct": 1,
-      "explanation": "Nominal mentions are noun phrases like 'the company'; pronominal mentions are pronouns."
-    },
-    {
       "stage": "check",
       "question": "What is the modern (Lee et al., 2017) coref architecture?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 3,
       "explanation": "Without merging, NER counts each surface form separately and misses 60-80% of entity mentions."
-    },
-    {
-      "stage": "post",
-      "question": "Why are hard-coded gender rules a fragility in coref systems?",
-      "options": [
-        "They break on non-binary referents, organizations, and animals; learned scoring is more robust",
-        "They require GPU",
-        "They run too fast",
-        "They cannot use POS tags"
-      ],
-      "correct": 0,
-      "explanation": "Gender heuristics fail in demographically diverse text; learned models are preferred."
     }
   ]
 }
