@@ -15,18 +15,6 @@
       "explanation": "POS tagging labels each token with its part of speech."
     },
     {
-      "stage": "pre",
-      "question": "Which tagset is the default for cross-lingual work?",
-      "options": [
-        "Penn Treebank",
-        "Stanford Dependencies",
-        "Universal Dependencies",
-        "CoNLL-2003"
-      ],
-      "correct": 2,
-      "explanation": "Universal Dependencies provides a coarser, language-agnostic 17-tag set."
-    },
-    {
       "stage": "check",
       "question": "What does a bigram HMM POS tagger model?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 1,
       "explanation": "POS and dependency parses feed many structured downstream tasks even when LLMs generate the prose."
-    },
-    {
-      "stage": "post",
-      "question": "Which library should you reach for in most production POS / parse tasks?",
-      "options": [
-        "scikit-learn",
-        "NumPy",
-        "spaCy (or stanza/trankit for top accuracy or wider language coverage)",
-        "Roll your own parser"
-      ],
-      "correct": 2,
-      "explanation": "spaCy ships fast production-grade POS + dependency parsers; stanza/trankit cover broader languages."
     }
   ]
 }
