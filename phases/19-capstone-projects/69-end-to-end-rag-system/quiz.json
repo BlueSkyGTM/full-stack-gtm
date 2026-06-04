@@ -15,18 +15,6 @@
       "explanation": "Isolated wins do not compose; the pipeline is graded on the joint output."
     },
     {
-      "stage": "pre",
-      "question": "What is the role of refuse-on-low-confidence in the answer generator?",
-      "options": [
-        "It logs every refusal to disk",
-        "It returns 'I do not know' when the reranker top-1 score sits below a corpus-specific threshold, preventing hallucinated answers when the retrieved context does not address the query",
-        "It blocks queries longer than 100 tokens",
-        "It triggers a re-retrieval with a different chunker"
-      ],
-      "correct": 1,
-      "explanation": "A consistently low rank-1 score is the model telling you nothing in the corpus answers this query; refuse rather than hallucinate."
-    },
-    {
       "stage": "check",
       "question": "Why are the rerank training triples kept disjoint from the eval queries?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "The mock cannot test the generator's safety against hallucinated content; only a real model swap-in can."
+    },
+    {
+      "stage": "post",
+      "question": "What is the role of refuse-on-low-confidence in the answer generator?",
+      "options": [
+        "It logs every refusal to disk",
+        "It returns 'I do not know' when the reranker top-1 score sits below a corpus-specific threshold, preventing hallucinated answers when the retrieved context does not address the query",
+        "It blocks queries longer than 100 tokens",
+        "It triggers a re-retrieval with a different chunker"
+      ],
+      "correct": 1,
+      "explanation": "A consistently low rank-1 score is the model telling you nothing in the corpus answers this query; refuse rather than hallucinate."
     }
   ]
 }
