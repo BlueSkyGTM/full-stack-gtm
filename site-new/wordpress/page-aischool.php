@@ -1,6 +1,6 @@
 <?php
 /**
- * Template Name: Epoch Academy Page
+ * Template Name: AI Engineering From Scratch
  *
  * HOW TO USE:
  * 1. Copy the entire site-new/ folder into your theme directory:
