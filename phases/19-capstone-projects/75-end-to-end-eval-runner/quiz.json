@@ -15,18 +15,6 @@
       "explanation": "One method covers any adapter. Everything else is optional decoration. The runner does not need a richer surface."
     },
     {
-      "stage": "pre",
-      "question": "Why does the runner accept a parallel flag rather than always running in parallel?",
-      "options": [
-        "Parallel execution is unsafe in CPython",
-        "Tests need deterministic execution order; the flag lets them switch to sequential",
-        "Parallel execution requires GPU",
-        "ThreadPoolExecutor is not stdlib"
-      ],
-      "correct": 1,
-      "explanation": "Tests want reproducibility. Production wants throughput. The flag splits those concerns without two code paths."
-    },
-    {
       "stage": "check",
       "question": "How does the runner determine the correct flag for the calibration buffer?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 0,
       "explanation": "The demo enforces the contract end to end: every layer ran and the most accurate adapter is ranked accordingly."
+    },
+    {
+      "stage": "post",
+      "question": "Why does the runner accept a parallel flag rather than always running in parallel?",
+      "options": [
+        "Parallel execution is unsafe in CPython",
+        "Tests need deterministic execution order; the flag lets them switch to sequential",
+        "Parallel execution requires GPU",
+        "ThreadPoolExecutor is not stdlib"
+      ],
+      "correct": 1,
+      "explanation": "Tests want reproducibility. Production wants throughput. The flag splits those concerns without two code paths."
     }
   ]
 }
