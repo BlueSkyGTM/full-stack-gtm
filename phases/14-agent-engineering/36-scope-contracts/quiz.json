@@ -15,18 +15,6 @@
       "explanation": "Agents narrate each step in good faith; the silent total is the creep."
     },
     {
-      "stage": "pre",
-      "question": "Which contract field does the lesson call half the contract?",
-      "options": [
-        "goal",
-        "forbidden_files (the negative space)",
-        "task_id",
-        "approvals_required"
-      ],
-      "correct": 1,
-      "explanation": "A contract without forbidden_files is incomplete; the negative space is half the contract."
-    },
-    {
       "stage": "check",
       "question": "Why pin allowed/forbidden to globs rather than raw paths?",
       "options": [
