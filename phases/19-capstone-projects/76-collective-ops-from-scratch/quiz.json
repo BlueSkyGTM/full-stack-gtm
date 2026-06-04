@@ -15,18 +15,6 @@
       "explanation": "Ring allreduce moves N-1 chunks of size T/N twice (reduce-scatter then allgather); the per-rank total is 2T(N-1)/N, independent of cluster size."
     },
     {
-      "stage": "pre",
-      "question": "Why is the queue mesh in this lesson an honest stand-in for NCCL on a real cluster?",
-      "options": [
-        "It runs on CUDA cores",
-        "It hardware-offloads reductions",
-        "It implements the same wire pattern (ordered point-to-point sends around a ring), only the medium differs",
-        "It compresses messages"
-      ],
-      "correct": 2,
-      "explanation": "Algorithmic correctness depends on the wire pattern, not the medium; the queue ring exposes the same race shapes and chunk schedule as NCCL ring allreduce."
-    },
-    {
       "stage": "check",
       "question": "After the reduce-scatter half of ring allreduce, what does rank r hold?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 2,
       "explanation": "NCCL picks ring above ~1 MB and tree below; the crossover is bandwidth-versus-latency on the given cluster topology."
+    },
+    {
+      "stage": "post",
+      "question": "Why is the queue mesh in this lesson an honest stand-in for NCCL on a real cluster?",
+      "options": [
+        "It runs on CUDA cores",
+        "It hardware-offloads reductions",
+        "It implements the same wire pattern (ordered point-to-point sends around a ring), only the medium differs",
+        "It compresses messages"
+      ],
+      "correct": 2,
+      "explanation": "Algorithmic correctness depends on the wire pattern, not the medium; the queue ring exposes the same race shapes and chunk schedule as NCCL ring allreduce."
     }
   ]
 }
