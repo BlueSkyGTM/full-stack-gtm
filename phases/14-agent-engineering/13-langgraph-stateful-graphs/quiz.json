@@ -15,18 +15,6 @@
       "explanation": "LangGraph models the agent as a state graph: nodes are pure functions, edges are transitions, state is typed and immutable."
     },
     {
-      "stage": "pre",
-      "question": "Which problem does durable execution solve?",
-      "options": [
-        "Reducing inference cost",
-        "Resuming a 40-step run from step 38 when it fails, with exact state, instead of starting over",
-        "Generating embeddings faster",
-        "Translating between providers"
-      ],
-      "correct": 1,
-      "explanation": "Checkpoints after every node let the runtime resume from the last successful step."
-    },
-    {
       "stage": "check",
       "question": "Which of these is NOT one of the three topologies LangGraph supports?",
       "options": [
