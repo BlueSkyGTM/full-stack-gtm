@@ -16,12 +16,8 @@
     ph: phase19, l, i, done: store.isDone(phase19.id, i)
   }));
 
-  /* shipped first, then builds before capstones, then by index */
-  allCapstones.sort((a, b) =>
-    (b.done - a.done) ||
-    (a.l.type === 'Capstone') - (b.l.type === 'Capstone') ||
-    (a.i - b.i)
-  );
+  /* shipped first, then curriculum order */
+  allCapstones.sort((a, b) => (b.done - a.done) || (a.i - b.i));
 
   const shippedCount = allCapstones.filter((c) => c.done).length;
   $('#capcount').textContent = shippedCount === 0
