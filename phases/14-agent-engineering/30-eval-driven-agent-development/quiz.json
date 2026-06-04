@@ -15,18 +15,6 @@
       "explanation": "Static (SWE-bench, GAIA), custom offline (LLM-judge, exec, trajectory), online (replays, alerts, cost/latency)."
     },
     {
-      "stage": "pre",
-      "question": "What is Anthropic's recommended starting point?",
-      "options": [
-        "Start with multi-agent debate",
-        "Start with simple prompts, optimize them with comprehensive evaluation, and add multi-step agentic systems only when needed",
-        "Start with hierarchical orchestration",
-        "Start with a frontier model only"
-      ],
-      "correct": 1,
-      "explanation": "Anthropic explicitly says evaluation is the outer loop that drives every other choice."
-    },
-    {
       "stage": "check",
       "question": "What is the evaluator-optimizer tight loop?",
       "options": [
