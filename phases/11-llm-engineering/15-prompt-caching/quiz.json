@@ -3,7 +3,7 @@
   "title": "Prompt Caching and Context Caching",
   "questions": [
     {
-      "stage": "post",
+      "stage": "pre",
       "question": "What discount does Anthropic apply to cache reads versus the base input rate?",
       "options": [
         "25% off",
@@ -15,7 +15,7 @@
       "explanation": ""
     },
     {
-      "stage": "post",
+      "stage": "check",
       "question": "Why must dynamic timestamps go below the cache breakpoint, not above it?",
       "options": [
         "Caches only hit when the prefix is byte-identical; a changing timestamp breaks the match for everything after it",
@@ -27,7 +27,7 @@
       "explanation": ""
     },
     {
-      "stage": "post",
+      "stage": "check",
       "question": "OpenAI's prompt caching is configured how?",
       "options": [
         "Explicit cache_control markers",
@@ -37,6 +37,18 @@
       ],
       "correct": 2,
       "explanation": ""
+    },
+    {
+      "stage": "check",
+      "question": "Which of the following best describes: Your system prompt is 4,000 tokens. Your RAG context is 20,000...?",
+      "options": [
+        "Skip validation and trust the input data",
+        "Your system prompt is 4,000 tokens. Your RAG context is 20,000 tokens. You send ",
+        "Use the default settings without customization",
+        "Delegate this step to a downstream process"
+      ],
+      "correct": 1,
+      "explanation": "Your system prompt is 4,000 tokens. Your RAG context is 20,000 tokens. You send "
     },
     {
       "stage": "post",
