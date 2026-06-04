@@ -15,18 +15,6 @@
       "explanation": ""
     },
     {
-      "stage": "pre",
-      "question": "What fields must every rule have at minimum?",
-      "options": [
-        "name, regex, fix",
-        "id, owner, timestamp",
-        "name, severity, must, explanation",
-        "predicate, severity, owner"
-      ],
-      "correct": 2,
-      "explanation": ""
-    },
-    {
       "stage": "check",
       "question": "How does the engine compose predicates?",
       "options": [
@@ -72,6 +60,18 @@
         "Because the first pass is only a dry run"
       ],
       "correct": 1,
+      "explanation": ""
+    },
+    {
+      "stage": "post",
+      "question": "What fields must every rule have at minimum?",
+      "options": [
+        "name, regex, fix",
+        "id, owner, timestamp",
+        "name, severity, must, explanation",
+        "predicate, severity, owner"
+      ],
+      "correct": 2,
       "explanation": ""
     }
   ]
