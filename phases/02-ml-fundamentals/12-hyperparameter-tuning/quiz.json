@@ -14,7 +14,7 @@
   },
   {
     "id": "hptune-pre-2",
-    "stage": "pre",
+    "stage": "check",
     "question": "Grid search over 4 hyperparameters with 5 values each requires how many evaluations?",
     "options": [
       "20",
@@ -27,7 +27,7 @@
   },
   {
     "id": "hptune-post-1",
-    "stage": "post",
+    "stage": "check",
     "question": "Why does random search often outperform grid search with the same evaluation budget?",
     "options": [
       "Random search uses a better optimization algorithm",
@@ -37,6 +37,18 @@
     ],
     "correct": 1,
     "explanation": "Usually only 1-2 hyperparameters matter for a given problem. Grid search wastes evaluations varying unimportant ones. Random search gives unique values for every parameter per trial, covering important dimensions more densely."
+  },
+  {
+    "stage": "check",
+    "question": "Which of the following best describes: grid search, random search, and Bayesian optimization from scratch...?",
+    "options": [
+      "why random search outperforms grid search when most hyperparameters have low eff",
+      "Implement grid search, random search, and Bayesian optimization from scratch and...",
+      "a Bayesian optimization loop using a surrogate model and acquisition function to",
+      "Design a hyperparameter tuning strategy that avoids overfitting the validation s"
+    ],
+    "correct": 1,
+    "explanation": "Implement grid search, random search, and Bayesian optimization from scratch and compare their sample efficiency"
   },
   {
     "id": "hptune-post-2",
