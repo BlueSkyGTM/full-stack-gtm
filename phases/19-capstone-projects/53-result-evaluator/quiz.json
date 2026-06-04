@@ -15,7 +15,7 @@
       "explanation": "Pairing by seed cancels out random initialisation effects. The remaining difference is attributable to the configuration change, which is what the test measures."
     },
     {
-      "stage": "pre",
+      "stage": "check",
       "question": "Why does the evaluator carry a direction field on every metric?",
       "options": [
         "Because accuracy and loss point in opposite ways; the sign of the improvement depends on which direction is better for the metric being compared",
@@ -51,7 +51,7 @@
       "explanation": "Perplexity is exp(loss). A small loss change is a large perplexity change. Taking the log keeps relative improvements comparable to linear metrics under one threshold."
     },
     {
-      "stage": "check",
+      "stage": "post",
       "question": "When does the paired t test helper return p_value = None?",
       "options": [
         "When the means are equal",
@@ -63,7 +63,7 @@
       "explanation": "The t distribution needs at least one degree of freedom. With n less than two there is no variance estimate and the helper returns None so the verdict path can mark the run as noise."
     },
     {
-      "stage": "check",
+      "stage": "post",
       "question": "What happens if even one candidate result has a terminal label other than ok?",
       "options": [
         "The evaluator drops that seed and proceeds",
