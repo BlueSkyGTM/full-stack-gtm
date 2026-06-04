@@ -15,18 +15,6 @@
       "explanation": "A retriever that misses the right chunk cannot be repaired downstream; surplus chunks waste tokens but rarely poison the answer."
     },
     {
-      "stage": "pre",
-      "question": "What does MRR compute?",
-      "options": [
-        "The mean of 1 / position-of-first-relevant-document across queries",
-        "The geometric mean of cosine similarity",
-        "Median rank of the second relevant document",
-        "Token count of the answer"
-      ],
-      "correct": 0,
-      "explanation": "MRR is dominated by the top of the list: rank 1 contributes 1.0, rank 2 contributes 0.5, rank 10 contributes 0.1."
-    },
-    {
       "stage": "check",
       "question": "When should you reach for nDCG instead of recall@k?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "Schedule a quarterly qrels review or your metrics will be measuring the wrong thing as the corpus evolves."
+    },
+    {
+      "stage": "post",
+      "question": "What does MRR compute?",
+      "options": [
+        "The mean of 1 / position-of-first-relevant-document across queries",
+        "The geometric mean of cosine similarity",
+        "Median rank of the second relevant document",
+        "Token count of the answer"
+      ],
+      "correct": 0,
+      "explanation": "MRR is dominated by the top of the list: rank 1 contributes 1.0, rank 2 contributes 0.5, rank 10 contributes 0.1."
     }
   ]
 }
