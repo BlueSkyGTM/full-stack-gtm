@@ -15,18 +15,6 @@
       "explanation": "Frames flow downstream source-to-sink and upstream for control and cancellation."
     },
     {
-      "stage": "pre",
-      "question": "What is the canonical Pipecat voice pipeline?",
-      "options": [
-        "VAD -> STT -> LLM -> TTS -> transport",
-        "TTS -> STT -> LLM -> VAD",
-        "LLM -> embed -> retrieve -> answer",
-        "Audio -> JSON -> SQL -> response"
-      ],
-      "correct": 0,
-      "explanation": "VAD detects voice activity, STT transcribes, LLM responds, TTS speaks, transport delivers."
-    },
-    {
       "stage": "check",
       "question": "Which two voice agent classes does LiveKit Agents ship?",
       "options": [
