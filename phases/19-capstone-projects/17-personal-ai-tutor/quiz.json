@@ -15,18 +15,6 @@
       "explanation": ""
     },
     {
-      "stage": "pre",
-      "question": "Which structure does the curriculum graph encode?",
-      "options": [
-        "A directed graph of concepts with prerequisite edges, attached to OER content",
-        "A random shuffle of topics",
-        "A flat list of unrelated concepts",
-        "Only the most recently studied node"
-      ],
-      "correct": 0,
-      "explanation": ""
-    },
-    {
       "stage": "check",
       "question": "What does the learner model update after each interaction?",
       "options": [
