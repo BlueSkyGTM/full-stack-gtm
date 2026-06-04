@@ -15,18 +15,6 @@
       "explanation": "The schema is the contract every downstream consumer reads from. Locking it lets you change components independently without breaking the rest."
     },
     {
-      "stage": "pre",
-      "question": "What is the closed vocabulary that the metric_name field accepts?",
-      "options": [
-        "Whatever the runner is configured to recognise",
-        "exact_match, f1, bleu_4, rouge_l, accuracy, code_exec",
-        "Any string the task author chooses",
-        "Only exact_match and f1"
-      ],
-      "correct": 1,
-      "explanation": "The lesson pins the metric vocabulary to six names. Adding one requires a new lesson and a new validator entry."
-    },
-    {
       "stage": "check",
       "question": "What does the validator do when it sees an unknown top-level field on a record?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 1,
       "explanation": "extract_letter returns the first character matching [A-E] in the generation. The string has C at the start of the body."
+    },
+    {
+      "stage": "post",
+      "question": "What is the closed vocabulary that the metric_name field accepts?",
+      "options": [
+        "Whatever the runner is configured to recognise",
+        "exact_match, f1, bleu_4, rouge_l, accuracy, code_exec",
+        "Any string the task author chooses",
+        "Only exact_match and f1"
+      ],
+      "correct": 1,
+      "explanation": "The lesson pins the metric vocabulary to six names. Adding one requires a new lesson and a new validator entry."
     }
   ]
 }
