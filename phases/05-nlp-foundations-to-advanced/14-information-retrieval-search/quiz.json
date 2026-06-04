@@ -15,18 +15,6 @@
       "explanation": "BM25 weighs TF saturation, IDF, and length normalization to score lexical matches."
     },
     {
-      "stage": "pre",
-      "question": "What is the main weakness of dense-only retrieval that BM25 catches?",
-      "options": [
-        "Multilingual queries",
-        "Latency",
-        "Long documents",
-        "Exact keyword and identifier matches (product codes, error strings, named entities) that semantic embeddings can miss"
-      ],
-      "correct": 3,
-      "explanation": "Dense embeddings can blur identifiers and exact strings; BM25 nails them."
-    },
-    {
       "stage": "check",
       "question": "Why does Reciprocal Rank Fusion (RRF) ignore raw scores from each retriever?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 1,
       "explanation": "Child-level retrieval is precise; expanding to the parent preserves the surrounding context the reader needs."
-    },
-    {
-      "stage": "post",
-      "question": "When should you ship three-way retrieval (BM25 + dense + SPLADE)?",
-      "options": [
-        "Only on under 1000 documents",
-        "Only for English-only corpora",
-        "When infrastructure supports learned-sparse indexes and queries mix proper nouns with semantic intent",
-        "Always"
-      ],
-      "correct": 2,
-      "explanation": "Three-way retrieval outperforms two-way in 2026 benchmarks for mixed lexical-semantic queries, given SPLADE infrastructure."
     }
   ]
 }
