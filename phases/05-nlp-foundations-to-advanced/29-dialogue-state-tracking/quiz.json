@@ -15,18 +15,6 @@
       "explanation": "DST keeps a structured slot-value map that the backend can act on."
     },
     {
-      "stage": "pre",
-      "question": "What does Joint Goal Accuracy (JGA) measure?",
-      "options": [
-        "Fraction of turns where every slot is exactly correct (all-or-nothing)",
-        "Average slot accuracy",
-        "Latency per turn",
-        "Cosine similarity"
-      ],
-      "correct": 0,
-      "explanation": "JGA is the strict per-turn match across all slots; per-slot accuracy is more lenient."
-    },
-    {
       "stage": "check",
       "question": "Why does regenerating the whole state from history each turn handle user corrections naturally?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 0,
       "explanation": "Full-history regeneration is quadratic in turns; cap history or use rolling summaries."
-    },
-    {
-      "stage": "post",
-      "question": "Why are explicit confirmation flows required before destructive backend actions?",
-      "options": [
-        "Latency",
-        "Confirmation increases JGA",
-        "Required by tokenizers",
-        "Even good DST has nonzero slot-error rates; a deterministic confirmation prevents wrong-account or wrong-amount actions"
-      ],
-      "correct": 3,
-      "explanation": "Destructive actions need user confirmation because DST is never error-free."
     }
   ]
 }
