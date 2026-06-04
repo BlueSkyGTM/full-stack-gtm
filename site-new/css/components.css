@@ -323,3 +323,69 @@
 .rm-tile.is-done .rm-tile__pct  { color: var(--terra); }
 @media (max-width: 720px) { .rm-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 480px) { .rm-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- Professor Synapse CTA ---------- */
+.synapse-cta {
+  background: var(--panel);
+  border: 1px solid var(--terra-tint);
+  border-left: 3px solid var(--terra);
+}
+.synapse-cta__inner { padding: var(--s6) var(--s5); max-width: 760px; }
+.synapse-cta__badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terra);
+  border: 1px solid var(--terra-tint);
+  padding: 2px var(--s2);
+  margin-bottom: var(--s4);
+}
+.synapse-cta__h {
+  font-family: var(--pix);
+  font-size: 2rem;
+  color: var(--cream);
+  margin-bottom: var(--s3);
+  line-height: 1.1;
+}
+.synapse-cta__body {
+  font-size: 0.88rem;
+  color: var(--cream-dim);
+  line-height: 1.7;
+  margin-bottom: var(--s5);
+  max-width: 600px;
+}
+.synapse-cta__steps { display: flex; flex-direction: column; gap: var(--s3); margin-bottom: var(--s5); }
+.synapse-cta__step {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  font-size: 0.82rem;
+  color: var(--cream-dim);
+}
+.synapse-cta__step code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--terra);
+  background: var(--well);
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+}
+.synapse-cta__n {
+  font-family: var(--pix);
+  font-size: 1.3rem;
+  color: var(--terra);
+  min-width: 20px;
+  line-height: 1;
+}
+.synapse-cta__note {
+  font-size: 0.75rem;
+  color: var(--cream-mute);
+  line-height: 1.6;
+}
+.synapse-cta__note a { color: var(--cream-dim); text-decoration: underline; text-decoration-color: var(--line); }
+.synapse-cta__note a:hover { color: var(--terra); }
+@media (max-width: 720px) {
+  .synapse-cta__inner { padding: var(--s5) var(--s4); }
+  .synapse-cta__step { flex-wrap: wrap; }
+}

@@ -75,14 +75,17 @@ GRAPH (when bridging across phases):
 
 | Resource | When to Load | What It Contains |
 |----------|--------------|------------------|
-| `agents/INDEX.md` | FIRST - check for matching agent | Auto-generated registry with triggers |
+| `agents/INDEX.md` | FIRST — check for matching agent | Auto-generated registry with triggers |
 | `agents/[name].md` | When INDEX matches user need | Individual agent file to summon |
 | `progress/aifs-progress.json` | Phase 0 — every session | Current lesson, completed lessons, quiz scores |
 | `progress/learning-profile.json` | Phase 0 — every session | Student pace, style, struggles, strengths |
 | `phases/[current-phase]/BATCH.md` | Phase 0 — when entering a phase | Domain vocabulary, lesson list, lesson structure |
-| `.claude/rules/curriculum-chat.md` | First session | How progress files work, lesson modes, quiz flow |
+| `references/curriculum-context.md` | Phase 0 — every session | AIFS file layout, phase list, graph commands, progress schemas |
+| `references/teaching-protocol.md` | Before any teaching turn | Socratic loop, direct-mode exceptions, quiz integration |
+| `references/student-profile.md` | Phase 0 — every session | How to read progress files, how to write synapse-observations.jsonl |
+| `references/phase-briefing.md` | When loading a new phase | How to read BATCH.md, lesson dir structure, fallbacks |
 | `references/convener-protocol.md` | When complex decision needs multiple perspectives | How to facilitate multi-agent debates |
-| `references/agent-template.md` | Only when creating NEW agent | Template structure + packaging workflow |
+| `references/agent-template.md` | Only when creating a NEW agent | Template structure + packaging workflow |
 | `references/domain-expertise.md` | When mapping unfamiliar domains | Domain mappings |
 | `references/file-operations.md` | When saving agents or updating files | How to create/update skill files |
 
