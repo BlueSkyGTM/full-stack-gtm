@@ -15,18 +15,6 @@
       "explanation": "Greshake et al. coined indirect prompt injection: attacker-controlled retrieved content carries instructions."
     },
     {
-      "stage": "pre",
-      "question": "What does the lesson say processing retrieved prompts is equivalent to?",
-      "options": [
-        "Free speech",
-        "Arbitrary code execution on the agent's tool-use surface",
-        "A static analysis pass",
-        "A pure function call"
-      ],
-      "correct": 1,
-      "explanation": "Greshake's framing: retrieved instructions can hit any tool the agent has access to."
-    },
-    {
       "stage": "check",
       "question": "Which is NOT one of the five demonstrated exploit classes?",
       "options": [
