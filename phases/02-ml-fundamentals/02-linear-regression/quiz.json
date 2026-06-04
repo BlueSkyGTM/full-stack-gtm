@@ -14,7 +14,7 @@
   },
   {
     "id": "linreg-pre-2",
-    "stage": "pre",
+    "stage": "check",
     "question": "What does R-squared = 0 mean for a regression model?",
     "options": [
       "The model makes perfect predictions",
@@ -27,7 +27,7 @@
   },
   {
     "id": "linreg-post-1",
-    "stage": "post",
+    "stage": "check",
     "question": "Why is feature scaling important for gradient descent in multiple linear regression?",
     "options": [
       "It makes the model more interpretable",
@@ -37,6 +37,18 @@
     ],
     "correct": 1,
     "explanation": "When features have very different scales, the cost surface becomes elongated. Gradient descent takes many more steps to converge. Standardizing features makes the surface more spherical."
+  },
+  {
+    "stage": "check",
+    "question": "Which of the following best describes: gradient descent and the normal equation in terms of computational...?",
+    "options": [
+      "Derive the gradient descent update rules for mean squared error and implement li",
+      "a multiple linear regression model with feature standardization and interpret th",
+      "Compare gradient descent and the normal equation in terms of computational complexity...",
+      "how Ridge regression (L2 regularization) prevents overfitting by penalizing larg"
+    ],
+    "correct": 2,
+    "explanation": "Compare gradient descent and the normal equation in terms of computational complexity and when to use each"
   },
   {
     "id": "linreg-post-2",
