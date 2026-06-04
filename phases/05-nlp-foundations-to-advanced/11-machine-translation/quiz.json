@@ -15,18 +15,6 @@
       "explanation": "BLEU is the geometric mean of 1-4-gram precision against references, plus a brevity penalty."
     },
     {
-      "stage": "pre",
-      "question": "Why use sacrebleu instead of rolling your own BLEU?",
-      "options": [
-        "It is more accurate",
-        "It runs on GPU",
-        "It normalizes tokenization so scores are comparable across papers and runs",
-        "It supports streaming"
-      ],
-      "correct": 2,
-      "explanation": "sacrebleu freezes tokenization, removing a common source of incomparable BLEU numbers."
-    },
-    {
       "stage": "check",
       "question": "Which NLLB-specific setting controls the target language during decoding?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 3,
       "explanation": "Clean domain-aligned pairs are the largest production lever; noisy data degrades adaptation."
-    },
-    {
-      "stage": "post",
-      "question": "When is an LLM (e.g. GPT-4) likely to outperform a specialized MT model in 2026?",
-      "options": [
-        "Highest throughput batch translation",
-        "Latency-critical browser translation",
-        "Idiomatic content, long context, stylistic adaptation via prompting, or content requiring tone control",
-        "Small-language pairs with millions of parallel sentences"
-      ],
-      "correct": 2,
-      "explanation": "LLMs win on idiomatic, long-context, or style-controlled translation; specialized MT wins on throughput and latency."
     }
   ]
 }
