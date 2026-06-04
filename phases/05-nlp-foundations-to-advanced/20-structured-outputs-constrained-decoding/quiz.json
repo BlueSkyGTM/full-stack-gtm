@@ -15,18 +15,6 @@
       "explanation": "Prompt-only structure works ~80% of the time on frontier models; production needs harder guarantees."
     },
     {
-      "stage": "pre",
-      "question": "What does constrained decoding modify at each generation step?",
-      "options": [
-        "The KV cache",
-        "The tokenizer",
-        "The training loss",
-        "The logit vector, masking tokens that would invalidate the target grammar so only valid continuations can be sampled"
-      ],
-      "correct": 3,
-      "explanation": "A logit processor sets invalid tokens to -inf so the softmax cannot sample them."
-    },
-    {
       "stage": "check",
       "question": "Why might constrained decoding be faster than free generation?",
       "options": [
@@ -85,18 +73,6 @@
       ],
       "correct": 1,
       "explanation": "Over-strict grammars force the model to invent values; always allow null/sentinel for unknowns."
-    },
-    {
-      "stage": "post",
-      "question": "When should you reach for vLLM guided decoding vs a vendor structured-output API?",
-      "options": [
-        "Always vendor",
-        "Only for tiny schemas",
-        "Only with byte-level BPE",
-        "Self-hosted inference where you control the model and want logit-level guarantees without retries"
-      ],
-      "correct": 3,
-      "explanation": "vLLM guided decoding fits self-hosted serving with logit-level constraints; vendor APIs lock you to their stack."
     }
   ]
 }
