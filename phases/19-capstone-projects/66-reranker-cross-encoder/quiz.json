@@ -15,18 +15,6 @@
       "explanation": "Cross attention across the join is what gives the cross-encoder its precision; the bi-encoder never sees the query and document together."
     },
     {
-      "stage": "pre",
-      "question": "Why can a cross-encoder not be used as the primary retriever on a 10M-document corpus?",
-      "options": [
-        "It requires one forward pass per (query, document) pair, which is 10M passes per query",
-        "It cannot embed text",
-        "It does not support negative scores",
-        "It requires the CLS token at the end of the sequence"
-      ],
-      "correct": 0,
-      "explanation": "Throughput collapses at corpus scale; the cross-encoder runs once per pair instead of once per document at index time."
-    },
-    {
       "stage": "check",
       "question": "What is the role of the N parameter in a two-stage retrieve-then-rerank pipeline?",
       "options": [
@@ -73,6 +61,18 @@
       ],
       "correct": 0,
       "explanation": "A consistently low rank-1 score is the cross-encoder telling you the retrieved pool does not contain the answer; surface that to the LLM as low-confidence."
+    },
+    {
+      "stage": "post",
+      "question": "Why can a cross-encoder not be used as the primary retriever on a 10M-document corpus?",
+      "options": [
+        "It requires one forward pass per (query, document) pair, which is 10M passes per query",
+        "It cannot embed text",
+        "It does not support negative scores",
+        "It requires the CLS token at the end of the sequence"
+      ],
+      "correct": 0,
+      "explanation": "Throughput collapses at corpus scale; the cross-encoder runs once per pair instead of once per document at index time."
     }
   ]
 }
