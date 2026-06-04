@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raymond Fenton — Agentic GTM · MCP Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+/* ── Variables ──────────────────────────────────────────── */
+:root {
+  --bg: #0A0A0A;
+  --surface: #111111;
+  --surface2: #161616;
+  --border: #1E1E1E;
+  --border2: #2A2A2A;
+  --text: #E6E6E6;
+  --text-soft: #E6E6E6;
+  --muted: #6A6A6A;
+  --dim: #2E2E2E;
+  --accent: #B9E36A;
+  --action: #76A1FF;
+  --action-soft: rgba(118,161,255,0.12);
+  --action-line: rgba(118,161,255,0.44);
+  --red: #FF5555;
+  --white: #FFFFFF;
+  --scroll-blue: #365FA8;
+  --scroll-track: #0D1118;
+}
+
+/* ── Reset ──────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  font-feature-settings: "ss01", "ss02";
+  padding-top: 60px;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+}
+
+a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outline-offset: 4px; }
+
+/* ── Fixed nav ───────────────────────────────────────────── */
+.page-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,10,10,0.92);
+  backdrop-filter: blur(16px);
+}
+.nav-back { font-size: 13px; color: var(--muted); text-decoration: none; transition: color 0.2s; }
+.nav-back:hover { color: var(--action); }
+.nav-title { font-size: 13px; color: var(--muted); font-weight: 400; }
+.nav-link { font-size: 13px; color: var(--action); text-decoration: none; border: 1px solid rgba(118,161,255,0.38); padding: 6px 14px; transition: all 0.18s; }
+.nav-link:hover { background: var(--action); color: var(--bg); }
+
+/* ── Hero ───────────────────────────────────────────────── */
+.hero {
+  min-height: 86vh;
+  padding: 72px 48px 96px;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-grid {
+  position: absolute; inset: 0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.hero-grid::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 75% 65% at 50% 100%, var(--bg) 30%, transparent 100%);
+}
+.hero-inner { position: relative; z-index: 1; max-width: 1080px; }
+
+.hero-pre { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 40px; display: flex; align-items: center; gap: 12px; }
+.hero-pre::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--action); box-shadow: 0 0 12px var(--action); }
+
+.hero-h1 { font-size: clamp(48px, 6.6vw, 92px); line-height: 1.04; font-weight: 500; margin-bottom: 40px; max-width: 16ch; font-optical-sizing: auto; }
+.hero-h1 em { font-style: normal; font-weight: 500; color: var(--action); }
+
+.hero-sub { font-size: 18px; color: var(--text); line-height: 1.6; max-width: 620px; margin-bottom: 44px; font-weight: 300; }
+.hero-sub .em { color: var(--action); font-weight: 400; }
+
+.hero-btns { display: flex; gap: 12px; }
+.btn-a { font-size: 14px; padding: 14px 24px; background: var(--action); color: var(--bg); text-decoration: none; font-weight: 500; transition: opacity 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.btn-a:hover { opacity: 0.85; }
+.btn-b { font-size: 14px; padding: 14px 24px; border: 1px solid var(--border2); color: var(--text); text-decoration: none; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.btn-b:hover { border-color: var(--text); }
+
+/* ── Stat bar ────────────────────────────────────────────── */
+.stat-bar { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--border); }
+.stat-cell { padding: 56px 40px 48px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 18px; }
+.stat-cell:last-child { border-right: none; }
+.stat-n { font-size: clamp(56px, 6.5vw, 88px); font-weight: 600; color: var(--white); line-height: 0.9; font-optical-sizing: auto; }
+.stat-d { font-size: 13px; color: var(--text); line-height: 1.5; font-weight: 400; max-width: 230px; }
+.stat-d b { color: var(--text); font-weight: 500; display: block; margin-bottom: 2px; }
+
+/* ── Shared section primitives ───────────────────────────── */
+.section-label { font-size: 10px; color: var(--action); letter-spacing: 0.04em; margin-bottom: 22px; display: flex; align-items: center; gap: 12px; }
+.section-label::before { content: attr(data-num); color: var(--text); font-weight: 400; }
+
+.process-h2 { font-weight: 500; font-size: clamp(38px, 4.4vw, 64px); line-height: 1.0; margin-bottom: 32px; max-width: 18ch; font-optical-sizing: auto; }
+.process-h2 em { font-style: normal; font-weight: 500; color: var(--action); }
+
+.process { padding: 104px 36px 88px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.process-lead { font-size: 17px; color: var(--text); max-width: 640px; line-height: 1.6; margin-bottom: 56px; font-weight: 300; }
+.process-lead .em { color: var(--action); }
+
+/* ── Architecture before/after ───────────────────────────── */
+.token-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border2);
+  border: 1px solid var(--border2);
+}
+.tc-side { padding: 36px 36px 40px; position: relative; }
+.tc-side.before { background: #100808; }
+.tc-side.after  { background: #07080f; }
+
+.tc-tag { font-size: 10px; letter-spacing: 0.06em; margin-bottom: 28px; display: flex; align-items: center; gap: 10px; }
+.tc-tag.before { color: var(--red); }
+.tc-tag.after  { color: var(--action); }
+.tc-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.tc-headline { font-size: 56px; font-weight: 300; line-height: 0.95; margin-bottom: 6px; font-optical-sizing: auto; }
+.tc-side.before .tc-headline { color: var(--red); }
+.tc-side.after  .tc-headline { color: var(--action); }
+.tc-headline .unit { font-size: 0.45em; color: var(--text); margin-left: 6px; }
+
+.tc-sub { font-size: 13px; color: var(--text); margin-bottom: 28px; }
+
+.tc-code { font-size: 11px; line-height: 2; color: var(--text); padding-top: 22px; border-top: 1px solid var(--border2); }
+.tc-code .arrow { color: var(--dim); padding: 0 6px; }
+.tc-code .bad   { color: var(--red); }
+.tc-code .good  { color: var(--action); }
+
+.tc-bullets { margin-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+.tc-bullet { font-size: 13px; color: var(--text); display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; font-weight: 300; }
+.tc-bullet::before { content: ''; width: 4px; height: 4px; margin-top: 8px; flex-shrink: 0; }
+.tc-side.before .tc-bullet::before { background: var(--red); }
+.tc-side.after  .tc-bullet::before { background: var(--action); }
+
+/* ── Build phase cards ───────────────────────────────────── */
+.phase-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); }
+.phase-card { background: var(--bg); padding: 36px 32px; transition: background 0.2s; }
+.phase-card:hover { background: var(--surface2); }
+.phase-num { font-size: 10px; color: var(--text); letter-spacing: 0.06em; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+.phase-status { font-size: 9px; font-weight: 600; padding: 2px 8px; border-radius: 2px; letter-spacing: 0.06em; }
+.phase-status.done    { color: var(--accent); border: 1px solid rgba(185,227,106,0.38); background: rgba(185,227,106,0.08); }
+.phase-status.blocked { color: var(--text); border: 1px solid var(--border2); background: transparent; }
+.phase-q { font-size: 22px; font-weight: 500; color: var(--text); margin-bottom: 14px; line-height: 1.2; }
+.phase-desc { font-size: 14px; color: var(--text); line-height: 1.65; font-weight: 300; }
+.phase-desc strong { color: var(--action); font-weight: 500; }
+.phase-gate { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text); }
+.phase-gate b { color: var(--action); font-weight: 600; }
+
+/* ── RAG memory diagram ──────────────────────────────────── */
+.rag-diagram {
+  border: 2px solid rgba(118,161,255,0.50);
+  background: linear-gradient(180deg, rgba(255,255,255,0.026), rgba(255,255,255,0.012));
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(118,161,255,0.10);
+  padding: 32px;
+}
+
+.rag-flow {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 28px;
+}
+.rag-node {
+  border: 1px solid;
+  background: rgba(0,0,0,0.28);
+  padding: 16px 14px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.3;
+}
+.rag-node.ahab    { border-color: rgba(185,227,106,0.50); }
+.rag-node.nemo    { border-color: rgba(118,161,255,0.50); }
+.rag-node.neptune { border-color: rgba(215,183,255,0.50); }
+.rag-node.gcs     { border-color: rgba(255,255,255,0.25); }
+.rag-node.rag     { border-color: rgba(118,161,255,0.70); background: rgba(118,161,255,0.08); }
+.rag-node .node-model { display: block; font-size: 10px; font-weight: 400; color: var(--text); margin-top: 4px; }
+.rag-arrow { text-align: center; color: var(--dim); font-size: 18px; }
+
+.rag-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.rag-legend-item { border-top: 1px solid var(--border); padding-top: 14px; }
+.rag-legend-item b { display: block; font-size: 11px; font-weight: 600; margin-bottom: 5px; }
+.rag-legend-item span { font-size: 12px; color: var(--text); line-height: 1.45; font-weight: 300; display: block; }
+.rag-legend-item.ahab-leg b    { color: var(--accent); }
+.rag-legend-item.nemo-leg b    { color: var(--action); }
+.rag-legend-item.neptune-leg b { color: #D7B7FF; }
+
+/* ── Agent showcase ──────────────────────────────────────── */
+.agent-showcase {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.72fr) minmax(0, 2.28fr);
+  align-items: stretch;
+  gap: 16px;
+  padding: 18px;
+  border: 2px solid rgba(118,161,255,0.50);
+  background: linear-gradient(180deg, rgba(255,255,255,0.026), rgba(255,255,255,0.012));
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(118,161,255,0.10);
+}
+
+.agent-stack { display: grid; gap: 14px; height: 100%; align-content: start; }
+
+.agent-card {
+  border: 2px solid;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.018)), rgba(10,10,10,0.82);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.035), 0 16px 42px rgba(0,0,0,0.22);
+  padding: 18px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.agent-card.ahab-card    { border-color: rgba(185,227,106,0.42); }
+.agent-card.nemo-card    { border-color: rgba(118,161,255,0.42); }
+.agent-card.neptune-card { border-color: rgba(215,183,255,0.42); }
+
+.agent-card.on.ahab-card    { border-color: rgba(185,227,106,0.80); background: linear-gradient(180deg, rgba(185,227,106,0.07), rgba(185,227,106,0.02)), rgba(10,10,10,0.82); }
+.agent-card.on.nemo-card    { border-color: rgba(118,161,255,0.80); background: linear-gradient(180deg, rgba(118,161,255,0.08), rgba(118,161,255,0.02)), rgba(10,10,10,0.82); }
+.agent-card.on.neptune-card { border-color: rgba(215,183,255,0.80); background: linear-gradient(180deg, rgba(215,183,255,0.07), rgba(215,183,255,0.02)), rgba(10,10,10,0.82); }
+
+.agent-name { color: var(--text); font-size: 28px; font-weight: 750; line-height: 1; }
+.agent-model { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; margin-top: 6px; margin-bottom: 2px; }
+.agent-card.ahab-card .agent-model    { color: var(--accent); }
+.agent-card.nemo-card .agent-model    { color: #9FBCFF; }
+.agent-card.neptune-card .agent-model { color: #E1C7FF; }
+.agent-role { font-size: 12px; font-weight: 700; margin-top: 4px; }
+.agent-card.ahab-card .agent-role    { color: var(--accent); }
+.agent-card.nemo-card .agent-role    { color: #9FBCFF; }
+.agent-card.neptune-card .agent-role { color: #E1C7FF; }
+.agent-card p { color: var(--text); font-size: 13px; line-height: 1.55; margin: 12px 0 0; font-weight: 300; }
+
+.agent-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+.agent-chip-row span { border: 1px solid rgba(185,227,106,0.34); background: rgba(185,227,106,0.065); color: var(--accent); padding: 7px 9px; font-size: 11px; font-weight: 700; line-height: 1; }
+.agent-card.nemo-card .agent-chip-row span    { border-color: rgba(118,161,255,0.42); background: rgba(118,161,255,0.08); color: #BFD0FF; }
+.agent-card.neptune-card .agent-chip-row span { border-color: rgba(215,183,255,0.42); background: rgba(215,183,255,0.08); color: #E9D8FF; }
+
+.subagent-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); color: var(--text); font-size: 12px; line-height: 1.5; }
+
+.agent-prompt-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; height: 100%; }
+
+.prompt-excerpt-column {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 0;
+  border: 2px solid;
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(7,9,8,0.92);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.035), 0 18px 50px rgba(0,0,0,0.24);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.prompt-excerpt-column.ahab-prompt    { border-color: rgba(185,227,106,0.42); }
+.prompt-excerpt-column.nemo-prompt    { border-color: rgba(118,161,255,0.42); }
+.prompt-excerpt-column.neptune-prompt { border-color: rgba(215,183,255,0.42); }
+
+.prompt-excerpt-column.on.ahab-prompt    { border-color: rgba(185,227,106,0.80); box-shadow: 0 0 0 1px rgba(185,227,106,0.14), 0 24px 60px rgba(0,0,0,0.32); }
+.prompt-excerpt-column.on.nemo-prompt    { border-color: rgba(118,161,255,0.80); box-shadow: 0 0 0 1px rgba(118,161,255,0.14), 0 24px 60px rgba(0,0,0,0.32); }
+.prompt-excerpt-column.on.neptune-prompt { border-color: rgba(215,183,255,0.80); box-shadow: 0 0 0 1px rgba(215,183,255,0.14), 0 24px 60px rgba(0,0,0,0.32); }
+
+.prompt-excerpt-column::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 92px; pointer-events: none; background: linear-gradient(180deg, rgba(10,10,10,0), rgba(10,10,10,0.92)); }
+
+.prompt-kicker { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 16px 13px; margin: 0; color: var(--text); background: rgba(255,255,255,0.035); font-size: 12px; font-weight: 800; }
+.agent-prompt-grid .prompt-kicker::before { content: ''; position: static; order: 2; flex: 0 0 auto; display: block; margin-left: auto; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); box-shadow: 12px 0 0 rgba(255,255,255,0.22), 24px 0 0 rgba(255,255,255,0.10); }
+.prompt-excerpt-column.ahab-prompt .prompt-kicker::before    { background: #B9E36A; }
+.prompt-excerpt-column.nemo-prompt .prompt-kicker::before    { background: #76A1FF; }
+.prompt-excerpt-column.neptune-prompt .prompt-kicker::before { background: #D7B7FF; }
+
+.prompt-excerpt { margin: 0; border: 0; background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 26px), rgba(0,0,0,0.12); padding: 18px 18px 24px; font-size: 11.6px; line-height: 1.54; font-weight: 500; white-space: pre-wrap; overflow: hidden; flex: 1; min-height: 0; }
+.prompt-excerpt-column.ahab-prompt .prompt-excerpt    { color: #DDF8A7; }
+.prompt-excerpt-column.nemo-prompt .prompt-excerpt    { color: #D7E4FF; }
+.prompt-excerpt-column.neptune-prompt .prompt-excerpt { color: #F0DEFF; }
+
+/* ── Contact ─────────────────────────────────────────────── */
+.contact {
+  padding: 120px 48px 96px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: clamp(40px, 6vw, 84px);
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 78% 30%, rgba(118,161,255,0.05), transparent 32%), linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
+}
+.contact-copy { display: flex; flex-direction: column; justify-content: center; }
+.contact-h2 { font-size: clamp(44px, 4.7vw, 76px); line-height: 0.98; max-width: 820px; font-optical-sizing: auto; font-weight: 500; margin-bottom: 32px; }
+.contact-h2 em { font-style: normal; font-weight: 500; color: var(--action); display: inline-block; }
+.contact-sub { font-size: 17px; color: var(--text); line-height: 1.65; font-weight: 300; margin-bottom: 40px; max-width: 620px; }
+.contact-cta { font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 18px 24px; color: var(--text); background: linear-gradient(135deg, rgba(118,161,255,0.14), rgba(185,227,106,0.07)); border: 1px solid rgba(118,161,255,0.72); box-shadow: 0 18px 50px rgba(0,0,0,0.34), inset 0 0 0 1px rgba(255,255,255,0.04); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 10px; width: fit-content; margin-top: 10px; border-radius: 8px; position: relative; overflow: hidden; transition: all 0.2s; }
+.contact-cta::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--action); }
+.contact-cta::after { content: ''; position: absolute; right: 14px; top: 50%; width: 8px; height: 8px; border-top: 2px solid var(--action); border-right: 2px solid var(--action); transform: translateY(-50%) rotate(45deg); }
+.contact-cta:hover { color: var(--bg); background: var(--action); border-color: var(--action); transform: translateY(-2px); }
+.contact-cta:hover::before { background: var(--bg); }
+.contact-cta:hover::after  { border-color: var(--bg); }
+.contact-links { display: flex; flex-direction: column; align-self: center; gap: 14px; }
+.contact-link { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; padding: 18px 20px; background: rgba(0,0,0,0.20); text-decoration: none; gap: 18px; min-height: 76px; border: 2px solid rgba(118,161,255,0.24); border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,0.20); transition: background 0.2s, border-color 0.2s, transform 0.15s; }
+.contact-link:hover { background: rgba(118,161,255,0.06); border-color: rgba(118,161,255,0.72); transform: translateY(-1px); }
+.cl-label { font-size: 10px; color: var(--action); letter-spacing: 0.08em; font-weight: 800; }
+.cl-val { font-size: 16px; color: var(--text); font-weight: 650; overflow-wrap: anywhere; }
+.cl-arrow { width: 34px; height: 34px; display: grid; place-items: center; justify-self: end; color: var(--action); border: 1px solid rgba(118,161,255,0.38); background: rgba(118,161,255,0.08); border-radius: 8px; font-size: 12px; }
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer { padding: 36px 48px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); }
+.footer-left { font-size: 10px; color: var(--text); letter-spacing: 0.06em; }
+.footer-quote { font-size: 14px; font-style: italic; color: var(--text); font-weight: 300; }
+
+/* ── Reveal ──────────────────────────────────────────────── */
+.reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease, transform 0.7s ease; }
+.reveal.vis { opacity: 1; transform: translateY(0); }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .agent-showcase { grid-template-columns: 1fr; }
+  .agent-prompt-grid { grid-template-columns: 1fr; }
+  .rag-flow { grid-template-columns: 1fr; }
+  .rag-arrow { display: none; }
+  .rag-legend { grid-template-columns: 1fr; }
+}
+@media (max-width: 1000px) {
+  .page-nav { padding: 0 24px; }
+  .nav-title { display: none; }
+  .hero { padding: 56px 24px 64px; }
+  .hero-h1 { font-size: clamp(44px, 9vw, 72px); }
+  .stat-bar { grid-template-columns: repeat(2, 1fr); }
+  .stat-cell { padding: 36px 24px 32px; }
+  .process { padding: 80px 24px 64px; }
+  .contact { padding: 80px 24px 64px; grid-template-columns: 1fr; gap: 48px; }
+  footer { flex-direction: column; gap: 16px; padding: 28px 24px; text-align: center; }
+}
+@media (max-width: 760px) {
+  .token-compare { grid-template-columns: 1fr; }
+  .phase-grid { grid-template-columns: 1fr; }
+}
+
+</style>
+</head>
+<body>
+
+<nav class="page-nav">
+  <a href="index_remake.html" class="nav-back">← Back</a>
+  <span class="nav-title">Agentic GTM · MCP Edition</span>
+  <a href="https://github.com/BlueSkyGTM/agentic-gtm-mcp" class="nav-link">GitHub →</a>
+</nav>
+
+<!-- ══ HERO ══ -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-pre reveal">V2 Rewrite · Vertex AI · GCS Handoff · RAG Memory</div>
+    <h1 class="hero-h1 reveal">
+      The Agents Survived.<br>
+      <em>The Infrastructure Didn't.</em>
+    </h1>
+    <p class="hero-sub reveal">
+      Six environmental failures. Zero prompt failures. V2 eliminates every hostile layer — no Docker, no Postgres, no n8n. Vertex AI runs the agents. GCS handles the handoff. <span class="em">The same three agent prompts run cloud-native, with RAG shared memory that compounds across every run.</span>
+    </p>
+    <div class="hero-btns reveal">
+      <a href="#architecture" class="btn-a">See the rewrite ↓</a>
+      <a href="v1_remake.html" class="btn-b">V1 Archive →</a>
+    </div>
+  </div>
+</section>
+
+<!-- STAT BAR -->
+<div class="stat-bar reveal">
+  <div class="stat-cell">
+    <div class="stat-n">3</div>
+    <div class="stat-d"><b>Agents</b>Ahab, Nemo, Neptune. Same prompts, new runtime. Gemini 2.5 Flash and Pro via Vertex AI.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">3</div>
+    <div class="stat-d"><b>Build Phases</b>GCS Pipeline → MCP Delivery → RAG Feedback Loop. Phase 1 built and ready.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">0</div>
+    <div class="stat-d"><b>Self-Hosted Services</b>No Docker. No Postgres. No n8n. No VM. No SSH. No ops overhead.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">1</div>
+    <div class="stat-d"><b>RAG Store</b>Live. rag_store.json in GCS. Compounds across every run via text-embedding-004.</div>
+  </div>
+</div>
+
+<!-- ══ SECTION 01: ARCHITECTURE ══ -->
+<section class="process" id="architecture">
+  <div class="section-label reveal" data-num="01">The Architecture</div>
+  <h2 class="process-h2 reveal">Same Agents. <em>Cloud-Native Runtime.</em></h2>
+  <p class="process-lead reveal">
+    V1 ran on a self-hosted GCP VM with Docker, Postgres, and n8n stitched together. V2 replaces all of it with managed services. <span class="em">The agents didn't change. The substrate did.</span>
+  </p>
+
+  <div class="token-compare reveal">
+    <div class="tc-side before">
+      <div class="tc-tag before"><span class="dot"></span>V1 — Self-Hosted Stack</div>
+      <div class="tc-headline">6<span class="unit">failure domains</span></div>
+      <div class="tc-sub">Every layer a potential failure point</div>
+      <div class="tc-code">
+        <span>GCP VM<span class="arrow">→</span><span class="bad">Docker</span><span class="arrow">→</span><span class="bad">Postgres</span><span class="arrow">→</span><span class="bad">n8n</span><span class="arrow">→</span>Node.js<span class="arrow">→</span><span class="bad">SSH</span></span>
+      </div>
+      <div class="tc-bullets">
+        <div class="tc-bullet">VM restart silently corrupts the Postgres index</div>
+        <div class="tc-bullet">n8n loses webhook state on container restart</div>
+        <div class="tc-bullet">Postgres connection timeouts under concurrent agent load</div>
+        <div class="tc-bullet">Docker networking drops between pipeline stages</div>
+        <div class="tc-bullet">SSH key rotation silently breaks CI pipeline</div>
+        <div class="tc-bullet">Stack updates require coordinated downtime</div>
+      </div>
+    </div>
+    <div class="tc-side after">
+      <div class="tc-tag after"><span class="dot"></span>V2 — Cloud-Native</div>
+      <div class="tc-headline">0<span class="unit">self-hosted services</span></div>
+      <div class="tc-sub">No ops layer to fail</div>
+      <div class="tc-code">
+        <span><span class="good">Vertex AI</span><span class="arrow">→</span><span class="good">GCS</span><span class="arrow">→</span><span class="good">Claude Code</span><span class="arrow">→</span><span class="good">MCP</span></span>
+      </div>
+      <div class="tc-bullets">
+        <div class="tc-bullet">Gemini 2.5 Flash for Ahab (speed + grounding)</div>
+        <div class="tc-bullet">Gemini 2.5 Pro for Nemo and Neptune (depth + schema)</div>
+        <div class="tc-bullet">GCS JSON files survive any process failure</div>
+        <div class="tc-bullet">No database, no connection pool, no schema drift</div>
+        <div class="tc-bullet">RAG store compounds across runs — intelligence accumulates</div>
+        <div class="tc-bullet">MCP delivery in Phase 2 — no orchestration server needed</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 02: BUILD PHASES ══ -->
+<section class="process" id="phases">
+  <div class="section-label reveal" data-num="02">The Three Build Phases</div>
+  <h2 class="process-h2 reveal">GCS Pipeline. MCP Delivery. <em>RAG Feedback.</em></h2>
+  <p class="process-lead reveal">
+    V2 builds in three gates. Each gate produces something a human can inspect before the next phase runs. <span class="em">Phase 1 is built and ready to run. Phase 2 and 3 are sequentially blocked.</span>
+  </p>
+
+  <div class="phase-grid reveal">
+    <div class="phase-card">
+      <div class="phase-num">Phase 1 <span class="phase-status done">BUILT</span></div>
+      <div class="phase-q">GCS Pipeline</div>
+      <div class="phase-desc">
+        Ahab (Flash + grounding) writes <code>ahab_output.json</code> to GCS. Nemo (Pro + grounding) reads it, enriches each lead, writes <code>nemo_output.json</code>. Neptune (Pro + responseSchema) reads Nemo's output, writes <code>neptune_output.json</code> with the Outreach Bite.<br><br>
+        RAG shared memory is live — every agent reads and writes rag_store.json on each run. The store compounds.<br><br>
+        <strong>run.js</strong> is the single entry point. Gates each stage before proceeding.
+      </div>
+      <div class="phase-gate"><b>Success gate:</b> 50 leads in neptune_output.json with Outreach_Bite populated.</div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-num">Phase 2 <span class="phase-status blocked">BLOCKED</span></div>
+      <div class="phase-q">MCP Delivery</div>
+      <div class="phase-desc">
+        MCP server exposes Neptune's output to downstream tools. Four tools planned:<br><br>
+        <strong>get_leads</strong> — all qualified leads from neptune_output.json<br>
+        <strong>get_lead_by_company</strong> — single lead lookup<br>
+        <strong>push_to_sheet</strong> — Google Sheets export<br>
+        <strong>push_to_clay</strong> — Clay enrichment handoff<br><br>
+        No Express server. No custom HTTP routing. Claude Code orchestration.
+      </div>
+      <div class="phase-gate"><b>Success gate:</b> At least one downstream tool receiving Neptune output.</div>
+    </div>
+    <div class="phase-card">
+      <div class="phase-num">Phase 3 <span class="phase-status blocked">BLOCKED</span></div>
+      <div class="phase-q">RAG Feedback Loop</div>
+      <div class="phase-desc">
+        After first replies arrive, <code>feedback.js</code> marks outcomes — replied, bounced, ignored. The RAG query layer weights replied entries higher in Neptune retrieval.<br><br>
+        Current RAG state: improves Bite variety across leads (no repeated openings or villains). Does not yet distinguish quality from variety.<br><br>
+        <strong>Do not delete rag_store.json between runs.</strong> The store is the compounding asset.
+      </div>
+      <div class="phase-gate"><b>Success gate:</b> Neptune Bites differ structurally across leads without explicit prompting.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 03: RAG MEMORY ══ -->
+<section class="process" id="rag">
+  <div class="section-label reveal" data-num="03">RAG Shared Memory</div>
+  <h2 class="process-h2 reveal">Intelligence That <em>Compounds.</em></h2>
+  <p class="process-lead reveal">
+    Every run feeds the RAG store. Ahab uses it to deduplicate across campaigns. Nemo uses it to calibrate friction type consistency. Neptune uses it to vary Bite structure across leads. <span class="em">The store is never deleted. It gets smarter every time.</span>
+  </p>
+
+  <div class="rag-diagram reveal">
+    <div class="rag-flow">
+      <div class="rag-node ahab">🐋 Ahab<span class="node-model">Flash · grounding</span></div>
+      <div class="rag-arrow">→</div>
+      <div class="rag-node gcs">GCS<span class="node-model">ahab_output.json</span></div>
+      <div class="rag-arrow">→</div>
+      <div class="rag-node nemo">🐟 Nemo<span class="node-model">Pro · grounding</span></div>
+    </div>
+    <div class="rag-flow" style="margin-bottom:0">
+      <div class="rag-node neptune">🔱 Neptune<span class="node-model">Pro · schema</span></div>
+      <div class="rag-arrow">←</div>
+      <div class="rag-node gcs">GCS<span class="node-model">nemo_output.json</span></div>
+      <div class="rag-arrow" style="visibility:hidden">→</div>
+      <div class="rag-node rag">RAG Store<span class="node-model">text-embedding-004</span></div>
+    </div>
+    <div style="margin-top:28px">
+      <div class="rag-legend">
+        <div class="rag-legend-item ahab-leg">
+          <b>Ahab reads RAG</b>
+          <span>Queries top-10 prior discoveries before searching. Excluded companies list is built from RAG — deduplication across campaigns is automatic.</span>
+        </div>
+        <div class="rag-legend-item nemo-leg">
+          <b>Nemo reads + writes RAG</b>
+          <span>Queries top-3 similar enrichment profiles before enriching each lead. Upserts ACTIVE enrichments. Friction type calibration improves across runs.</span>
+        </div>
+        <div class="rag-legend-item neptune-leg">
+          <b>Neptune reads + writes RAG</b>
+          <span>Queries top-3 prior Bites filtered by friction type + intent. Told explicitly to vary opening and villain. Upserts each finished Bite for future variation reference.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 04: AGENT CONTINUITY ══ -->
+<section class="process" id="agents">
+  <div class="section-label reveal" data-num="04">Agent Continuity</div>
+  <h2 class="process-h2 reveal">Same Prompts. <em>Evolved Output Contract.</em></h2>
+  <p class="process-lead reveal">
+    The core persona, methodology, and Forensic Dictionary transferred from V1 verbatim. What evolved in V2: the output schemas, the CATALYST_STALE handling, and Neptune's contact framing logic. <span class="em">Select an agent to read the V2 system instruction.</span>
+  </p>
+
+  <div class="agent-showcase reveal">
+    <div class="agent-stack">
+      <div class="agent-card ahab-card on" data-agent="ahab">
+        <div class="agent-name">🐋 Ahab</div>
+        <div class="agent-model">gemini-2.5-flash · Google Search grounding</div>
+        <div class="agent-role">The Hunter · Find</div>
+        <p>Speed over depth. Ahab runs Flash with grounding enabled — real web search, not hallucinated company names. RAG deduplication means every search finds net-new targets from prior campaigns.</p>
+        <div class="agent-chip-row"><span>🎯 Technical Harpooner</span><span>📡 Signal Harpooner</span></div>
+        <p class="subagent-note">Reads RAG before searching (top-10 prior discoveries → Excluded Companies). Bulk-upserts full Catch into RAG after each run. Writes ahab_output.json to GCS.</p>
+      </div>
+      <div class="agent-card nemo-card" data-agent="nemo">
+        <div class="agent-name">🐟 Nemo</div>
+        <div class="agent-model">gemini-2.5-pro · Google Search grounding</div>
+        <div class="agent-role">The Intelligence Analyst · Enrich</div>
+        <p>Depth over speed. Nemo runs Pro with grounding to verify direct URLs and contact claims. CATALYST_STALE now hard-gates leads — funding over 18 months old routes to SHIPWRECKED, not a flag.</p>
+        <div class="agent-chip-row"><span>🤿 URL Recon Diver</span><span>🩺 Health Check Diver</span><span>🔎 Friction Diver</span></div>
+        <p class="subagent-note">Reads RAG before each lead (top-3 similar enrichments). Upserts ACTIVE leads into RAG. Writes nemo_output.json (active) and shipwrecked.json separately to GCS.</p>
+      </div>
+      <div class="agent-card neptune-card" data-agent="neptune">
+        <div class="agent-name">🔱 Neptune</div>
+        <div class="agent-model">gemini-2.5-pro · responseSchema enforcement</div>
+        <div class="agent-role">The Authority Engine · Transform</div>
+        <p>Schema-enforced output. Neptune runs Pro with responseSchema — the Outreach_Bite, Neptune_Log, and funding_signal are typed fields, not text to parse. Contact_Frame routing adjusts the angle by role.</p>
+        <div class="agent-chip-row"><span>🎯 Rule of One</span><span>🪞 Reflect First</span><span>⚡ Specific Outcome</span></div>
+        <p class="subagent-note">Reads RAG before each Bite (top-3 similar Bites, filtered by friction type). Explicitly told to vary opening and villain. Upserts each Bite into RAG. Writes neptune_output.json to GCS.</p>
+      </div>
+    </div>
+
+    <div class="agent-prompt-grid">
+      <div class="prompt-excerpt-column ahab-prompt on">
+        <div class="prompt-kicker">🐋 Ahab — V2 System Instruction</div>
+        <pre class="prompt-excerpt">system_instruction: |
+  [Task]: RAW DATA HARVESTING of {{CAMPAIGN_TYPE}} opportunities.
+  You are the high-volume scraper at the front-end of the pipeline.
+  [Persona]: 🐋 Ahab, the Hunter.
+  [Sub-Agents]:
+    - 🎯 Technical Harpooner: Scans listings for tech-stack keywords.
+    - 📡 Signal Harpooner: Scans for growth and health keywords.
+
+  [Handoff_Protocol]:
+  - Fill the Catch array for Nemo. Do not analyze.
+  - Do not burn tokens on enrichment. Give Nemo maximum raw leads.
+  - DO NOT return companies in the Excluded Companies list.
+    These come from prior runs. Find net-new targets only.
+
+  [Core_Directives]:
+  1. Execute 5+ varied search queries targeting the lead profile.
+  2. STRICT KEYWORD EXTRACTION: only short phrases in signals.
+     No full sentences. Keywords only.
+  3. SKIP AGGREGATORS: jobgether, jobsora, indeed, glassdoor,
+     linkedin, ziprecruiter. Direct company sites only.
+  4. Every query MUST be logged in Harpooner_Logs.
+
+  [Output_Schema]:
+  {
+    "Harpooner_Logs": ["query1", "query2", ...],
+    "Catch": [{
+      "Company_Name": "string",
+      "Job_URL": "direct company URL only",
+      "Location_Status": "Remote | Hybrid | On-site",
+      "Raw_Primary_Signals": ["keyword"],
+      "Raw_Health_Signals": ["keyword"]
+    }]
+  }</pre>
+      </div>
+      <div class="prompt-excerpt-column nemo-prompt">
+        <div class="prompt-kicker">🐟 Nemo — V2 System Instruction</div>
+        <pre class="prompt-excerpt">system_instruction: |
+  [Task]: SINGLE-LEAD DIAGNOSTIC ENRICHMENT.
+  [Persona]: 🐟 Nemo, the Intelligence Analyst.
+  [Mission]: Analyze ONE lead. Produce a Clay-ready output.
+
+  [Clay_Readiness_Protocol]:
+  - Every claim must be sourced. No invented details.
+  - Direct_URL must be the company's own domain.
+    Not a job board or listing URL.
+  - Contact_Recon must be a real person with a verifiable role.
+  - Target_Service_Intent derived from evidence only.
+
+  [Target_Service_Intent_Routing]:
+  - "Accounting": controllers, bookkeeping, QuickBooks signals
+  - "GTM": RevOps, CRM operations, marketing automation
+
+  [Forensic_Dictionary]:
+  1. API Stutter: tools exist but don't talk to each other.
+  2. Scale Friction: growth outpacing data infrastructure.
+  3. Manual Data Debt: humans doing work tables should structure.
+  4. Displacement Signal: generalist doing specialist work.
+
+  [CATALYST_STALE]:
+  If funding signal is older than 18 months:
+    set status = SHIPWRECKED
+    set reason_code = CATALYST_STALE
+  Do not enrich further. Route to shipwrecked.json.
+
+  [Output_Schema]:
+  {
+    "Enriched_Lead": { ... full enrichment fields ... },
+    "Nemo_Enrich_Audit": {
+      "status": "ACTIVE | SHIPWRECKED",
+      "reason_code": "null | CATALYST_STALE | MISSING_CONTACT | ..."
+    }
+  }</pre>
+      </div>
+      <div class="prompt-excerpt-column neptune-prompt">
+        <div class="prompt-kicker">🔱 Neptune — V2 System Instruction</div>
+        <pre class="prompt-excerpt">system_instruction: |
+  [Task]: OUTREACH SYNTHESIS — Robert Collier method.
+  [Persona]: 🔱 Neptune, the Authority Engine.
+  [Prime_Directive]: Confirm what the prospect already knows.
+  You are not selling. You are proving you understand their
+  specific situation better than they can articulate it.
+
+  [Bite_Principles]:
+  1. REFLECT: Name what they are already doing before offering.
+     Their stack, their process, their friction — stated precisely.
+  2. NAME THE VILLAIN: The specific tool that breaks. The exact
+     process that doesn't scale. Never generic.
+  3. OFFER THE SPECIFIC OUTCOME: Not a feature. Not a capability.
+     The exact operational result they already want.
+
+  [Funding_Signal_Handling]:
+  If funding_signal is present:
+    Open with the momentum hook, then pivot to friction.
+  If funding_signal is null:
+    Open directly with the operational pressure.
+
+  [Contact_Frame]:
+  CTO / VP Eng       → architecture debt angle
+  VP Revenue / CRO   → pipeline visibility angle
+  Head Growth / CMO  → CAC efficiency angle
+  RevOps             → data integrity angle
+
+  [The_Rule_of_One_Mandate]:
+  1. 🎯 One Reader: intimate 1-on-1. Never "team" or "company."
+  2. 🪞 First-Person ONLY: "I" — never agency framing.
+  3. ⚡ One Peer Suggestion: specific to their exact signals.
+
+  [Output_Schema]: responseSchema-enforced
+  {
+    "Neptune_Log": { "friction_type": "...", "contact_frame": "..." },
+    "Outreach_Bite": "3-4 sentence string",
+    "funding_signal": "string | null"
+  }</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ OPERATOR ══ -->
+<section class="contact" id="contact">
+  <div class="contact-copy reveal">
+    <div class="section-label" data-num="05">The Architect</div>
+    <h2 class="contact-h2">GTM Systems Engineer.<br><em>AI Workflow Architecture.</em></h2>
+    <p class="contact-sub">
+      I turn messy GTM inputs into structured records, useful handoffs, and workflows that a revenue team can actually inspect, trust, and use.
+    </p>
+    <a class="contact-cta" href="mailto:raymondf.gtm@gmail.com">Get in Touch →</a>
+  </div>
+  <div class="contact-links reveal">
+    <a class="contact-link" href="mailto:raymondf.gtm@gmail.com">
+      <span class="cl-label">Email</span>
+      <span class="cl-val">raymondf.gtm@gmail.com</span>
+      <span class="cl-arrow">→</span>
+    </a>
+    <a class="contact-link" href="https://www.linkedin.com/in/raymond-fenton-51b01b160/">
+      <span class="cl-label">LinkedIn</span>
+      <span class="cl-val">Raymond Fenton</span>
+      <span class="cl-arrow">→</span>
+    </a>
+    <a class="contact-link" href="https://github.com/BlueSkyGTM/agentic-gtm-mcp">
+      <span class="cl-label">Repo</span>
+      <span class="cl-val">agentic-gtm-mcp</span>
+      <span class="cl-arrow">→</span>
+    </a>
+  </div>
+</section>
+<footer>
+  <div class="footer-left">© 2026 Raymond Fenton · V2 · Vertex AI · GCS · RAG</div>
+  <div class="footer-quote">The prompts survived. The infrastructure didn't have to.</div>
+</footer>
+
+<script>
+// ── Agent card → matching prompt highlight ────────────────────────────────────
+document.querySelectorAll('.agent-card[data-agent]').forEach(card => {
+  card.addEventListener('click', () => {
+    const agent = card.dataset.agent;
+    document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('on'));
+    document.querySelectorAll('.prompt-excerpt-column').forEach(p => p.classList.remove('on'));
+    card.classList.add('on');
+    const prompt = document.querySelector('.prompt-excerpt-column.' + agent + '-prompt');
+    if (prompt) prompt.classList.add('on');
+  });
+});
+
+// ── Scroll reveal ─────────────────────────────────────────────────────────────
+const obs = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('vis'); }),
+  { threshold: 0.08 }
+);
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>

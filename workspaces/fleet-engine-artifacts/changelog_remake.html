@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raymond Fenton — 18 Failure Modes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+/* ── Variables ──────────────────────────────────────────── */
+:root {
+  --bg: #0A0A0A;
+  --surface: #111111;
+  --surface2: #161616;
+  --border: #1E1E1E;
+  --border2: #2A2A2A;
+  --text: #E6E6E6;
+  --text-soft: #E6E6E6;
+  --muted: #6A6A6A;
+  --dim: #2E2E2E;
+  --accent: #B9E36A;
+  --action: #76A1FF;
+  --action-soft: rgba(118,161,255,0.12);
+  --red: #FF5555;
+  --amber: #f0a030;
+  --white: #FFFFFF;
+  --scroll-blue: #365FA8;
+  --scroll-track: #0D1118;
+}
+
+/* ── Reset ──────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  font-feature-settings: "ss01", "ss02";
+  padding-top: 60px;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+}
+
+a:focus-visible, button:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
+
+/* ── Fixed nav ───────────────────────────────────────────── */
+.page-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,10,10,0.92);
+  backdrop-filter: blur(16px);
+}
+.nav-back { font-size: 13px; color: var(--muted); text-decoration: none; transition: color 0.2s; }
+.nav-back:hover { color: var(--red); }
+.nav-title { font-size: 13px; color: var(--muted); font-weight: 400; }
+.nav-link { font-size: 13px; color: var(--red); text-decoration: none; border: 1px solid rgba(255,85,85,0.38); padding: 6px 14px; transition: all 0.18s; }
+.nav-link:hover { background: var(--red); color: var(--white); }
+
+/* ── Hero ───────────────────────────────────────────────── */
+.hero {
+  min-height: 86vh;
+  padding: 72px 48px 96px;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-grid {
+  position: absolute; inset: 0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.hero-grid::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 75% 65% at 50% 100%, var(--bg) 30%, transparent 100%);
+}
+.hero-inner { position: relative; z-index: 1; max-width: 1080px; }
+
+.hero-pre { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 40px; display: flex; align-items: center; gap: 12px; }
+.hero-pre::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 12px var(--red); }
+
+.hero-h1 { font-size: clamp(48px, 6.6vw, 92px); line-height: 1.04; font-weight: 500; margin-bottom: 40px; max-width: 16ch; font-optical-sizing: auto; }
+.hero-h1 em { font-style: normal; font-weight: 500; color: var(--red); }
+
+.hero-sub { font-size: 18px; color: var(--text); line-height: 1.6; max-width: 620px; margin-bottom: 44px; font-weight: 300; }
+.hero-sub .em { color: var(--red); font-weight: 400; }
+
+.hero-btns { display: flex; gap: 12px; }
+.btn-a { font-size: 14px; padding: 14px 24px; background: var(--red); color: var(--white); text-decoration: none; font-weight: 500; transition: opacity 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.btn-a:hover { opacity: 0.85; }
+.btn-b { font-size: 14px; padding: 14px 24px; border: 1px solid var(--border2); color: var(--text); text-decoration: none; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.btn-b:hover { border-color: var(--text); }
+
+/* ── Stat bar ────────────────────────────────────────────── */
+.stat-bar { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--border); }
+.stat-cell { padding: 56px 40px 48px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 18px; }
+.stat-cell:last-child { border-right: none; }
+.stat-n { font-size: clamp(56px, 6.5vw, 88px); font-weight: 600; color: var(--white); line-height: 0.9; font-optical-sizing: auto; }
+.stat-d { font-size: 13px; color: var(--text); line-height: 1.5; font-weight: 400; max-width: 230px; }
+.stat-d b { color: var(--text); font-weight: 500; display: block; margin-bottom: 2px; }
+
+/* ── Shared section primitives ───────────────────────────── */
+.section-label { font-size: 10px; color: var(--red); letter-spacing: 0.04em; margin-bottom: 22px; display: flex; align-items: center; gap: 12px; }
+.section-label::before { content: attr(data-num); color: var(--text); font-weight: 400; }
+
+.process-h2 { font-weight: 500; font-size: clamp(38px, 4.4vw, 64px); line-height: 1.0; margin-bottom: 32px; max-width: 18ch; font-optical-sizing: auto; }
+.process-h2 em { font-style: normal; font-weight: 500; color: var(--red); }
+
+.process { padding: 104px 36px 88px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.process-lead { font-size: 17px; color: var(--text); max-width: 640px; line-height: 1.6; margin-bottom: 56px; font-weight: 300; }
+.process-lead .em { color: var(--red); }
+
+/* ── Domain overview cards — clickable filter ────────────── */
+.domain-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 64px; }
+.domain-card { background: var(--bg); padding: 32px 26px; cursor: pointer; border-bottom: 2px solid transparent; transition: background 0.18s, border-color 0.18s; }
+.domain-card:hover { background: var(--surface2); }
+.domain-card.on { background: var(--surface2); border-bottom-color: var(--red); }
+.domain-card.on[data-domain="Scraping"]         { border-bottom-color: var(--red); }
+.domain-card.on[data-domain="Routing / Parsing"] { border-bottom-color: var(--amber); }
+.domain-card.on[data-domain="Output QA"]         { border-bottom-color: var(--action); }
+.domain-icon { font-size: 24px; margin-bottom: 14px; }
+.domain-name { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.domain-count { font-size: 40px; font-weight: 600; color: var(--red); line-height: 0.9; margin-bottom: 10px; font-optical-sizing: auto; transition: color 0.18s; }
+.domain-card[data-domain="Routing / Parsing"] .domain-count { color: var(--amber); }
+.domain-card[data-domain="Output QA"] .domain-count         { color: var(--action); }
+.domain-card[data-domain="all"] .domain-count               { color: var(--text); }
+.domain-desc { font-size: 12px; color: var(--text); line-height: 1.55; font-weight: 300; }
+
+/* ── Constraint before/after toggle ──────────────────────── */
+.constraint-after-wrap {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.42s ease;
+}
+.constraint.revealed .constraint-after-wrap { max-height: 400px; }
+.constraint-arrow { display: block; font-size: 18px; color: var(--dim); margin: 14px 0; transition: color 0.3s; }
+.constraint.revealed .constraint-arrow { color: var(--accent); }
+
+.constraint-reveal-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--red);
+  background: none;
+  border: 1px solid rgba(255,85,85,0.35);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.18s;
+  width: fit-content;
+}
+.constraint-reveal-btn:hover { background: rgba(255,85,85,0.08); border-color: rgba(255,85,85,0.7); }
+.constraint.revealed .constraint-reveal-btn { color: var(--accent); border-color: rgba(185,227,106,0.35); }
+.constraint.revealed .constraint-reveal-btn:hover { background: rgba(185,227,106,0.08); }
+
+/* ── Failure log — two-pane interactive ─────────────────── */
+.failure-log {
+  border: 2px solid rgba(255,85,85,0.50);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(255,85,85,0.10);
+}
+
+.log-bar {
+  display: flex;
+  align-items: center;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  gap: 8px;
+}
+.log-dot { width: 10px; height: 10px; border-radius: 50%; }
+.log-dot-r { background: #FF5F57; }
+.log-dot-y { background: #FFBD2E; }
+.log-dot-g { background: #28C840; }
+.log-title { font-size: 10px; color: var(--muted); margin: 0 auto; letter-spacing: 0.04em; }
+
+/* Two-pane: failure list left, detail right */
+.log-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+  height: 640px;
+  overflow: hidden;
+}
+
+.log-list {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  scrollbar-color: var(--scroll-blue) var(--scroll-track);
+  scrollbar-width: thin;
+}
+.log-list::-webkit-scrollbar { width: 7px; }
+.log-list::-webkit-scrollbar-track { background: var(--scroll-track); }
+.log-list::-webkit-scrollbar-thumb { background: var(--scroll-blue); border-radius: 999px; }
+
+/* Domain group header — colored by domain */
+.log-group-header {
+  padding: 10px 18px 8px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.log-group-header.scraping  { color: var(--red); }
+.log-group-header.routing   { color: var(--amber); }
+.log-group-header.output    { color: var(--action); }
+
+.log-row {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .15s;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.log-row:hover { background: rgba(255,85,85,0.06); }
+.log-row.on { background: rgba(255,85,85,0.09); box-shadow: inset 3px 0 0 var(--red); }
+
+.log-num { font-size: 10px; color: var(--muted); font-weight: 600; flex-shrink: 0; padding-top: 2px; letter-spacing: 0.04em; min-width: 28px; }
+.log-row-title { font-size: 13px; color: var(--text); font-weight: 500; line-height: 1.3; }
+.log-row-domain { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+/* Right: detail panel */
+.log-detail {
+  background: var(--surface2);
+  padding: 28px;
+  overflow-y: auto;
+  scrollbar-color: var(--scroll-blue) var(--scroll-track);
+  scrollbar-width: thin;
+}
+.log-detail::-webkit-scrollbar { width: 7px; }
+.log-detail::-webkit-scrollbar-track { background: var(--scroll-track); }
+.log-detail::-webkit-scrollbar-thumb { background: var(--scroll-blue); border-radius: 999px; }
+
+.detail-num { font-size: 10px; color: var(--red); font-weight: 700; letter-spacing: 0.1em; margin-bottom: 8px; }
+.detail-title { font-size: clamp(22px, 2.4vw, 32px); font-weight: 500; color: var(--text); line-height: 1.1; margin-bottom: 6px; }
+.detail-domain { font-size: 11px; color: var(--muted); margin-bottom: 22px; letter-spacing: 0.04em; }
+
+.detail-card { border: 1px solid var(--border); background: rgba(255,255,255,0.026); padding: 18px; margin-bottom: 14px; border-radius: 4px; }
+.detail-card.cause  { border-left: 3px solid var(--red); }
+.detail-card.fix    { border-left: 3px solid var(--accent); }
+.detail-card.status { border-left: 3px solid var(--action); }
+
+.detail-label { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.detail-card.cause  .detail-label { color: var(--red); }
+.detail-card.fix    .detail-label { color: var(--accent); }
+.detail-card.status .detail-label { color: var(--action); }
+
+.detail-body { font-size: 14px; color: var(--text); line-height: 1.6; font-weight: 300; }
+.detail-body code { font-family: 'DM Sans', monospace; font-size: 12px; background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 3px; color: var(--accent); }
+
+/* ── Architecture constraint cards ──────────────────────── */
+.constraints { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); }
+.constraint { background: var(--bg); padding: 36px 32px; transition: background 0.2s; }
+.constraint:hover { background: var(--surface2); }
+.constraint-num { font-size: 10px; color: var(--text); letter-spacing: 0.06em; margin-bottom: 24px; }
+.constraint-q { font-size: 20px; font-weight: 500; color: var(--red); margin-bottom: 14px; line-height: 1.2; }
+.constraint-before { font-size: 13px; color: var(--text); margin-bottom: 16px; line-height: 1.55; font-weight: 300; }
+.constraint-arrow { font-size: 18px; color: var(--dim); margin-bottom: 14px; display: block; }
+.constraint-after { font-size: 13px; color: var(--text); line-height: 1.55; font-weight: 300; }
+.constraint-after strong { color: var(--accent); font-weight: 500; }
+
+/* ── Conclusion callout ──────────────────────────────────── */
+.conclusion {
+  border: 1px solid var(--border2);
+  border-left: 3px solid var(--red);
+  background: var(--surface);
+  padding: 28px 32px;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text);
+  font-weight: 300;
+}
+.conclusion strong { color: var(--red); font-weight: 500; }
+.conclusion .lbl { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; display: block; }
+
+/* ── Contact ─────────────────────────────────────────────── */
+.contact {
+  padding: 120px 48px 96px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: clamp(40px, 6vw, 84px);
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 78% 30%, rgba(255,85,85,0.04), transparent 32%), linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
+}
+.contact-copy { display: flex; flex-direction: column; justify-content: center; }
+.contact-h2 { font-size: clamp(44px, 4.7vw, 76px); line-height: 0.98; max-width: 820px; font-optical-sizing: auto; font-weight: 500; margin-bottom: 32px; }
+.contact-h2 em { font-style: normal; font-weight: 500; color: var(--red); display: inline-block; }
+.contact-sub { font-size: 17px; color: var(--text); line-height: 1.65; font-weight: 300; margin-bottom: 40px; max-width: 620px; }
+.contact-cta { font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 18px 24px; color: var(--text); background: linear-gradient(135deg, rgba(255,85,85,0.12), rgba(118,161,255,0.07)); border: 1px solid rgba(255,85,85,0.72); box-shadow: 0 18px 50px rgba(0,0,0,0.34); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 10px; width: fit-content; margin-top: 10px; border-radius: 8px; position: relative; overflow: hidden; transition: all 0.2s; }
+.contact-cta::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--red); }
+.contact-cta::after { content: ''; position: absolute; right: 14px; top: 50%; width: 8px; height: 8px; border-top: 2px solid var(--red); border-right: 2px solid var(--red); transform: translateY(-50%) rotate(45deg); }
+.contact-cta:hover { color: var(--white); background: var(--red); border-color: var(--red); transform: translateY(-2px); }
+.contact-cta:hover::before, .contact-cta:hover::after { border-color: var(--white); }
+.contact-cta:hover::before { background: var(--white); }
+.contact-links { display: flex; flex-direction: column; align-self: center; gap: 14px; }
+.contact-link { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; padding: 18px 20px; background: rgba(0,0,0,0.20); text-decoration: none; gap: 18px; min-height: 76px; border: 2px solid rgba(255,85,85,0.24); border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,0.20); transition: background 0.2s, border-color 0.2s, transform 0.15s; }
+.contact-link:hover { background: rgba(255,85,85,0.06); border-color: rgba(255,85,85,0.72); transform: translateY(-1px); }
+.cl-label { font-size: 10px; color: var(--red); letter-spacing: 0.08em; font-weight: 800; }
+.cl-val { font-size: 16px; color: var(--text); font-weight: 650; overflow-wrap: anywhere; }
+.cl-arrow { width: 34px; height: 34px; display: grid; place-items: center; justify-self: end; color: var(--red); border: 1px solid rgba(255,85,85,0.38); background: rgba(255,85,85,0.08); border-radius: 8px; font-size: 12px; }
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer { padding: 36px 48px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); }
+.footer-left { font-size: 10px; color: var(--text); letter-spacing: 0.06em; }
+.footer-quote { font-size: 14px; font-style: italic; color: var(--text); font-weight: 300; }
+
+/* ── Reveal ──────────────────────────────────────────────── */
+.reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease, transform 0.7s ease; }
+.reveal.vis { opacity: 1; transform: translateY(0); }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 1000px) {
+  .page-nav { padding: 0 24px; }
+  .nav-title { display: none; }
+  .hero { padding: 56px 24px 64px; }
+  .hero-h1 { font-size: clamp(44px, 9vw, 72px); }
+  .stat-bar { grid-template-columns: repeat(2, 1fr); }
+  .stat-cell { padding: 36px 24px 32px; }
+  .process { padding: 80px 24px 64px; }
+  .contact { padding: 80px 24px 64px; grid-template-columns: 1fr; gap: 48px; }
+  footer { flex-direction: column; gap: 16px; padding: 28px 24px; text-align: center; }
+}
+@media (max-width: 900px) {
+  .log-body { grid-template-columns: 1fr; height: auto; }
+  .log-detail { min-height: 400px; border-left: 0; border-top: 1px solid var(--border); }
+  .domain-grid { grid-template-columns: 1fr; }
+  .constraints { grid-template-columns: 1fr; }
+}
+
+</style>
+</head>
+<body>
+
+<nav class="page-nav">
+  <a href="index_remake.html" class="nav-back">← Back</a>
+  <span class="nav-title">18 Failure Modes · Forensics</span>
+  <a href="https://github.com/BlueSkyGTM/ai-gtm-enrichment-pipeline" class="nav-link">GitHub →</a>
+</nav>
+
+<!-- ══ HERO ══ -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-pre reveal">V1 Forensics · 1,500 Cycles · The Record That Built V2</div>
+    <h1 class="hero-h1 reveal">
+      18 Failure Modes.<br>
+      <em>Three Domains.</em>
+    </h1>
+    <p class="hero-sub reveal">
+      V1 ran 1,500 enrichment cycles and broke 18 times. Every break was in the environment — scraping, routing, or output QA. <span class="em">Not one failure was in the agent prompts. That pattern forced the V2 architecture.</span>
+    </p>
+    <div class="hero-btns reveal">
+      <a href="#failures" class="btn-a">Open the log ↓</a>
+      <a href="v2_remake.html" class="btn-b">See V2 →</a>
+    </div>
+  </div>
+</section>
+
+<!-- STAT BAR -->
+<div class="stat-bar reveal">
+  <div class="stat-cell">
+    <div class="stat-n">18</div>
+    <div class="stat-d"><b>Failure Modes</b>Documented forensically across 1,500 enrichment cycles and six campaigns.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">3</div>
+    <div class="stat-d"><b>Domains</b>Scraping, Routing, Output QA. Every failure fit one of these three environmental categories.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">0</div>
+    <div class="stat-d"><b>Prompt Failures</b>Ahab, Nemo, and Neptune produced good output every time the environment let them.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">3</div>
+    <div class="stat-d"><b>Architecture Decisions</b>Eliminate scraping infra. Eliminate the orchestrator. Enforce output contracts. These three decisions became V2.</div>
+  </div>
+</div>
+
+<!-- ══ SECTION 01: DOMAINS ══ -->
+<section class="process" id="domains">
+  <div class="section-label reveal" data-num="01">The Three Domains</div>
+  <h2 class="process-h2 reveal">Where V1 <em>Actually Broke.</em></h2>
+  <p class="process-lead reveal">
+    CONTEXT.md records the root cause plainly: "three layers of open-source middleware — Postgres, n8n, Docker — as a shared space when no genuine shared space existed between them." The 18 failures are the evidence. <span class="em">Click a domain to filter the failure log below. Every one of the 18 belongs to exactly one environmental layer.</span>
+  </p>
+
+  <div class="domain-grid reveal" id="domain-grid">
+    <div class="domain-card on" data-domain="all">
+      <div class="domain-icon">⬡</div>
+      <div class="domain-name">All Domains</div>
+      <div class="domain-count">18</div>
+      <div class="domain-desc">Show all 18 failure modes. None of them touched the agent prompts.</div>
+    </div>
+    <div class="domain-card" data-domain="Scraping">
+      <div class="domain-icon">🎣</div>
+      <div class="domain-name">Scraping</div>
+      <div class="domain-count">6</div>
+      <div class="domain-desc">Failures in data acquisition — aggregator URLs, hallucinated companies, stale links, and exclusion lists that didn't survive a server restart.</div>
+    </div>
+    <div class="domain-card" data-domain="Routing / Parsing">
+      <div class="domain-icon">🔀</div>
+      <div class="domain-name">Routing / Parsing</div>
+      <div class="domain-count">6</div>
+      <div class="domain-desc">n8n expression errors, retry loops producing duplicate Postgres rows, connection pool exhaustion, and the HTTP server that serialized everything.</div>
+    </div>
+    <div class="domain-card" data-domain="Output QA">
+      <div class="domain-icon">🔬</div>
+      <div class="domain-name">Output QA</div>
+      <div class="domain-count">6</div>
+      <div class="domain-desc">CATALYST_STALE misses, Vertex AI redirect URLs, citation markers in the Outreach_Bite, and Neptune returning prose instead of JSON.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 02: FAILURE LOG ══ -->
+<section class="process" id="failures">
+  <div class="section-label reveal" data-num="02">The Failure Log</div>
+  <h2 class="process-h2 reveal">All 18. <em>Nothing Summarized.</em></h2>
+  <p class="process-lead reveal">
+    Each entry records the environmental failure, the V1 patch applied, and the V2 status. <span class="em">Select any entry to read the forensic record.</span>
+  </p>
+
+  <div class="failure-log reveal">
+    <div class="log-bar">
+      <div class="log-dot log-dot-r"></div>
+      <div class="log-dot log-dot-y"></div>
+      <div class="log-dot log-dot-g"></div>
+      <div class="log-title">V1 Failure Log · 18 Entries · Scraping / Routing / Output QA</div>
+    </div>
+    <div class="log-body">
+      <div class="log-list" id="log-list"></div>
+      <div class="log-detail" id="log-detail">
+        <div style="font-size:10px;color:var(--muted);text-align:center;padding:100px 0;line-height:2;">// select any failure<br>to open the forensic record</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 03: ARCHITECTURE DECISIONS ══ -->
+<section class="process" id="decisions">
+  <div class="section-label reveal" data-num="03">The Three Architecture Decisions</div>
+  <h2 class="process-h2 reveal">What the Failures <em>Forced.</em></h2>
+  <p class="process-lead reveal">
+    After 18 documented failures across three domains, the pattern was clear. Three classes of environmental failure demanded three architectural eliminations. <span class="em">V2 is what happens when you follow each one to completion.</span>
+  </p>
+
+  <div class="constraints reveal">
+    <div class="constraint">
+      <div class="constraint-num">Decision 01 — From Scraping Domain</div>
+      <div class="constraint-q">Eliminate the scraping infrastructure</div>
+      <div class="constraint-before">6 failures traced to data acquisition: aggregator URLs slipping through blocklists, hallucinated companies with no real URL, exclusion lists lost between server restarts, and job links that rotated before Nemo could verify them. Every patch was local. The class of failure was architectural — the scraper had no persistent state and no grounded source of truth.</div>
+      <span class="constraint-arrow">↓</span>
+      <div class="constraint-after">V2's Ahab runs via <strong>Vertex AI Grounding</strong> (Google Search). Real URLs, real companies, grounded evidence — not scraped HTML. The aggregator blocklist is enforced at the model level. Exclusion lists persist in the <strong>RAG store</strong> across runs.</div>
+    </div>
+    <div class="constraint">
+      <div class="constraint-num">Decision 02 — From Routing Domain</div>
+      <div class="constraint-q">Eliminate the orchestration middleware</div>
+      <div class="constraint-before">6 failures traced to n8n and Postgres: expression evaluation errors on payload shape, retry loops producing duplicate rows, connection pool exhaustion under concurrent agent load, and the single HTTP server serializing all agent calls through one process. Every fix introduced new configuration surface for the next failure.</div>
+      <span class="constraint-arrow">↓</span>
+      <div class="constraint-after">V2 uses <strong>GCS file handoff</strong> — Ahab writes <code>ahab_output.json</code>, Nemo reads it. No polling. No Postgres. No n8n expressions to interpret. <strong>Claude Code</strong> is the orchestrator, not a server. Sequential handoff through files is stateless and auditable.</div>
+    </div>
+    <div class="constraint">
+      <div class="constraint-num">Decision 03 — From Output QA Domain</div>
+      <div class="constraint-q">Enforce output contracts at the model level</div>
+      <div class="constraint-before">6 failures traced to unenforceable output expectations: CATALYST_STALE missed on non-standard funding formats, grounding redirect URLs passing as Direct_URL, citation markers appearing in the final Outreach_Bite, and Neptune returning prose when the schema wasn't enforced. V1 parsed model output with hope. Hope is not a contract.</div>
+      <span class="constraint-arrow">↓</span>
+      <div class="constraint-after">Neptune uses <strong>responseSchema enforcement</strong> — Outreach_Bite, Neptune_Log, and funding_signal are typed fields, not text to parse. Nemo's output has a formal <strong>Nemo_Enrich_Audit</strong> block with explicit ACTIVE/SHIPWRECKED status. URL sanitization and citation stripping run at the utility layer, not as afterthoughts.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 04: CONCLUSION ══ -->
+<section class="process" id="conclusion">
+  <div class="section-label reveal" data-num="04">The Conclusion</div>
+  <h2 class="process-h2 reveal">The Environment Was <em>the Failure Domain.</em></h2>
+  <p class="process-lead reveal">
+    The forensic record is unambiguous. Every one of the 18 failures was in the infrastructure beneath the agents — never in the agent prompts themselves.
+  </p>
+
+  <div class="conclusion reveal">
+    <span class="lbl">// Core Diagnosis · CONTEXT.md</span>
+    The V1 architecture invented a shared space through Postgres queries and n8n workflows instead of using a real one. The agents were designed for sequential handoff but were forced to communicate through polling, status fields, and middleware interpretation layers.<br><br>
+    The solution is not a better Postgres setup or a more stable Docker configuration. <strong>The solution is eliminating the execution environment as a failure domain entirely.</strong><br><br>
+    V2 proves this. The three agent prompts transferred verbatim. The 18 failure modes did not.
+  </div>
+</section>
+
+<!-- ══ OPERATOR ══ -->
+<section class="contact" id="contact">
+  <div class="contact-copy reveal">
+    <div class="section-label" data-num="05">The Architect</div>
+    <h2 class="contact-h2">GTM Systems Engineer.<br><em>AI Workflow Architecture.</em></h2>
+    <p class="contact-sub">
+      I turn messy GTM inputs into structured records, useful handoffs, and workflows that a revenue team can actually inspect, trust, and use.
+    </p>
+    <a class="contact-cta" href="mailto:raymondf.gtm@gmail.com">Get in Touch →</a>
+  </div>
+  <div class="contact-links reveal">
+    <a class="contact-link" href="mailto:raymondf.gtm@gmail.com">
+      <span class="cl-label">Email</span>
+      <span class="cl-val">raymondf.gtm@gmail.com</span>
+      <span class="cl-arrow">→</span>
+    </a>
+    <a class="contact-link" href="https://www.linkedin.com/in/raymond-fenton-51b01b160/">
+      <span class="cl-label">LinkedIn</span>
+      <span class="cl-val">Raymond Fenton</span>
+      <span class="cl-arrow">→</span>
+    </a>
+    <a class="contact-link" href="https://github.com/BlueSkyGTM/ai-gtm-enrichment-pipeline">
+      <span class="cl-label">Repo</span>
+      <span class="cl-val">ai-gtm-enrichment-pipeline</span>
+      <span class="cl-arrow">→</span>
+    </a>
+  </div>
+</section>
+<footer>
+  <div class="footer-left">© 2026 Raymond Fenton · V1 Forensics · 18 Failure Modes</div>
+  <div class="footer-quote">The record that built V2.</div>
+</footer>
+
+<script>
+// ── 18 failure records — grounded in V1's actual domains ─────────────────────
+const failures = [
+  // Scraping (1–6)
+  {
+    id:'01', domain:'Scraping', title:'Aggregator URL Through the Blocklist',
+    cause:'Ahab returned an Indeed URL wrapped in a company-branded redirect. The blocklist checked the root domain, not the resolved destination. The redirect resolved to indeed.com after Nemo already consumed it.',
+    fix:'Expanded blocklist to check both the raw URL and any redirect destination before adding to Catch. Added a URL resolution step in the Node.js scraper before Nemo received the payload.',
+    v2:'Eliminated. V2\'s Ahab runs via Vertex AI Grounding (Google Search). Model-level source filtering means aggregator results are never returned — there is no raw HTML to mis-classify.'
+  },
+  {
+    id:'02', domain:'Scraping', title:'Hallucinated Company at Plausible URL',
+    cause:'Ahab returned a company name and domain that looked legitimate but the company did not exist at that URL. The scraper had no verification step — it accepted Ahab\'s output as evidence without checking the URL resolved.',
+    fix:'Added a URL reachability check in the Node.js layer before passing Catch to Nemo. URLs returning 404, 403, or redirect chains longer than 3 hops were removed from the payload.',
+    v2:'Eliminated. Vertex AI Grounding means Ahab\'s search results are grounded in real web documents. Nemo\'s URL Recon Diver then independently verifies the Direct_URL before enrichment proceeds.'
+  },
+  {
+    id:'03', domain:'Scraping', title:'Job Listing Rotated Before Nemo Verified It',
+    cause:'Ahab captured a direct job URL that was valid at scrape time. By the time Nemo attempted verification (sometimes hours later in a long run), the listing had been removed. Nemo received a 404 and failed silently rather than flagging the lead.',
+    fix:'Added explicit 404 handling in Nemo\'s URL Recon Diver. Leads with unresolvable Direct_URL were routed to shipwrecked.json with reason_code DEAD_URL instead of failing the entire pipeline.',
+    v2:'Handled by architecture. V2 processes leads in the same run immediately after Ahab completes. The gap between discovery and verification is minutes, not hours. SHIPWRECKED routing is now a formal output schema field.'
+  },
+  {
+    id:'04', domain:'Scraping', title:'Signal Extracted as Full Sentence',
+    cause:'Ahab\'s Signal Harpooner returned full sentences in Raw_Primary_Signals instead of keywords — e.g., "They are building a new HubSpot integration" instead of "HubSpot integration." The downstream parser expected short tokens and produced garbage friction classifications.',
+    fix:'Strengthened the [STRICT_KEYWORD_EXTRACTION] directive in Ahab\'s prompt with explicit negative examples. Added a length guard in the Node.js parser that rejected signal entries over 60 characters.',
+    v2:'Handled in the prompt. V2\'s Ahab system instruction explicitly states: "ONLY extract short phrases or keywords. No full sentences." The 60-character guard is retained in the parsing layer.'
+  },
+  {
+    id:'05', domain:'Scraping', title:'Excluded Company Returned After Server Restart',
+    cause:'The exclusion list was built in memory at the start of each session. A server restart during a multi-session run reset the exclusion list. Ahab returned companies that had been explicitly excluded in prior sessions.',
+    fix:'Persisted the exclusion list to a Postgres table rather than holding it in memory. The exclusion check ran a database query at the start of each Ahab call rather than reading from an in-memory set.',
+    v2:'Eliminated by design. V2\'s exclusion list is built from the RAG store — prior Ahab discoveries are queried before each run and injected as "Excluded Companies." The RAG store is in GCS and survives any process restart.'
+  },
+  {
+    id:'06', domain:'Scraping', title:'Same Company Listed Twice in One Catch',
+    cause:'Two different search branches — Technical Harpooner and Signal Harpooner — found the same company from different job board entry points. Ahab returned both entries in the same Catch array. Nemo enriched the company twice, producing two rows in Postgres.',
+    fix:'Added a deduplication step on Company_Name before Catch was written to the pipeline. The second occurrence was dropped. Added a unique constraint on Company_Name + run_id in Postgres to prevent double-writes.',
+    v2:'Handled by RAG. V2\'s Ahab queries the RAG store before searching and injects prior discoveries as excluded companies. Within-run deduplication is handled by the Node.js parser on the Catch array before writing ahab_output.json.'
+  },
+
+  // Routing / Parsing (7–12)
+  {
+    id:'07', domain:'Routing / Parsing', title:'n8n Expression Failed on Lowercase Field Name',
+    cause:'Ahab\'s output used "catch" (lowercase) in one run when the prompt returned the key as a lowercase variant. The n8n expression <code>{{$json.Catch}}</code> was case-sensitive and evaluated to undefined, causing the routing node to skip all leads silently.',
+    fix:'Normalized all field names to Title_Case in the Node.js parser before writing to Postgres. Added an n8n expression guard that checked for both "Catch" and "catch" before proceeding.',
+    v2:'Eliminated. V2 has no n8n. The Node.js parser normalizes field names before writing ahab_output.json to GCS. Nemo reads a typed JSON file, not an n8n expression evaluation result.'
+  },
+  {
+    id:'08', domain:'Routing / Parsing', title:'n8n Retry Loop Produced Duplicate Rows',
+    cause:'When a webhook timed out, n8n retried the full payload delivery. If the original webhook had partially succeeded, the retry produced a second set of rows in Postgres with the same company data but different auto-generated IDs.',
+    fix:'Changed all Postgres writes from INSERT to UPSERT (INSERT ... ON CONFLICT DO UPDATE). Added idempotency keys derived from company_name + run_id to every enrichment write.',
+    v2:'Eliminated by design. V2 writes to GCS files, not a database. GCS writes are naturally idempotent — writing a file twice with the same key overwrites the first. No UPSERT logic required.'
+  },
+  {
+    id:'09', domain:'Routing / Parsing', title:'n8n Expression Error on Null Contact_Recon',
+    cause:'The n8n node that extracted <code>{{$json.Enriched_Lead.Contact_Recon.email}}</code> threw an evaluation error when Contact_Recon was null. The entire workflow node failed, dropping all leads in that batch.',
+    fix:'Added null guards to every n8n expression that accessed nested fields. Replaced chained property access with n8n\'s <code>$json["field"]?.["nested"]</code> optional chaining pattern.',
+    v2:'Eliminated. V2 uses <code>normalizeNemoPayload()</code> from utils/payload.js — a JavaScript utility that explicitly handles all null variants of Contact_Recon across multiple field name patterns before any downstream code accesses the email field.'
+  },
+  {
+    id:'10', domain:'Routing / Parsing', title:'n8n Execution Log Limit Flushed Mid-Run',
+    cause:'n8n\'s execution log filled to its configured limit during a large batch run. When the log was auto-pruned, it cleared active execution context for in-progress nodes. The pipeline completed without error output, but the remaining leads were silently dropped.',
+    fix:'Increased the n8n execution log limit. Added a progress counter that wrote completed lead count to Postgres every 5 leads, allowing detection of partial completions after the fact.',
+    v2:'Eliminated. V2 has no n8n. Claude Code is the orchestrator. Each agent writes its output to a GCS file before the next agent reads it. There is no shared execution log to overflow — the GCS files are the audit trail.'
+  },
+  {
+    id:'11', domain:'Routing / Parsing', title:'Postgres Connection Pool Exhausted',
+    cause:'Five concurrent Nemo enrichment calls each opened a Postgres connection simultaneously. The connection pool was configured for 10 connections, but with n8n overhead and the Express server also holding connections, all 10 slots were consumed. New connections timed out and were retried, compounding the problem.',
+    fix:'Reduced concurrent Nemo threads from 5 to 2. Added connection pool monitoring that paused new writes if utilization exceeded 70%. Added a circuit breaker that stopped new enrichment calls if the pool was saturated.',
+    v2:'Eliminated entirely. V2 has no Postgres. Nemo reads ahab_output.json from GCS and processes leads sequentially, writing results to nemo_output.json. There is no connection pool — GCS HTTP calls are stateless.'
+  },
+  {
+    id:'12', domain:'Routing / Parsing', title:'Single HTTP Server Serialized All Agent Calls',
+    cause:'V1\'s single-file orchestrator ran all three agents through one Express server on one port. Long Nemo enrichment calls (sometimes 30–90 seconds per lead) blocked the event loop for Ahab and Neptune. The effective throughput was determined by the slowest agent, not the average.',
+    fix:'Moved to a worker thread model for Nemo calls. Each lead was enriched in a separate thread to prevent event loop blocking. Added a queue with configurable concurrency (default 2).',
+    v2:'Eliminated by design. V2 has no Express server. Claude Code calls each agent script sequentially via Node.js imports. Nemo processes leads sequentially within its own module — there is no shared event loop to block.'
+  },
+
+  // Output QA (13–18)
+  {
+    id:'13', domain:'Output QA', title:'CATALYST_STALE Missed on Non-Standard Funding Format',
+    cause:'Nemo\'s CATALYST_STALE check parsed "Series B · April 2022" correctly but failed on "raised $50M in early 2022" and "$50M (2022)" format variants. Stale leads slipped through to Neptune, which wrote time-sensitive outreach for leads with 3-year-old funding.',
+    fix:'Rewrote the CATALYST_STALE date parser with a regex that matched multiple date format patterns. Added a fallback that extracted year-only values and computed age from the current year when no month was parseable.',
+    v2:'Handled at the model level. V2\'s Nemo prompt has an explicit [CATALYST_STALE] directive that instructs the model to interpret funding age semantically, not via regex. If uncertain, Nemo must default to SHIPWRECKED rather than pass the lead through.'
+  },
+  {
+    id:'14', domain:'Output QA', title:'Vertex AI Grounding Redirect Passed as Direct_URL',
+    cause:'Vertex AI Grounding occasionally returned URLs in the form <code>vertexaisearch.withgoogle.com/grounding-api-redirect/...</code> rather than the actual company domain. Nemo accepted these as valid Direct_URL values. Downstream consumers received broken links.',
+    fix:'Added <code>sanitizeDirectUrl()</code> to the Node.js pipeline. Any URL containing "vertexaisearch" or "grounding-api-redirect" was returned as null. Leads with null Direct_URL were either re-enriched or routed to shipwrecked.',
+    v2:'Handled by the same utility function, now in utils/payload.js. <code>sanitizeDirectUrl(url)</code> is called on every Direct_URL before Nemo\'s output is written to nemo_output.json. This V1 fix was preserved verbatim in V2.'
+  },
+  {
+    id:'15', domain:'Output QA', title:'Citation Markers in the Outreach Bite',
+    cause:'Gemini\'s grounding feature appended citation markers — <code>[1]</code>, <code>[2, 3]</code> — to factual claims in Neptune\'s Outreach_Bite. The markers appeared verbatim in the final email text, making outreach look AI-generated.',
+    fix:'Added <code>stripCitations()</code> to the Node.js pipeline as a post-processing step on Neptune\'s output. The regex <code>/\\[\\d+(?:,\\s*\\d+)*\\]/g</code> removed all citation markers from string fields.',
+    v2:'Handled by the same utility function, now in utils/payload.js. <code>stripCitations(val)</code> is applied to Neptune\'s Outreach_Bite and all string fields before writing neptune_output.json. Preserved verbatim from V1.'
+  },
+  {
+    id:'16', domain:'Output QA', title:'Generic Team Inbox Accepted as Verified Contact',
+    cause:'Nemo accepted <code>hello@company.com</code>, <code>info@company.com</code>, and <code>contact@company.com</code> as valid Contact_Recon values when no decision-maker email was findable. Neptune then wrote a personalized Bite addressed to a generic inbox.',
+    fix:'Added a generic inbox blocklist to Nemo\'s validation layer. Emails matching <code>/^(hello|info|contact|team|hi|support)@/i</code> were rejected and Contact_Recon was set to null. Nemo was instructed to attempt LinkedIn contact resolution before falling back to null.',
+    v2:'Handled in the prompt. V2\'s Nemo system instruction states: "Contact_Recon must be a real person with a verifiable role — not a generic inbox." The model is responsible for the quality gate, with <code>normalizeNemoPayload()</code> handling the field extraction.'
+  },
+  {
+    id:'17', domain:'Output QA', title:'Character Encoding Failure on Non-ASCII Company Name',
+    cause:'Company names with em-dashes, accented characters, or CJK characters caused encoding mismatches between Ahab\'s scraping layer (Latin-1) and the Postgres text field (UTF-8). The resulting mojibake (<code>Ã©</code> instead of <code>é</code>) appeared in the final Outreach_Bite and broke downstream CSV exports.',
+    fix:'Added explicit UTF-8 normalization using <code>Buffer.from(str, \'latin1\').toString(\'utf8\')</code> at the scraping boundary. Added a mojibake detection regex that flagged company names containing common encoding artifacts before they entered the pipeline.',
+    v2:'Handled at the source. Vertex AI Grounding returns UTF-8 strings consistently. GCS stores and retrieves files with consistent encoding. The scraping layer that introduced the encoding inconsistency no longer exists.'
+  },
+  {
+    id:'18', domain:'Output QA', title:'Neptune Returned Prose Instead of JSON',
+    cause:'Without responseSchema enforcement, Neptune occasionally returned its Outreach_Bite as a prose paragraph with embedded JSON rather than a clean JSON object. The Node.js parser failed silently and wrote null to the Postgres output field.',
+    fix:'Added a JSON extraction fallback: strip markdown fences, find the first <code>{}</code> block, attempt repair of trailing commas and single quotes. If all fallbacks failed, the lead was marked for manual review.',
+    v2:'Eliminated by design. V2\'s Neptune uses <code>responseSchema</code> enforcement via the Vertex AI API. The model is constrained to return a valid JSON object with typed fields for Outreach_Bite, Neptune_Log, and funding_signal. The fallback chain is no longer needed — the API rejects malformed responses before they reach the application.'
+  },
+];
+
+// ── Build the failure list ────────────────────────────────────────────────────
+const listEl   = document.getElementById('log-list');
+const detailEl = document.getElementById('log-detail');
+
+const domains = [
+  { key: 'Scraping',           label: 'Scraping',           cls: 'scraping' },
+  { key: 'Routing / Parsing',  label: 'Routing / Parsing',  cls: 'routing'  },
+  { key: 'Output QA',          label: 'Output QA',          cls: 'output'   },
+];
+
+domains.forEach(domain => {
+  const header = document.createElement('div');
+  header.className = 'log-group-header ' + domain.cls;
+  header.textContent = domain.label;
+  listEl.appendChild(header);
+
+  failures.filter(f => f.domain === domain.key).forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    row.innerHTML = `<div class="log-num">${f.id}</div><div><div class="log-row-title">${f.title}</div><div class="log-row-domain">${f.domain}</div></div>`;
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.log-row').forEach(r => r.classList.remove('on'));
+      row.classList.add('on');
+      showDetail(f);
+    });
+    listEl.appendChild(row);
+  });
+});
+
+function showDetail(f) {
+  detailEl.innerHTML = `
+    <div class="detail-num">Failure ${f.id} · ${f.domain}</div>
+    <div class="detail-title">${f.title}</div>
+    <div class="detail-domain">${f.domain}</div>
+    <div class="detail-card cause"><div class="detail-label">Root Cause</div><div class="detail-body">${f.cause}</div></div>
+    <div class="detail-card fix"><div class="detail-label">Fix Applied in V1</div><div class="detail-body">${f.fix}</div></div>
+    <div class="detail-card status"><div class="detail-label">V2 Status</div><div class="detail-body">${f.v2}</div></div>
+  `;
+}
+
+// Show first entry on load
+const firstRow = listEl.querySelector('.log-row');
+if (firstRow) { firstRow.classList.add('on'); showDetail(failures[0]); }
+
+// ── Scroll reveal ─────────────────────────────────────────────────────────────
+const obs = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('vis'); }),
+  { threshold: 0.08 }
+);
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>

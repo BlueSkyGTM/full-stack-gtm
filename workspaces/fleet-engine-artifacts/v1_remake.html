@@ -1,0 +1,1719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raymond Fenton — AI GTM Enrichment Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+/* ── Variables ──────────────────────────────────────────── */
+:root {
+  --bg: #0A0A0A;
+  --surface: #111111;
+  --surface2: #161616;
+  --border: #1E1E1E;
+  --border2: #2A2A2A;
+  --text: #E6E6E6;
+  --text-soft: #E6E6E6;
+  --muted: #6A6A6A;
+  --dim: #2E2E2E;
+  --accent: #B9E36A;
+  --action: #76A1FF;
+  --action-soft: rgba(118,161,255,0.12);
+  --action-line: rgba(118,161,255,0.44);
+  --red: #FF5555;
+  --white: #FFFFFF;
+  --scroll-blue: #365FA8;
+  --scroll-track: #0D1118;
+}
+
+/* ── Reset ──────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  font-feature-settings: "ss01", "ss02";
+}
+
+/* Grain overlay — subtle film texture */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+}
+
+/* Keyboard focus ring */
+a:focus-visible,
+button:focus-visible,
+.term-row:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 4px;
+}
+
+/* ── Nav ────────────────────────────────────────────────── */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  height: 60px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,10,10,0.92);
+  backdrop-filter: blur(16px);
+}
+
+.nav-id { font-size: 13px; color: var(--text); font-weight: 500; }
+.nav-id .sub { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.nav-right { display: flex; align-items: center; gap: 32px; }
+
+.nav-links { display: flex; gap: 28px; list-style: none; }
+.nav-links a { font-size: 13px; color: var(--muted); text-decoration: none; transition: color 0.2s; }
+.nav-links a:hover { color: var(--text); }
+
+.nav-contact {
+  font-size: 13px;
+  padding: 8px 18px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+  transition: all 0.18s;
+}
+.nav-contact:hover { background: var(--accent); color: var(--bg); }
+
+/* ══════════════════════════════════════
+   STAGE 1 — HERO
+   ══════════════════════════════════════ */
+.hero {
+  min-height: 86vh;
+  padding: 72px 48px 96px;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Dot grid background fading to bottom */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.hero-grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 75% 65% at 50% 100%, var(--bg) 30%, transparent 100%);
+}
+
+.hero-inner { position: relative; z-index: 1; max-width: 1080px; }
+
+.hero-pre {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-bottom: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Live status dot */
+.hero-pre::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.hero-h1 {
+  font-size: clamp(48px, 6.6vw, 92px);
+  line-height: 1.04;
+  font-weight: 500;
+  margin-bottom: 40px;
+  max-width: 16ch;
+  font-optical-sizing: auto;
+}
+.hero-h1 em { font-style: normal; font-weight: 500; color: var(--accent); }
+
+.hero-sub {
+  font-size: 18px;
+  color: var(--text);
+  line-height: 1.6;
+  max-width: 620px;
+  margin-bottom: 44px;
+  font-weight: 300;
+}
+.hero-sub .em { color: var(--accent); font-weight: 400; }
+
+.hero-btns { display: flex; gap: 12px; }
+
+.btn-a {
+  font-size: 14px;
+  padding: 14px 24px;
+  background: var(--accent);
+  color: var(--bg);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-a:hover { opacity: 0.85; }
+
+.btn-b {
+  font-size: 14px;
+  padding: 14px 24px;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  text-decoration: none;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-b:hover { border-color: var(--muted); }
+
+/* ── Stat bar ────────────────────────────────────────────── */
+.stat-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--border);
+}
+
+.stat-cell {
+  padding: 56px 40px 48px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.stat-cell:last-child { border-right: none; }
+
+.stat-n {
+  font-size: clamp(56px, 6.5vw, 88px);
+  font-weight: 600;
+  color: var(--white);
+  line-height: 0.9;
+  font-optical-sizing: auto;
+}
+
+.stat-d { font-size: 13px; color: var(--text); line-height: 1.5; font-weight: 400; max-width: 230px; }
+.stat-d b { color: var(--text); font-weight: 500; display: block; margin-bottom: 2px; }
+
+/* ── Shared section primitives ───────────────────────────── */
+
+/* Numbered eyebrow label */
+.section-label {
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-label::before { content: attr(data-num); color: var(--text-soft); font-weight: 400; }
+
+/* Shared h2 sizing across all sections */
+.peak-h2, .process-h2, .about-h2, .contact-h2 {
+  font-weight: 500;
+  font-size: clamp(38px, 4.4vw, 64px);
+  line-height: 1.0;
+  margin-bottom: 32px;
+  max-width: 18ch;
+  font-optical-sizing: auto;
+}
+.peak-h2 em, .process-h2 em, .about-h2 em { font-style: normal; font-weight: 500; color: var(--accent); }
+
+/* ══════════════════════════════════════
+   STAGE 2 — OUTPUT (The Payload Table)
+   ══════════════════════════════════════ */
+.peak {
+  padding: 104px 36px 88px;
+  border-bottom: 1px solid var(--border);
+}
+
+.peak-lead { font-size: 17px; color: var(--text); max-width: 640px; line-height: 1.6; margin-bottom: 56px; font-weight: 300; }
+.peak-lead .em { color: var(--accent); }
+
+/* Terminal chrome */
+.terminal {
+  border: 2px solid rgba(185,227,106,0.50);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(185,227,106,0.10);
+}
+
+/* macOS-style title bar */
+.term-bar {
+  display: flex;
+  align-items: center;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  gap: 8px;
+}
+.td { width: 10px; height: 10px; border-radius: 50%; }
+.td-r { background: #FF5F57; }
+.td-y { background: #FFBD2E; }
+.td-g { background: #28C840; }
+.term-title { font-size: 10px; color: var(--muted); margin: 0 auto; letter-spacing: 0.04em; }
+
+/* Two-pane layout: scrollable table left, detail panel right */
+.term-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.34fr) minmax(360px, 0.66fr);
+  align-items: stretch;
+  height: 720px;
+  overflow: hidden;
+}
+
+/* Left pane — horizontal + vertical scroll */
+.term-list {
+  position: relative;
+  isolation: isolate;
+  contain: paint;
+  clip-path: inset(0);
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: auto;
+  overflow-y: auto;
+  height: 100%;
+  scrollbar-color: var(--scroll-blue) var(--scroll-track);
+  scrollbar-width: thin;
+}
+.term-list::-webkit-scrollbar { width: 7px; height: 7px; }
+.term-list::-webkit-scrollbar-track { background: var(--scroll-track); }
+.term-list::-webkit-scrollbar-thumb { background: var(--scroll-blue); border-radius: 999px; }
+
+/* Sticky header — full-width canvas, scrolls horizontally with rows */
+.term-head {
+  --lead-grid: 150px 190px 126px 140px minmax(360px, 0.95fr) minmax(380px, 1.05fr);
+  display: grid;
+  grid-template-columns: var(--lead-grid);
+  min-width: 1340px;
+  gap: 16px;
+  padding: 11px 24px;
+  border-bottom: 1px solid var(--border);
+  background: #101010;
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: max-content;
+  z-index: 4;
+}
+.term-head span { display: block; font-size: 10px; color: var(--text); font-weight: 700; }
+
+/* Row container — sized to widest row for correct horizontal scroll */
+#term-rows { width: max-content; min-width: 100%; }
+
+/* Data row */
+.term-row {
+  --lead-grid: 150px 190px 126px 140px minmax(360px, 0.95fr) minmax(380px, 1.05fr);
+  display: grid;
+  grid-template-columns: var(--lead-grid);
+  min-width: 1340px;
+  gap: 16px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .2s;
+  align-items: start;
+  box-shadow: inset 0 -1px 0 rgba(185,227,106,0.12);
+}
+.term-row:hover { background: rgba(118,161,255,0.07); }
+.term-row.on {
+  background: var(--action-soft);
+  box-shadow: inset 3px 0 0 var(--action), inset 0 -1px 0 rgba(185,227,106,0.14);
+}
+
+/* Right pane — detail card */
+.term-detail {
+  position: relative;
+  z-index: 5;
+  grid-column: 2;
+  grid-row: 1;
+  border-left: 1px solid var(--border);
+  background: var(--surface2);
+  min-height: 0;
+  height: 100%;
+  max-height: 720px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 26px;
+  scrollbar-color: var(--scroll-blue) var(--scroll-track);
+  scrollbar-width: thin;
+}
+.term-detail::-webkit-scrollbar { width: 7px; }
+.term-detail::-webkit-scrollbar-track { background: var(--scroll-track); }
+.term-detail::-webkit-scrollbar-thumb { background: var(--scroll-blue); border-radius: 999px; }
+
+/* Table cell typography */
+.tr-co { font-size: 13px; color: var(--text); font-weight: 500; }
+.tr-name { font-size: 12px; color: var(--text-soft); line-height: 1.35; }
+.tr-name b { display: block; color: var(--text); font-weight: 500; margin-bottom: 3px; }
+.tr-name span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tr-cell { font-size: 12px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-bite-cell { font-size: 12px; line-height: 1.45; color: var(--text); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.tr-email-cell { font-size: 12px; line-height: 1.45; color: var(--text); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.tr-cell.good { color: var(--text); }
+.tr-cell.empty { color: var(--dim); }
+
+.tr-badge { font-size: 10px; padding: 4px 8px; display: inline-block; color: var(--accent); border: 1px solid rgba(185,227,106,0.45); background: rgba(185,227,106,0.04); font-weight: 500; }
+.tr-fund { font-size: 12px; color: var(--text); font-weight: 500; line-height: 1.45; }
+.tr-fund.empty { color: var(--dim); }
+
+/* Detail panel primitives */
+.dl { font-size: 10px; color: var(--text); margin-bottom: 8px; font-weight: 600; }
+.dl:first-child { margin-top: 0; }
+.detail-section-label { margin: 22px 0 10px; }
+.profile-label { margin-top: 0; margin-bottom: 10px; }
+
+.dv { font-size: 13px; color: var(--text); line-height: 1.5; }
+.dv .small { color: var(--text); font-size: 12px; }
+.dv a { color: var(--accent); text-decoration: none; }
+.dv a:hover { text-decoration: underline; }
+
+.raw-card { margin-bottom: 18px; }
+.raw-card a { color: var(--accent); text-decoration: none; }
+.raw-card a:hover { text-decoration: underline; }
+.raw-row { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.raw-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.raw-k { color: var(--text); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+.raw-v { color: var(--text); font-size: 15px; line-height: 1.42; }
+.raw-v strong { color: var(--accent); font-weight: 500; }
+.raw-v .small { color: var(--text); font-size: 13px; }
+.raw-v .d-fund { display: block; margin: 0; }
+
+.d-fund { font-size: 12px; color: var(--text); background: rgba(185,227,106,0.04); border: 1px solid rgba(185,227,106,0.25); padding: 10px 12px; margin-bottom: 22px; line-height: 1.45; }
+
+/* Hook quote block */
+.d-bite { font-size: 14px; color: var(--text); line-height: 1.62; padding: 16px 18px; background: rgba(255,255,255,0.025); border-left: 3px solid var(--accent); margin-bottom: 0; }
+
+/* Generated email */
+.email-block { padding: 20px 22px; border: 1px solid rgba(255,255,255,0.06); border-left: 3px solid var(--accent); background: rgba(255,255,255,0.026); color: var(--text); font-size: 14px; line-height: 1.58; white-space: pre-line; }
+
+/* ══════════════════════════════════════
+   STAGE 3 — PLAYBOOK (Forensic Dictionary)
+   ══════════════════════════════════════ */
+.process {
+  padding: 104px 36px 88px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.process-lead { font-size: 17px; color: var(--text); max-width: 600px; line-height: 1.6; margin-bottom: 56px; font-weight: 300; }
+.process-lead .em { color: var(--accent); }
+
+/* Three-column forensic interface — rounded card system */
+.forensic-lab {
+  display: grid;
+  grid-template-columns: minmax(270px, 0.86fr) minmax(310px, 0.94fr) minmax(440px, 1.24fr);
+  min-height: 600px;
+  gap: 18px;
+  padding: 18px;
+  border: 2px solid rgba(185,227,106,0.50);
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(185,227,106,0.10);
+  background: linear-gradient(180deg, rgba(255,255,255,0.026), rgba(255,255,255,0.012));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Each column is a floating card */
+.forensic-panel {
+  border: 2px solid rgba(185,227,106,0.30);
+  background: rgba(0,0,0,0.18);
+  padding: 24px;
+  overflow: hidden;
+  border-radius: 8px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.forensic-panel:hover { border-color: rgba(185,227,106,0.48); background: rgba(185,227,106,0.025); }
+
+.fp-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+.fp-title { font-size: 22px; line-height: 1.14; color: var(--text); font-weight: 500; margin-bottom: 12px; }
+.fp-copy { color: var(--text); font-size: 14px; line-height: 1.55; font-weight: 300; }
+
+/* Stranger Signal panel: raw data card */
+.forensic-panel:first-child .raw-card {
+  border: 2px solid rgba(185,227,106,0.28);
+  background: rgba(255,255,255,0.024);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
+  border-radius: 8px;
+  margin-top: 18px;
+}
+.forensic-panel:first-child .raw-card:hover { border-color: rgba(185,227,106,0.46); }
+
+/* Forensic Dictionary selector buttons */
+.dictionary-stack { display: grid; gap: 9px; margin-top: 16px; }
+.dictionary-btn {
+  border: 2px solid rgba(185,227,106,0.32);
+  background: rgba(255,255,255,0.028);
+  color: var(--text);
+  text-align: left;
+  padding: 13px 15px;
+  min-height: 68px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  border-radius: 7px;
+  transition: border-color .2s, background .2s, transform .2s, box-shadow .2s;
+}
+.dictionary-btn:hover,
+.dictionary-btn.on {
+  border-color: var(--accent);
+  background: var(--action-soft);
+  box-shadow: 0 0 0 1px rgba(118,161,255,0.16), 0 14px 34px rgba(0,0,0,0.22);
+  transform: translateX(2px);
+}
+.dictionary-btn b { display: block; color: var(--text); font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.dictionary-btn span { display: block; color: var(--text); font-size: 12px; line-height: 1.42; font-weight: 300; }
+
+/* Active diagnosis card */
+.diagnostic-card {
+  border: 1px solid rgba(185,227,106,0.32);
+  border-left-width: 3px;
+  background: rgba(185,227,106,0.035);
+  padding: 18px;
+  margin-top: 18px;
+  border-radius: 8px;
+}
+.diag-name { color: var(--accent); font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+.diag-copy, .diag-use { color: var(--text); font-size: 14px; line-height: 1.55; }
+.diag-use { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.diag-use b { color: var(--accent); font-weight: 500; }
+
+/* Hook bite card */
+.bite-card { margin-top: 12px; border-left: 3px solid var(--accent); background: rgba(255,255,255,0.026); padding: 18px 20px; border-radius: 0 8px 8px 0; }
+.bite-card .msg-body { font-size: 16px; line-height: 1.55; }
+
+/* Before / After message comparison */
+.message-split { display: grid; grid-template-columns: 0.86fr 1.14fr; gap: 12px; margin-top: 16px; }
+.message-card { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.026); padding: 18px; margin-top: 18px; border-radius: 8px; }
+.message-card.after { border-color: rgba(185,227,106,0.32); background: rgba(185,227,106,0.035); }
+.msg-tag { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+.message-card.before .msg-tag { color: var(--text); }
+.msg-body { color: var(--text); font-size: 14px; line-height: 1.58; white-space: pre-line; }
+.after .msg-body { font-size: 15px; line-height: 1.62; }
+
+/* ══════════════════════════════════════
+   STAGE 4 — PLUMBING (Workflow Map)
+   ══════════════════════════════════════ */
+
+/* Outer frame for the whole workflow section */
+.flow-wrap {
+  border: 2px solid rgba(185,227,106,0.50);
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(185,227,106,0.10);
+  background: var(--surface2);
+  padding: 32px 36px;
+  text-align: center;
+}
+
+.flow-caption { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 22px; text-align: left; }
+
+/* Two-pane split: canvas left, detail right */
+.flow-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(300px, 0.72fr);
+  border: 1px solid rgba(185,227,106,0.38);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: 0 40px 120px rgba(0,0,0,0.28);
+  text-align: left;
+}
+
+/* Canvas pane with dot-grid background */
+.workflow-map {
+  min-height: 360px;
+  border-right: 1px solid rgba(185,227,106,0.34);
+  overflow-x: auto;
+  scrollbar-color: var(--scroll-blue) var(--scroll-track);
+  scrollbar-width: thin;
+}
+.workflow-map::-webkit-scrollbar { height: 5px; }
+.workflow-map::-webkit-scrollbar-track { background: var(--scroll-track); }
+.workflow-map::-webkit-scrollbar-thumb { background: var(--scroll-blue); border-radius: 999px; }
+
+.workflow-map.has-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 22px 20px;
+  background:
+    radial-gradient(circle at 10px 10px, rgba(255,255,255,0.105) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+}
+
+/* n8n-style node grid — 8 columns, 3 rows (nodes / arrows / chips) */
+.wf-grid {
+  display: grid;
+  min-width: 1040px;
+  width: min(1040px, 100%);
+  flex: 0 0 auto;
+  grid-template-columns: 82px repeat(7, minmax(96px, 1fr));
+  grid-template-rows: 96px 32px auto;
+  gap: 0 22px;
+  align-items: start;
+  position: relative;
+}
+
+/* Horizontal pipeline line connecting all nodes */
+.wf-grid::before {
+  content: '';
+  position: absolute;
+  left: 40px; right: 40px; top: 29px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(95,95,95,0.78), rgba(95,95,95,0.78), rgba(255,255,255,0));
+  z-index: 0;
+}
+
+/* ── Node wrapper — transparent, holds icon + label absolutely ── */
+.wf-node {
+  position: relative;
+  min-height: 88px;
+  height: 88px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  display: block;
+  overflow: visible;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  text-align: center;
+}
+
+/* Visible icon box (the n8n square) */
+.wf-node::after {
+  content: '◆';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(49,49,48,0.98), rgba(31,31,30,0.98));
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.08);
+  z-index: 2;
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* Output connector port dot */
+.wf-node::before {
+  content: '';
+  position: absolute;
+  right: 7px;
+  top: 24px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #3B3B3B;
+  border: 1px solid rgba(255,255,255,0.3);
+  box-shadow: 0 0 0 3px rgba(18,18,18,0.9);
+  z-index: 3;
+}
+
+/* Node label sits below icon */
+.wf-title {
+  position: absolute;
+  left: 50%;
+  top: 66px;
+  transform: translateX(-50%);
+  width: 122px;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.12;
+  text-align: center;
+  margin: 0;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.7);
+  z-index: 1;
+}
+
+/* Kicker and sub-text hidden in canvas layout */
+.wf-kicker, .wf-sub { display: none; }
+
+/* Hover / selected state highlights the icon border */
+.wf-node:hover::after,
+.wf-node.on::after {
+  border-color: var(--accent);
+  box-shadow: 0 18px 36px rgba(0,0,0,0.42), 0 0 0 2px rgba(185,227,106,0.16), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.wf-node:hover .wf-title,
+.wf-node.on .wf-title { color: var(--accent); }
+.wf-node:focus-visible { outline: 2px solid var(--action); outline-offset: 3px; }
+
+/* Seed / trigger node gets rounder corners */
+.wf-node.seed::after { position: absolute; margin: 0; border-radius: 18px; }
+.wf-node.seed::before { display: block; }
+
+/* Per-node emoji icons */
+.wf-node[data-flow="config"]::after  { content: '✎';  color: #8B8CFF; }
+.wf-node[data-flow="ahab"]::after    { content: '🐋'; color: #B9E36A; }
+.wf-node[data-flow="parser"]::after  { content: '{}'; color: #FFAA45; font-size: 20px; font-weight: 900; }
+.wf-node[data-flow="router"]::after  { content: '⊢';  color: #4CE68A; font-size: 34px; }
+.wf-node[data-flow="nemo"]::after    { content: '🐟'; color: #76A1FF; }
+.wf-node[data-flow="neptune"]::after { content: '🔱'; color: #D7B7FF; }
+.wf-node[data-flow="payload"]::after { content: '🐘'; color: #8FB7FF; font-size: 30px; }
+
+/* Vertical drop line between node row and memory chip row */
+.wf-transfer { position: relative; z-index: 1; align-self: stretch; }
+.wf-transfer::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: -6px; bottom: 4px;
+  border-left: 1px solid rgba(118,161,255,0.42);
+}
+.wf-transfer::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 3px);
+  bottom: -1px;
+  width: 7px; height: 7px;
+  border-right: 1px solid rgba(118,161,255,0.7);
+  border-bottom: 1px solid rgba(118,161,255,0.7);
+  transform: rotate(45deg);
+}
+
+/* Memory / log chips in the bottom row */
+.wf-chip {
+  position: relative;
+  z-index: 2;
+  min-height: 58px;
+  padding: 11px 12px;
+  margin-top: 2px;
+  border-radius: 6px;
+  border: 1px dashed rgba(118,161,255,0.42);
+  color: rgba(255,255,255,0.84);
+  font-size: 10px;
+  line-height: 1.35;
+  background: rgba(20,24,30,0.88);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .2s, background .2s, transform .2s;
+}
+.wf-chip strong { color: var(--accent); font-weight: 800; }
+.wf-chip:hover,
+.wf-chip.on { border-color: var(--accent); background: rgba(185,227,106,0.09); transform: translateY(-1px); }
+.wf-chip.warn { border-color: rgba(255,180,90,0.36); background: rgba(255,180,90,0.055); }
+
+/* Right detail panel — shows what each node does */
+.wf-detail {
+  background: var(--surface2);
+  padding: 24px;
+  min-height: 360px;
+  overflow: visible;
+  border-left: 1px solid rgba(185,227,106,0.42);
+}
+.wf-detail-title { font-size: clamp(28px, 3vw, 42px); line-height: 1; font-weight: 500; color: var(--text); margin-bottom: 10px; }
+.wf-detail-sub { color: var(--accent); font-size: 13px; font-weight: 500; margin-bottom: 18px; }
+.wf-detail .raw-card { margin-bottom: 18px; }
+.wf-detail .raw-v strong { color: var(--accent); }
+.wf-detail .d-bite { font-size: 14px; }
+
+/* Four-column legend below the workflow */
+.wf-legend {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin-top: 26px;
+}
+.wf-legend-item { border-top: 1px solid var(--border); padding-top: 14px; }
+.wf-legend-item b { display: block; color: var(--accent); font-size: 11px; font-weight: 500; margin-bottom: 6px; }
+.wf-legend-item span { display: block; color: var(--text); font-size: 12px; line-height: 1.45; font-weight: 300; }
+
+/* ══════════════════════════════════════
+   STAGE 5 — PROMPTS (Three Agents)
+   ══════════════════════════════════════ */
+
+/* Two-column: narrow agent list | wide three-up prompt grid */
+.agent-showcase {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.72fr) minmax(0, 2.28fr);
+  align-items: stretch;
+  gap: 16px;
+  padding: 18px;
+  border: 2px solid rgba(185,227,106,0.50);
+  background: linear-gradient(180deg, rgba(255,255,255,0.026), rgba(255,255,255,0.012));
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(185,227,106,0.10);
+}
+
+/* Left: stacked agent cards */
+.agent-stack { display: grid; gap: 14px; height: 100%; align-content: start; }
+.agent-boundaries { display: none; }
+
+/* Agent identity card — colored accent border by agent */
+.agent-card {
+  border: 2px solid;
+  border-radius: 8px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.018)),
+    rgba(10,10,10,0.82);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.035), 0 16px 42px rgba(0,0,0,0.22);
+  padding: 18px;
+}
+.agent-card.ahab-card    { border-color: rgba(185,227,106,0.64); }
+.agent-card.nemo-card    { border-color: rgba(118,161,255,0.66); }
+.agent-card.neptune-card { border-color: rgba(215,183,255,0.66); }
+
+.agent-name { color: var(--text); font-size: 28px; font-weight: 750; line-height: 1; }
+.agent-role { color: var(--accent); margin-top: 8px; font-size: 12px; font-weight: 700; }
+.agent-card.nemo-card .agent-role    { color: #9FBCFF; }
+.agent-card.neptune-card .agent-role { color: #E1C7FF; }
+.agent-card p { color: var(--text); font-size: 13px; line-height: 1.55; margin: 12px 0 0; font-weight: 320; }
+
+.agent-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+.agent-chip-row span { border: 1px solid rgba(185,227,106,0.34); background: rgba(185,227,106,0.065); color: var(--accent); padding: 7px 9px; font-size: 11px; font-weight: 700; line-height: 1; }
+.agent-card.nemo-card .agent-chip-row span    { border-color: rgba(118,161,255,0.42); background: rgba(118,161,255,0.08); color: #BFD0FF; }
+.agent-card.neptune-card .agent-chip-row span { border-color: rgba(215,183,255,0.42); background: rgba(215,183,255,0.08); color: #E9D8FF; }
+
+/* Sub-agent note below chips */
+.subagent-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); color: var(--text); font-size: 12px; line-height: 1.5; }
+
+/* Right: three prompt artifacts side by side */
+.agent-prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+  height: 100%;
+}
+
+/* Individual prompt artifact card */
+.prompt-excerpt-column {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 0;
+  border: 2px solid;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)),
+    rgba(7,9,8,0.92);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.035), 0 18px 50px rgba(0,0,0,0.24);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.prompt-excerpt-column.ahab-prompt    { border-color: rgba(185,227,106,0.64); }
+.prompt-excerpt-column.nemo-prompt    { border-color: rgba(118,161,255,0.66); }
+.prompt-excerpt-column.neptune-prompt { border-color: rgba(215,183,255,0.66); }
+
+/* Fade gradient — hides prompt overflow gracefully */
+.prompt-excerpt-column::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 92px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(10,10,10,0), rgba(10,10,10,0.92));
+}
+
+/* Header bar: agent name + traffic-light dots */
+.prompt-kicker {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 16px 13px;
+  margin: 0;
+  color: var(--text);
+  background: rgba(255,255,255,0.035);
+  font-size: 12px;
+  font-weight: 800;
+}
+/* Traffic-light dot (right-aligned, colored by agent) */
+.agent-prompt-grid .prompt-kicker::before {
+  content: '';
+  position: static;
+  order: 2;
+  flex: 0 0 auto;
+  display: block;
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 12px 0 0 rgba(255,255,255,0.22), 24px 0 0 rgba(255,255,255,0.10);
+}
+.prompt-excerpt-column.ahab-prompt .prompt-kicker::before    { background: #B9E36A; }
+.prompt-excerpt-column.nemo-prompt .prompt-kicker::before    { background: #76A1FF; }
+.prompt-excerpt-column.neptune-prompt .prompt-kicker::before { background: #D7B7FF; }
+
+/* Prompt text body — scrolled within card, line-ruled background */
+.prompt-excerpt {
+  margin: 0;
+  border: 0;
+  background:
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 26px),
+    rgba(0,0,0,0.12);
+  padding: 18px 18px 24px;
+  color: #EAF6D5;
+  font-size: 11.6px;
+  line-height: 1.54;
+  font-weight: 500;
+  white-space: pre-wrap;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+.prompt-excerpt-column.ahab-prompt .prompt-excerpt    { color: #DDF8A7; }
+.prompt-excerpt-column.nemo-prompt .prompt-excerpt    { color: #D7E4FF; }
+.prompt-excerpt-column.neptune-prompt .prompt-excerpt { color: #F0DEFF; }
+
+/* ══════════════════════════════════════
+   STAGE 6 — OPERATOR (Contact)
+   ══════════════════════════════════════ */
+.contact {
+  padding: 120px 48px 96px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: clamp(40px, 6vw, 84px);
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 78% 30%, rgba(185,227,106,0.055), transparent 32%),
+    linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
+}
+
+.contact-copy { display: flex; flex-direction: column; justify-content: center; }
+
+/* Contact h2 is larger than standard sections */
+.contact-h2 {
+  font-size: clamp(44px, 4.7vw, 76px);
+  line-height: 0.98;
+  max-width: 820px;
+  font-optical-sizing: auto;
+}
+.contact-h2 em { font-style: normal; font-weight: 500; color: var(--accent); display: inline-block; }
+
+.contact-sub { font-size: 17px; color: var(--text); line-height: 1.65; font-weight: 300; margin-bottom: 40px; max-width: 620px; }
+
+/* Primary CTA — gradient with left accent bar */
+.contact-cta {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  padding: 18px 24px;
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(185,227,106,0.14), rgba(118,161,255,0.07));
+  border: 1px solid rgba(185,227,106,0.72);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.34), inset 0 0 0 1px rgba(255,255,255,0.04);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  margin-top: 10px;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+/* Left accent stripe */
+.contact-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent);
+}
+/* Chevron arrow */
+.contact-cta::after {
+  content: '';
+  position: absolute;
+  right: 14px; top: 50%;
+  width: 8px; height: 8px;
+  border-top: 2px solid var(--action);
+  border-right: 2px solid var(--action);
+  transform: translateY(-50%) rotate(45deg);
+}
+.contact-cta:hover { color: var(--bg); background: var(--accent); border-color: var(--accent); transform: translateY(-2px); }
+.contact-cta:hover::before { background: var(--bg); }
+.contact-cta:hover::after  { border-color: var(--bg); }
+
+/* Right column: stacked contact rows */
+.contact-links { display: flex; flex-direction: column; align-self: center; gap: 14px; }
+
+.contact-link {
+  display: grid;
+  grid-template-columns: 96px 1fr 34px;
+  align-items: center;
+  padding: 18px 20px;
+  background: rgba(0,0,0,0.20);
+  text-decoration: none;
+  gap: 18px;
+  min-height: 76px;
+  border: 2px solid rgba(185,227,106,0.24);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.20);
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+}
+.contact-link:hover { background: rgba(185,227,106,0.06); border-color: rgba(185,227,106,0.72); transform: translateY(-1px); }
+
+.cl-label { font-size: 10px; color: var(--accent); letter-spacing: 0.08em; font-weight: 800; }
+.cl-val { font-size: 16px; color: var(--text); font-weight: 650; overflow-wrap: anywhere; }
+
+/* Arrow icon box */
+.cl-arrow {
+  width: 34px; height: 34px;
+  display: grid;
+  place-items: center;
+  justify-self: end;
+  color: var(--action);
+  border: 1px solid rgba(118,161,255,0.38);
+  background: rgba(118,161,255,0.08);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer {
+  padding: 36px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+.footer-left { font-size: 10px; color: var(--text-soft); letter-spacing: 0.06em; }
+.footer-quote { font-size: 14px; font-style: italic; color: var(--muted); font-weight: 300; }
+
+/* ── Scroll reveal ───────────────────────────────────────── */
+.reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease, transform 0.7s ease; }
+.reveal.vis { opacity: 1; transform: translateY(0); }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .forensic-lab { grid-template-columns: 1fr; }
+  .message-split { grid-template-columns: 1fr; }
+  .agent-showcase { grid-template-columns: 1fr; }
+  .agent-prompt-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 1000px) {
+  nav { padding: 0 24px; }
+  .nav-links { display: none; }
+  .hero { padding: 56px 24px 0; }
+  .hero-h1 { font-size: clamp(44px, 9vw, 72px); }
+  .stat-bar { grid-template-columns: repeat(2, 1fr); }
+  .stat-cell { padding: 36px 24px 32px; }
+  .stat-n { font-size: clamp(56px, 14vw, 80px); }
+  .peak, .process, .about, .contact { padding: 80px 24px 64px; }
+  .about, .contact { grid-template-columns: 1fr; gap: 48px; }
+  footer { flex-direction: column; gap: 16px; padding: 28px 24px; text-align: center; }
+}
+
+@media (max-width: 980px) {
+  .flow-stage { grid-template-columns: 1fr; }
+  .workflow-map { border-right: 0; border-bottom: 1px solid var(--border2); }
+  .workflow-map.has-panel { justify-content: flex-start; }
+  .wf-detail { min-height: 0; }
+  .contact { grid-template-columns: 1fr; }
+  .contact-h2 { max-width: 12ch; }
+}
+
+@media (max-width: 900px) {
+  .term-body { grid-template-columns: 1fr; height: auto; }
+  .term-detail { grid-column: 1; grid-row: auto; height: 460px; max-height: 460px; border-left: 0; border-top: 1px solid var(--border); }
+}
+
+@media (max-width: 760px) {
+  .wf-legend { grid-template-columns: 1fr; }
+}
+
+</style>
+</head>
+<body>
+
+<!-- ══ STAGE 1: HERO ══ -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-pre reveal">Data-Driven GTM · AI Workflow Architecture · CRM-Ready Automation</div>
+    <h1 class="hero-h1 reveal">
+      <span>AI GTM Enrichment Pipeline.</span><br>
+      <em>From Market Signals to CRM-Ready Payloads.</em>
+    </h1>
+    <p class="hero-sub reveal">
+      A single-file Node.js orchestrator managing three specialized AI agents — Ahab, Nemo, and Neptune — over a self-hosted stack of Postgres, n8n, and Docker on GCP. Turned public hiring, funding, and stack signals into governed GTM payloads staged for Clay handoff.
+    </p>
+    <div class="hero-btns reveal">
+      <a href="#output" class="btn-a">Inspect the payload ↓</a>
+      <a href="https://github.com/BlueSkyGTM/ai-gtm-enrichment-pipeline" class="btn-b">View repo →</a>
+    </div>
+  </div>
+</section>
+
+<!-- STAT BAR -->
+<div class="stat-bar reveal">
+  <div class="stat-cell">
+    <div class="stat-n">6</div>
+    <div class="stat-d"><b>Campaigns</b>GTM, accounting, and research verticals — each run staged for Clay handoff.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">45</div>
+    <div class="stat-d"><b>Days Running</b>Stress-tested across six campaigns on a self-hosted Postgres, n8n, and Docker stack.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">100s</div>
+    <div class="stat-d"><b>Enriched Leads</b>Hundreds forensically enriched across GTM, accounting, and research verticals, staged for Clay handoff.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">18</div>
+    <div class="stat-d"><b>Failure Modes Resolved</b>Every one documented forensically in the changelog.</div>
+  </div>
+</div>
+
+<!-- ══ STAGE 2: OUTPUT — THE TABLE ══ -->
+<section class="peak" id="output">
+  <div class="section-label reveal" data-num="01">The Payload</div>
+  <h2 class="peak-h2 reveal">Clean Waterfall <em>Enrichment.</em></h2>
+  <p class="peak-lead reveal">
+    Companies, contacts, funding signals, friction types, and handoff-ready GTM payloads — the kind of structured record Clay can prepare and HubSpot can receive. <span class="em">Funded examples show the curated hook directly. Select any row to open the full payload.</span>
+  </p>
+
+  <div class="terminal reveal">
+    <div class="term-bar">
+      <div class="td td-r"></div>
+      <div class="td td-y"></div>
+      <div class="td td-g"></div>
+      <div class="term-title">GTM Career Leads · Funded Samples · HubSpot-ready review view</div>
+    </div>
+    <div class="term-body">
+      <div class="term-list">
+        <div class="term-head">
+          <span>Company</span>
+          <span>Prospect</span>
+          <span>Signal</span>
+          <span>Funding</span>
+          <span>Hook</span>
+          <span>Email</span>
+        </div>
+        <div id="term-rows"></div>
+      </div>
+      <div class="term-detail" id="term-detail">
+        <div style="font-family:'DM Sans',sans-serif;font-size:10px;color:var(--text-soft);text-align:center;padding:120px 0;line-height:2;">// select any row<br>to view the full hook</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 3: PLAYBOOK ══ -->
+<section class="process" id="playbook">
+  <div class="section-label reveal" data-num="02">The Playbook</div>
+  <h2 class="process-h2 reveal">My Playbook.<br><em>The Forensic Dictionary.</em></h2>
+  <p class="process-lead reveal">
+    Job listings expose operational pressure. The play is to classify the pressure, hand the compact diagnosis to the writer, and turn a cold row into a message that sounds like it came from inside the room. <span class="em">Select a Forensic Dictionary signal below to watch the row become a diagnosis, hook, and finished email.</span>
+  </p>
+
+  <div class="forensic-lab reveal">
+    <div class="forensic-panel">
+      <div class="fp-label">Stranger Signal</div>
+      <div class="fp-title">A Raw Row Becomes Useful When the Pressure is Named.</div>
+      <p class="fp-copy">The source starts cold: a direct job listing, tool references, and a public funding signal. Funding adds momentum, but the play is still finding the pressure hiding inside the row.</p>
+      <div class="raw-card">
+        <div class="raw-row">
+          <div class="raw-k">Company</div>
+          <div class="raw-v"><strong>Crux Climate</strong> · cruxclimate.com</div>
+        </div>
+        <div class="raw-row">
+          <div class="raw-k">Role Signal</div>
+          <div class="raw-v">Marketing Ops Associate</div>
+        </div>
+        <div class="raw-row">
+          <div class="raw-k">Funding Signal</div>
+          <div class="raw-v">$50M Series B · Apr 2025</div>
+        </div>
+        <div class="raw-row">
+          <div class="raw-k">Listing Evidence</div>
+          <div class="raw-v">Build HubSpot workflows. Maintain prospecting lists using Clay, Apollo, and HubSpot.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="forensic-panel">
+      <div class="fp-label">Forensic Dictionary</div>
+      <div class="fp-title">Four Signals. One Diagnosis.</div>
+      <p class="fp-copy">The dictionary does not write the message. It gives the receiving bot a clean diagnosis so the hook can mirror the right frustration.</p>
+      <div class="dictionary-stack" role="tablist" aria-label="Forensic dictionary selector">
+        <button class="dictionary-btn on" type="button" data-friction="api"><b>API Stutter</b><span>Tools exist, but the handoffs do not flow automatically.</span></button>
+        <button class="dictionary-btn" type="button" data-friction="scale"><b>Scale Friction</b><span>Growth is outrunning the operating system underneath it.</span></button>
+        <button class="dictionary-btn" type="button" data-friction="manual"><b>Manual Data Debt</b><span>Humans are doing work the table should structure or automate.</span></button>
+        <button class="dictionary-btn" type="button" data-friction="displacement"><b>Displacement Signal</b><span>A platform, tool, or generalist is being paid for specialist work.</span></button>
+      </div>
+      <div class="diagnostic-card" id="forensic-diagnostic"></div>
+    </div>
+
+    <div class="forensic-panel">
+      <div class="fp-label">From Hook to Email</div>
+      <div class="fp-title">The Message Works When it Mirrors the Private Frustration.</div>
+      <div class="bite-card">
+        <div class="msg-tag">Hook</div>
+        <div class="msg-body" id="forensic-hook"></div>
+      </div>
+      <div class="message-split">
+        <div class="message-card before">
+          <div class="msg-tag">Before</div>
+          <div class="msg-body">Hi there,
+
+I saw your Marketing Ops role and thought my background in Clay, HubSpot, and GTM systems could be useful.
+
+Would you be open to chatting?</div>
+        </div>
+        <div class="message-card after">
+          <div class="msg-tag">After</div>
+          <div class="msg-body" id="forensic-email"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 4: PLUMBING ══ -->
+<section class="process" id="process">
+  <div class="section-label reveal" data-num="03">The Plumbing</div>
+  <h2 class="process-h2 reveal">Find. Extract. Transform. <em>Export.</em></h2>
+  <p class="process-lead reveal">
+    This is the handoff machine behind the payload. Each node finds evidence, cleans the record, diagnoses the friction, or preserves context for the next stage. <span class="em">Select any node or memory chip to inspect the handoff.</span>
+  </p>
+
+  <div class="flow-wrap reveal">
+    <div class="flow-caption">// Interactive Backend Workflow Map</div>
+    <div class="flow-stage">
+      <div class="workflow-map has-panel" aria-label="Clickable backend enrichment workflow map">
+        <div class="wf-grid">
+          <button class="wf-node seed on" type="button" data-flow="ignition" style="grid-column:1;grid-row:1;">
+            <div>
+              <div class="wf-kicker">Trigger</div>
+              <div class="wf-title">Engine Ignition</div>
+            </div>
+          </button>
+          <button class="wf-node" type="button" data-flow="config" style="grid-column:2;grid-row:1;">
+            <div class="wf-kicker">Input</div>
+            <div class="wf-title">Campaign Config</div>
+          </button>
+          <button class="wf-node agent" type="button" data-flow="ahab" style="grid-column:3;grid-row:1;">
+            <div class="wf-kicker">Agent</div>
+            <div class="wf-title">Ahab</div>
+          </button>
+          <button class="wf-node gate" type="button" data-flow="parser" style="grid-column:4;grid-row:1;">
+            <div class="wf-kicker">Parser</div>
+            <div class="wf-title">Record Parser</div>
+          </button>
+          <button class="wf-node store" type="button" data-flow="router" style="grid-column:5;grid-row:1;">
+            <div class="wf-kicker">Gate</div>
+            <div class="wf-title">Exclusion Router</div>
+          </button>
+          <button class="wf-node agent" type="button" data-flow="nemo" style="grid-column:6;grid-row:1;">
+            <div class="wf-kicker">Agent</div>
+            <div class="wf-title">Nemo</div>
+          </button>
+          <button class="wf-node agent" type="button" data-flow="neptune" style="grid-column:7;grid-row:1;">
+            <div class="wf-kicker">Agent</div>
+            <div class="wf-title">Neptune</div>
+          </button>
+          <button class="wf-node store" type="button" data-flow="payload" style="grid-column:8;grid-row:1;">
+            <div class="wf-kicker">Output</div>
+            <div class="wf-title">Postgres</div>
+          </button>
+
+          <div class="wf-transfer" style="grid-column:3;grid-row:2;"></div>
+          <div class="wf-transfer" style="grid-column:5;grid-row:2;"></div>
+          <div class="wf-transfer" style="grid-column:6;grid-row:2;"></div>
+          <div class="wf-transfer" style="grid-column:7;grid-row:2;"></div>
+
+          <button class="wf-chip" type="button" data-flow="ahabMemory" style="grid-column:3;grid-row:3;"><strong>Ahab Memory</strong>Source Facts, Job-Page Clues</button>
+          <button class="wf-chip warn" type="button" data-flow="shipwreck" style="grid-column:5;grid-row:3;"><strong>Shipwreck Log</strong>Bad Rows Kept Out of Final Output</button>
+          <button class="wf-chip" type="button" data-flow="nemoMemory" style="grid-column:6;grid-row:3;"><strong>Nemo Memory</strong>Diagnosis, Friction Type, Context</button>
+          <button class="wf-chip" type="button" data-flow="neptuneMemory" style="grid-column:7;grid-row:3;"><strong>Neptune Memory</strong>Final Handoff Rules</button>
+        </div>
+      </div>
+      <div class="wf-detail" id="workflow-detail" aria-live="polite"></div>
+    </div>
+    <div class="wf-legend">
+      <div class="wf-legend-item"><b>Records Move Forward</b><span>Each node receives a cleaner payload than the one before it.</span></div>
+      <div class="wf-legend-item"><b>Context Branches Down</b><span>Memory and failure logs preserve what the next stage should not rediscover.</span></div>
+      <div class="wf-legend-item"><b>Bad Rows Exit Early</b><span>Routing prevents broken inputs from contaminating the final table.</span></div>
+      <div class="wf-legend-item"><b>CRM Logic Survives</b><span>The same pattern maps to Clay columns, HubSpot imports, and lifecycle QA.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 5: PROMPTS ══ -->
+<section class="process" id="agents">
+  <div class="section-label reveal" data-num="04">The Prompts</div>
+  <h2 class="process-h2 reveal">Three Agents. <em>One TAM.</em></h2>
+  <p class="process-lead reveal">
+    Ahab finds, Nemo enriches, Neptune transforms. <span class="em">Three prompt bases, one market, one payload.</span>
+  </p>
+
+  <div class="agent-showcase reveal">
+    <div class="agent-stack">
+      <div class="agent-card ahab-card">
+        <div class="agent-name">🐋 Ahab</div>
+        <div class="agent-role">The Hunter · Find</div>
+        <p>Looks for the winning job signal by skipping loud boards and returning direct source evidence.</p>
+        <div class="agent-chip-row"><span>🎯 Technical Harpooner</span><span>📡 Signal Harpooner</span></div><p class="subagent-note">Technical Harpooner hunted stack evidence; Signal Harpooner watched for growth, funding, and timing clues.</p>
+      </div>
+      <div class="agent-card nemo-card">
+        <div class="agent-name">🐟 Nemo</div>
+        <div class="agent-role">The Intelligence Analyst · Enrich</div>
+        <p>Lives in the waterfall: resolves the row, checks proof, and decides whether the lead survives.</p>
+        <div class="agent-chip-row"><span>🤿 URL Recon Diver</span><span>🩺 Health Check Diver</span><span>🔎 Friction Diver</span></div><p class="subagent-note">The Divers separated identity, momentum, and friction so Nemo could reject weak rows before outreach.</p>
+      </div>
+      <div class="agent-card neptune-card">
+        <div class="agent-name">🔱 Neptune</div>
+        <div class="agent-role">The Authority Engine · Transform</div>
+        <p>Turns the diagnosis into message control: one reader, one friction, one useful peer suggestion.</p>
+        <div class="agent-chip-row"><span>🎯 Rule of One</span><span>🪞 Reflect First</span><span>⚡ Specific Outcome</span></div><p class="subagent-note">These controls kept Neptune narrow: one reader, one mirrored pain, one operational suggestion.</p>
+      </div>
+    </div>
+
+    <div class="agent-prompt-grid">
+      <div class="prompt-excerpt-column ahab-prompt">
+        <div class="prompt-kicker">🐋 Ahab Prompt Base</div>
+        <pre class="prompt-excerpt">system_instruction: |
+  [Task]: Your sole mission is RAW DATA HARVESTING of {{CAMPAIGN_TYPE}} opportunities. You are the high-volume scraper at the front-end of the pipeline.
+  [Persona]: 🐋 Ahab, the Hunter.
+  [Sub-Agents]:
+    - 🎯 Technical Harpooner: Scans listings for tech-stack keywords defined in campaign config.
+    - 📡 Signal Harpooner: Scans for growth and health keywords defined in campaign config.
+
+  [Handoff_Protocol]:
+  - Crucial: You are the "Find" stage. Nemo is the "Enrich" stage.
+  - Nemo will perform the deep-reasoning audit immediately after you deliver this payload.
+  - Do not burn tokens on analysis. Give Nemo the maximum number of raw leads possible.
+  - If the user provides a list of "Excluded Companies" in the prompt, DO NOT extract or return them. You must find net-new targets.
+
+  [Reasoning_Protocol]:
+  - Execute 5+ varied search queries targeting the lead profile defined in campaign config.
+  - Every search query MUST use site-specific operators and direct portals where applicable.
+
+  [Core_Directives]:
+  1. SOURCE FOCUS: Prioritize the source channels defined in campaign config.
+  2. FILTER COMPLIANCE: Apply all global_filters from campaign config. Discard any lead that does not meet them.
+  3. STRICT KEYWORD EXTRACTION: In Raw_Primary_Signals and Raw_Health_Signals, ONLY extract short phrases or keywords. Do not write full sentences.
+  4. SEARCH ITERATION LOGIC:
+     - Execute a multi-step "Search Pivot."
+     - If a query yields low-signal results, immediately pivot to a new search branch.
+     - Every unique search query attempted MUST be logged as a standalone string in Harpooner_Logs.</pre>
+      </div>
+      <div class="prompt-excerpt-column nemo-prompt">
+        <div class="prompt-kicker">🐟 Nemo Prompt Base</div>
+        <pre class="prompt-excerpt">system_instruction: |
+  [Task]: SINGLE-LEAD DIAGNOSTIC ENRICHMENT.
+  [Persona]: 🐟 Nemo, the Intelligence Analyst.
+  [Mission]: Analyze ONE lead. Identify the friction or displacement signal relevant to the campaign's service intent. Produce a Clay-ready structured output.
+
+  [Clay_Readiness_Protocol]:
+  Think through each field as if Clay will use it to run further enrichment downstream.
+  - Every claim must be sourced. No invented details.
+  - Direct_URL must be the company's own domain, not a job board or listing URL.
+  - Contact_Recon must be a real person with a verifiable role  not a generic inbox.
+  - Target_Service_Intent must be derived from evidence, not assumed.
+
+  [Target_Service_Intent_Routing]:
+  Analyze the available data and route to the correct intent:
+  - "Accounting": financial controllers, bookkeeping, reconciliation, QuickBooks spend signals, audit prep
+  - "GTM": RevOps, lead generation, CRM operations, marketing automation, Clay or n8n workflows
+  - Add new intent types in campaign config as needed.
+
+  [Forensic_Dictionary]:
+  These four archetypes are universal data friction patterns. They apply to every domain; only the evidence vocabulary changes.
+  1. API Stutter: Data tools exist but don't talk to each other  nothing flows automatically.
+  2. Scale Friction: Growth is outpacing data infrastructure capacity.
+  3. Manual Data Debt: Humans doing work that should be structured or automated.
+  4. Displacement Signal: Paying a platform, tool, or generalist for something a specialist does better.
+
+  [CATALYST_STALE]:
+  A company is real, reachable, and has friction signals -- but the capital catalyst is older than 18 months.</pre>
+      </div>
+      <div class="prompt-excerpt-column neptune-prompt">
+        <div class="prompt-kicker">🔱 Neptune Prompt Base</div>
+        <pre class="prompt-excerpt">system_instruction: |
+  [Task]: ROBERT COLLIER OUTREACH SYNTHESIS.
+  [Persona]: 🔱 Neptune, the Authority Engine.
+  [Mission]: You receive a structured "Friction Profile" from Nemo. Synthesize it into a Robert Collier-style "Outreach Bite." One job. One output.
+
+  [Prime_Directive]:
+  You are not selling. You are confirming what the prospect already knows.
+
+  By the time your message arrives, the prospect has felt this pain a hundred times. Your job is not to introduce a new idea -- it is to prove you understand their specific situation better than they can articulate it themselves.
+
+  The Bite operates on three Schwartz principles:
+  1. REFLECT before you claim. Name what they are already doing before offering anything. Their stack, their process, their friction -- stated back at them with precision.
+  2. NAME THE VILLAIN. Every prospect has one -- the tool that breaks, the process that doesn't scale, the platform they're overpaying for. Name it specifically. Never generically.
+  3. OFFER THE SPECIFIC OUTCOME. Not a feature. Not a capability. The exact thing they already want, stated in operational language.
+
+  The Bite is 3-4 sentences. It opens by reflecting their reality. It names the villain. It offers the specific outcome. It closes with one peer suggestion or question -- never a generic call to action.
+
+  [The_Rule_of_One_Mandate]:
+  1. 🎯 One Reader: This is an intimate, 1-on-1 engagement between two professionals.
+  2. 🪞 First-Person ONLY: Speak strictly as an individual ("I"), NEVER as an agency or company.
+  3. ⚡ One Peer Suggestion: End with an actual, actionable insight based on their specific signals.</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══ STAGE 6: OPERATOR ══ -->
+<section class="contact" id="contact">
+  <div class="contact-copy reveal">
+    <div class="section-label" data-num="05">The Architect</div>
+    <h2 class="contact-h2 process-h2">GTM Systems Engineer.<br><em>AI Workflow Architecture.</em></h2>
+    <p class="contact-sub">
+      I turn messy GTM inputs into structured records, useful handoffs, and workflows that a revenue team can actually inspect, trust, and use.
+    </p>
+    <a class="contact-cta" href="mailto:raymondf.gtm@gmail.com">Get in Touch →</a>
+  </div>
+  <div class="contact-links reveal">
+    <a class="contact-link" href="mailto:raymondf.gtm@gmail.com">
+      <span class="cl-label">Email</span>
+      <span class="cl-val">raymondf.gtm@gmail.com</span>
+      <span class="cl-arrow">→</span>
+    </a>
+    <a class="contact-link" href="https://www.linkedin.com/in/raymond-fenton-51b01b160/">
+      <span class="cl-label">LinkedIn</span>
+      <span class="cl-val">Raymond Fenton</span>
+      <span class="cl-arrow">→</span>
+    </a>
+    <a class="contact-link" href="https://github.com/BlueSkyGTM/ai-gtm-enrichment-pipeline">
+      <span class="cl-label">Repo</span>
+      <span class="cl-val">ai-gtm-enrichment-pipeline</span>
+      <span class="cl-arrow">→</span>
+    </a>
+  </div>
+</section>
+<footer>
+  <div class="footer-left">© 2026 Raymond Fenton · Remote only · Available now</div>
+  <div class="footer-quote">Built without venture capital.</div>
+</footer>
+
+<script>
+// ── Lead data ────────────────────────────────────────────────────────────────
+const leads = [
+  {co:'Grafana Labs',title:'Staff AI Engineer',contact:'Samuel Garen',role:'Director of RevOps Analytics',email:'sdgaren@gmail.com',li:'linkedin.com/in/sdgaren',fr:'Manual Data Debt',fund:'$250M Series E · March 2026',status:'FINISHED',bite:'Saw the $250M Series E — it looks like you\'re channeling that into a custom AI platform to automate GTM workflows. Building on top of fragmented GTM data often creates more manual work than it solves. The move is a unified data layer that automates revenue ops without the internal build overhead.',url:'grafana.com'},
+  {co:'Togal AI',title:'GTM Engineer',contact:'Patrick Murphy',role:'Founder & CEO',email:'',li:'linkedin.com/in/patrick-murphy',fr:'API Stutter',fund:'$7M Series A · Aug 2025',status:'EMAIL GAP',bite:'Patrick, saw the Series A news — that\'s typically when the GTM stack (Clay, HubSpot, n8n) starts creating more engineering overhead than revenue velocity. That GTM Engineer role is a classic API stutter signal. The move is a unified customer record before automating workflows around it.',url:'togal.ai'},
+  {co:'Mercor',title:'SalesOps Expert',contact:'Brendan Foody',role:'Co-Founder and CEO',email:'',li:'',fr:'API Stutter',fund:'$350M Series C · Oct 2025',status:'SPOTTY',bite:'Saw the Series C momentum and the SalesOps role requiring both HubSpot and Salesforce expertise. This pattern usually means sync issues between the two are creating a drag on revenue predictability. The goal is a single source of truth without the API babysitting.',url:'mercor.com'},
+  {co:'Dash0',title:'RevOps Manager',contact:'Marcel Sim',role:'Head of Growth',email:'',li:'',fr:'API Stutter',fund:'$110M Series B · March 2026',status:'SPOTTY',bite:'Marcel, saw the $110M Series B — looks like you\'re building serious GTM momentum. The plan to stitch HubSpot with n8n and custom APIs is a classic signal that API stutter is forcing you to manage the stack instead of scaling the motion.',url:'dash0.com'},
+  {co:'LocalStack',title:'RevOps & Automation Lead',contact:'Gerta Sheganaku',role:'Co-Founder and Co-CEO',email:'',li:'linkedin.com/in/gerta-sheganaku',fr:'Manual Data Debt',fund:'$25M Series A · Nov 2024',status:'EMAIL GAP',bite:'Congrats on the $25M Series A — saw the RevOps and Automation Lead role to align GTM teams. You\'re hitting the point where manual data syncs start to break and create pipeline visibility issues. Most post-Series A founders model their GTM data architecture first, before committing to new hires.',url:'localstack.cloud'},
+  {co:'MonetizeMore',title:'RevOps Systems Admin',contact:'Eric Lagunas',role:'VP of Revenue',email:'first@monetizemore.com',li:'',fr:'API Stutter',fund:'',status:'NO FUNDING',bite:'Eric, as a GTM engine scales, the focus shifts from pure execution to making revenue predictable. Relying on a RevOps admin to act as a human API for Salesforce creates data gaps that undermine pipeline visibility.',url:'monetizemore.com'},
+  {co:'SOVRA',title:'Marketing Ops Leader',contact:'Tom Spengler',role:'CEO',email:'',li:'linkedin.com/in/tomspengler',fr:'API Stutter',fund:'Acquired by KKR · 2024',status:'EMAIL GAP',bite:'Tom, congrats on the KKR acquisition. Saw the search for a marketing ops leader to bridge HubSpot and Salesforce. When teams manually stitch lead data from marketing to opportunity data in sales, the executive view of the pipeline becomes unreliable.',url:'sovra.com'},
+  {co:'Connor Group',title:'CRM & RevOps Analyst',contact:'Tiffany Watts',role:'Managing Director, CX',email:'tiffany.watts@connorgp.com',li:'',fr:'Manual Data Debt',fund:'',status:'NO FUNDING',bite:'Tiffany, saw the opening for a CRM & RevOps Analyst — as you scale, the manual data debt inside HubSpot starts creating a drag on pipeline visibility. The goal is automating GTM data hygiene before it ever hits the CRM.',url:'connorgp.com'},
+  {co:'Eleos Health',title:'GTM Operations Analyst',contact:'GTM Ops Hiring Team',role:'Revenue Operations',email:'',li:'',fr:'Manual Data Debt',fund:'$60M Series C · Jan 2025',status:'FUNDED',bite:'Saw the GTM Operations Analyst role and the Series C momentum. When revenue leaders rely on Salesforce source data and dashboards, the hidden risk is manual data debt making the numbers harder to trust. The move is tightening the CRM payload before every dashboard becomes another place to reconcile.',url:'eleos.health'},
+  {co:'Crux',title:'Marketing Ops Associate',contact:'Marketing Ops Hiring Team',role:'HubSpot / Clay Workflows',email:'',li:'',fr:'API Stutter',fund:'$50M Series B · Apr 2025',status:'FUNDED',bite:'Saw the Series B and the role calling out HubSpot workflows plus Clay and Apollo list building. That is usually the point where the GTM stack starts creating its own coordination tax. The useful work is making enrichment, routing, and CRM updates behave like one system instead of several tabs.',url:'cruxclimate.com'},
+  {co:'Forma.ai',title:'Revenue Systems / BI Operations',contact:'Revenue Ops Hiring Team',role:'Salesforce / HubSpot Reporting',email:'',li:'',fr:'Manual Data Debt',fund:'$45M Series B · May 2022',status:'FUNDED',bite:'Saw the Series B context and the reporting work across Salesforce, HubSpot, and BI dashboards. When ops teams maintain revenue visibility across that many surfaces, the problem is rarely one dashboard. It is the upstream data model that decides whether every report can be trusted.',url:'forma.ai'},
+  {co:'CharterUP',title:'Revenue Operations Associate',contact:'RevOps Hiring Team',role:'CRM Administration',email:'',li:'',fr:'Scale Friction',fund:'$60M Series A · Oct 2022',status:'FUNDED',bite:'Saw the Series A and the Revenue Operations Associate role supporting CRM administration. That is a classic scale-friction moment: the business is moving faster than the operating system underneath it. The practical win is keeping Salesforce clean enough that growth does not create reporting drag.',url:'charterup.com'},
+  {co:'Sprinto',title:'Marketing Ops / HubSpot',contact:'Marketing Ops Hiring Team',role:'HubSpot Workflow Operations',email:'',li:'',fr:'API Stutter',fund:'$20M Series B · Apr 2024',status:'FUNDED',bite:'Saw the Series B and the HubSpot workflow requirement. When compliance and GTM teams scale together, broken handoffs turn into more than inconvenience: they slow the revenue motion itself. The useful layer is clean workflow design before automation multiplies messy inputs.',url:'sprinto.com'},
+  {co:'Jump',title:'RevOps Analyst',contact:'RevOps Hiring Team',role:'Revenue Engine Scaling',email:'',li:'',fr:'Scale Friction',fund:'$24.6M Series A · Feb 2025',status:'FUNDED',bite:'Saw the Series A and the RevOps Analyst role focused on scaling the revenue engine. That usually means the team is past simple activity tracking and into pipeline reliability. The right move is turning source data, routing, and reporting into one dependable operating loop.',url:'jumpapp.com'},
+  {co:'Sierra',title:'Revenue Operations Associate',contact:'Revenue Ops Hiring Team',role:'Revenue Operations',email:'',li:'',fr:'Scale Friction',fund:'$100M round · $1B+ valuation',status:'FUNDED',bite:'Saw the Revenue Operations Associate role and the recent $100M raise. At that stage, the risk is not whether demand exists; it is whether the GTM system can stay legible while the team scales. The useful work is keeping lifecycle data and operational handoffs clean before volume hides the cracks.',url:'sierra.ai'},
+];
+
+const rowsEl = document.getElementById('term-rows');
+const detEl  = document.getElementById('term-detail');
+
+// ── Forensic Dictionary content ──────────────────────────────────────────────
+const forensicDictionary = {
+  api: {
+    name: 'API Stutter',
+    diagnosis: 'HubSpot workflows plus Clay and Apollo list building point to systems that exist, but still need a clean handoff layer.',
+    use: 'Enter their mental conversation about disconnected systems. Name the coordination tax before offering automation.',
+    payload: 'company: Crux Climate\nfunding_signal: $50M Series B · Apr 2025\nfriction_type: API Stutter\nevidence: HubSpot workflows + Clay + Apollo\nwriter_instruction: Open with funding, then pivot to disconnected GTM handoffs.',
+    hook: 'Saw the $50M Series B and the role calling out HubSpot workflows plus Clay and Apollo list building. That is usually the point where the GTM stack starts creating its own coordination tax. The useful work is making enrichment, routing, and CRM updates behave like one system instead of several tabs.',
+    email: "Hi there,\n\nCongratulations on the $50M Series B. That is a pivotal moment, and it usually brings more volume, more handoffs, and less room for messy data.\n\nI noticed that pressure showing up in your Marketing Ops opening, especially around the HubSpot, Clay, and Apollo requirements. That combination often points to useful GTM tools creating coordination work instead of removing it.\n\nIf I could help make enrichment, routing, and CRM updates behave like one system, I would start by mapping the handoff between Clay outputs and the HubSpot fields or workflows that need to receive them.\n\nIf that would be useful, I would be glad to compare notes.\n\nRegards,\nRaymond"
+  },
+  scale: {
+    name: 'Scale Friction',
+    diagnosis: 'A funded team is adding Marketing Ops capacity because the revenue motion is getting too large to manage through loose process.',
+    use: 'Address the fear of breaking during growth. The message should sound operational, not motivational.',
+    payload: 'company: Crux Climate\nfunding_signal: $50M Series B · Apr 2025\nfriction_type: Scale Friction\nevidence: funded team + Marketing Ops hiring\nwriter_instruction: Open with momentum, then point to the risk of growth hiding process cracks.',
+    hook: 'Saw the $50M Series B and the Marketing Ops Associate role. That is usually when the team has enough momentum that small workflow gaps start turning into reporting and routing drag. The useful work is keeping the GTM system legible before volume makes every handoff harder to inspect.',
+    email: "Hi there,\n\nCongratulations on the $50M Series B. That is a pivotal moment, and it usually brings more volume, more handoffs, and less room for messy data.\n\nI noticed that pressure showing up in your Marketing Ops Associate opening, especially around workflow capacity and HubSpot operations. That combination often points to growth moving faster than the operating system underneath it.\n\nIf I could help keep the GTM system legible before volume makes every handoff harder to inspect, I would start with the workflow and source-data checks around HubSpot.\n\nIf that would be useful, I would be glad to compare notes.\n\nRegards,\nRaymond"
+  },
+  manual: {
+    name: 'Manual Data Debt',
+    diagnosis: 'The role hints at repeated list maintenance and workflow upkeep: the kind of manual drag that accumulates when records are not standardized early.',
+    use: 'Appeal to efficiency. The villain is copy-paste cleanup and repeated record repair.',
+    payload: 'company: Crux Climate\nfunding_signal: $50M Series B · Apr 2025\nfriction_type: Manual Data Debt\nevidence: prospecting list maintenance + HubSpot workflows\nwriter_instruction: Open with funding, then name manual cleanup before reporting.',
+    hook: 'Saw the $50M Series B and the need to maintain prospecting lists across Clay, Apollo, and HubSpot. That is where manual data debt usually starts hiding inside normal marketing ops work. The useful move is standardizing the record before it turns into cleanup inside the CRM.',
+    email: "Hi there,\n\nCongratulations on the $50M Series B. That is a pivotal moment, and it usually brings more volume, more handoffs, and less room for messy data.\n\nI noticed that pressure showing up in the list maintenance across Clay, Apollo, and HubSpot. That combination often points to manual data debt hiding upstream of reporting and CRM workflows.\n\nIf I could help standardize the record before it turns into CRM cleanup, I would start with the table structure and the handoff fields HubSpot needs to receive cleanly.\n\nIf that would be useful, I would be glad to compare notes.\n\nRegards,\nRaymond"
+  },
+  displacement: {
+    name: 'Displacement Signal',
+    diagnosis: 'Multiple tools are being asked to carry one operational job. The risk is paying for platform sprawl while the specialist workflow remains undefined.',
+    use: 'Mirror the cost of the current workaround versus the focused workflow that should replace it.',
+    payload: 'company: Crux Climate\nfunding_signal: $50M Series B · Apr 2025\nfriction_type: Displacement Signal\nevidence: Clay + Apollo + HubSpot stack\nwriter_instruction: Open with funding, then name tool sprawl as the villain.',
+    hook: 'Saw the $50M Series B and the stack spanning Clay, Apollo, and HubSpot. That can be a strong setup, but it also creates a displacement problem when every tool owns a piece of the workflow and no one owns the handoff. The useful work is making the table decide what each system should receive.',
+    email: "Hi there,\n\nCongratulations on the $50M Series B. That is a pivotal moment, and it usually brings more volume, more handoffs, and less room for messy data.\n\nI noticed that pressure showing up in the stack spanning Clay, Apollo, and HubSpot. That combination often points to a workflow where several tools touch the record but no one fully owns the handoff.\n\nIf I could help clarify what each system should receive, I would start by turning the enrichment output into fields HubSpot can actually use.\n\nIf that would be useful, I would be glad to compare notes.\n\nRegards,\nRaymond"
+  }
+};
+
+// ── Forensic Dictionary renderer ─────────────────────────────────────────────
+function renderForensicPlay(key = 'api') {
+  const item = forensicDictionary[key];
+  const diag  = document.getElementById('forensic-diagnostic');
+  const hook  = document.getElementById('forensic-hook');
+  const email = document.getElementById('forensic-email');
+  if (!item || !diag || !hook || !email) return;
+  diag.innerHTML =
+    '<div class="diag-name">' + item.name + '</div>' +
+    '<div class="diag-copy">' + item.diagnosis + '</div>' +
+    '<div class="diag-use"><b>Receiving Bot Rule:</b> ' + item.use + '</div>';
+  hook.textContent  = item.hook;
+  email.textContent = item.email;
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"]/g, ch => (
+    ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : '&quot;'
+  ));
+}
+
+function firstName(l) {
+  if (/hiring team/i.test(l.contact)) return 'there';
+  return (l.contact || '').split(' ')[0] || 'there';
+}
+
+function cleanBite(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
+
+// ── Email generator ──────────────────────────────────────────────────────────
+function emailPayload(l) {
+  const frames = {
+    'API Stutter': {
+      result:    'make enrichment, routing, and CRM updates behave like one system',
+      approach:  'mapping the handoff between Clay-style outputs, HubSpot-ready fields, and the review step before automation runs',
+      diagnosis: 'That combination often points to useful GTM tools creating coordination work instead of removing it.'
+    },
+    'Manual Data Debt': {
+      result:    'reduce cleanup before GTM data reaches reporting or CRM workflows',
+      approach:  'standardizing the record shape first: source evidence, friction signal, funding context, and the fields HubSpot or Salesforce needs to receive cleanly',
+      diagnosis: 'That combination often points to manual data debt hiding upstream of reporting and CRM workflows.'
+    },
+    'Scale Friction': {
+      result:    'keep the GTM system legible as volume increases',
+      approach:  'turning source data, routing, and reporting into a reviewable operating loop before the next workflow is automated',
+      diagnosis: 'That combination often points to growth moving faster than the operating system underneath it.'
+    },
+    'Displacement Signal': {
+      result:    'clarify what each system should own before the workflow spreads across more tools',
+      approach:  'making the table define what Clay, Apollo, HubSpot, or Salesforce should receive instead of letting each tool carry a different version of the record',
+      diagnosis: 'That combination often points to a workflow where several tools touch the record but no one fully owns the handoff.'
+    }
+  };
+  const frame    = frames[l.fr] || frames['API Stutter'];
+  const opening  = fundingOpening(l);
+  const pressure = pressureLine(l);
+  const clue     = evidenceClue(l);
+  const ask      = 'If that would be useful, I would be glad to compare notes.';
+  const email    =
+    'Hi ' + firstName(l) + ',\n\n' +
+    opening + ' ' + pressure + '\n\n' +
+    'I noticed that pressure showing up in your ' + roleOpening(l) + ', especially around ' + clue + '. ' + frame.diagnosis + '\n\n' +
+    'If I could help ' + frame.result + ', I would start by ' + frame.approach + '.\n\n' +
+    ask + '\n\nRegards,\nRaymond';
+  return { email };
+}
+
+function fundingOpening(l) {
+  const fund = (l.fund || '').trim();
+  if (!fund) return 'I noticed the ' + l.title + ' role and the operating pressure behind it.';
+  if (/acquired by/i.test(fund)) {
+    const buyer = fund.replace(/Acquired by/i, '').split('·')[0].trim();
+    return 'Congratulations on the ' + buyer + ' acquisition.';
+  }
+  return 'Congratulations on ' + cleanFundingSignal(fund) + '.';
+}
+
+function pressureLine(l) {
+  const fund = (l.fund || '').trim();
+  if (!fund) return 'Roles like that usually reveal where a workflow is starting to ask for more structure.';
+  if (/acquired by/i.test(fund)) return 'That is a pivotal transition, and it usually brings more scrutiny, more handoffs, and less room for messy data.';
+  return 'That is a pivotal moment, and it usually brings more volume, more handoffs, and less room for messy data.';
+}
+
+function roleOpening(l) { return ((l.title || 'open role').trim()) + ' opening'; }
+
+function evidenceClue(l) {
+  const src = (l.role + ' ' + l.title + ' ' + l.bite).toLowerCase();
+  if (src.includes('hubspot') && src.includes('clay') && src.includes('apollo')) return 'the HubSpot, Clay, and Apollo requirements';
+  if (src.includes('hubspot') && src.includes('salesforce')) return 'the HubSpot and Salesforce handoff';
+  if (src.includes('salesforce') && (src.includes('dashboard') || src.includes('source data'))) return 'Salesforce source data and dashboard reliability';
+  if (src.includes('bi') || src.includes('reporting') || src.includes('dashboard')) return 'reporting, BI, and CRM data quality';
+  if (src.includes('hubspot') && src.includes('workflow')) return 'HubSpot workflows';
+  if (src.includes('crm')) return 'CRM administration and data handoffs';
+  if (src.includes('routing')) return 'routing and workflow ownership';
+  return 'the operating requirements behind the role';
+}
+
+function cleanFundingSignal(fund) {
+  const main = fund.split('·')[0].trim();
+  if (!main) return 'the recent funding milestone';
+  if (/^\$/.test(main) || /series/i.test(main) || /round/i.test(main)) return 'the ' + main;
+  return 'the recent funding milestone';
+}
+
+// ── Detail panel renderer ────────────────────────────────────────────────────
+function showDetail(l) {
+  const email       = emailPayload(l);
+  const emailRow    = l.email ? `<div class="raw-row"><div class="raw-k">Email</div><div class="raw-v"><a href="mailto:${l.email}">${l.email}</a></div></div>` : '';
+  const linkedInRow = l.li    ? `<div class="raw-row"><div class="raw-k">LinkedIn</div><div class="raw-v"><a href="https://${l.li}">${l.li}</a></div></div>` : '';
+  const fundingRow  = l.fund  ? `<div class="raw-row"><div class="raw-k">Funding Signal</div><div class="raw-v"><span class="d-fund">${l.fund}</span></div></div>` : '';
+  detEl.innerHTML = `
+    <div class="dl detail-section-label profile-label">Prospect Profile</div>
+    <div class="raw-card">
+      <div class="raw-row">
+        <div class="raw-k">Company</div>
+        <div class="raw-v"><strong>${l.co}</strong> <span class="small">· ${l.url}</span></div>
+      </div>
+      <div class="raw-row">
+        <div class="raw-k">Role · Contact</div>
+        <div class="raw-v">${l.contact} <span class="small">— ${l.role}</span></div>
+      </div>
+      ${emailRow}
+      ${linkedInRow}
+      <div class="raw-row">
+        <div class="raw-k">Source Role</div>
+        <div class="raw-v">${l.title}</div>
+      </div>
+      <div class="raw-row">
+        <div class="raw-k">Friction Type</div>
+        <div class="raw-v"><span class="tr-badge">${l.fr}</span></div>
+      </div>
+      ${fundingRow}
+    </div>
+    <div class="dl detail-section-label">Hook</div>
+    <div class="d-bite">"${l.bite}"</div>
+    <div class="dl detail-section-label">Email</div>
+    <div class="email-block">${escapeHtml(email.email)}</div>
+  `;
+}
+
+// ── Forensic Dictionary interaction ──────────────────────────────────────────
+renderForensicPlay('api');
+document.querySelectorAll('.dictionary-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.dictionary-btn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    renderForensicPlay(btn.dataset.friction);
+  });
+});
+
+// ── Build the payload table (funded leads only) ───────────────────────────────
+leads.filter(l => l.fund).forEach((l, i) => {
+  const row = document.createElement('div');
+  row.className = 'term-row' + (i === 0 ? ' on' : '');
+  row.tabIndex  = 0;
+  row.setAttribute('role', 'button');
+  row.setAttribute('aria-label', `View GTM lead details for ${l.co}`);
+  row.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+  row.innerHTML = `
+    <div class="tr-co">${l.co}</div>
+    <div class="tr-name"><b>${l.contact}</b><span>${l.role}</span></div>
+    <div><span class="tr-badge">${l.fr}</span></div>
+    <div class="tr-fund">${l.fund.split('·')[0].trim()}</div>
+    <div class="tr-bite-cell">${l.bite}</div>
+    <div class="tr-email-cell">${escapeHtml(emailPayload(l).email)}</div>
+  `;
+  row.onclick = () => {
+    document.querySelectorAll('.term-row').forEach(r => {
+      r.classList.remove('on');
+      r.setAttribute('aria-pressed', 'false');
+    });
+    row.classList.add('on');
+    row.setAttribute('aria-pressed', 'true');
+    showDetail(l);
+  };
+  row.onkeydown = e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
+  };
+  rowsEl.appendChild(row);
+});
+
+showDetail(leads[0]);
+
+// ── Workflow map content ──────────────────────────────────────────────────────
+const workflowSteps = {
+  ignition:     { title: 'Engine Ignition',    type: 'Trigger',       summary: 'Starts the pipeline with an active campaign instead of a blank prompt.',                              carries: 'Campaign ID, active status, source boundaries.',                                why: 'The run begins with operating context, so the downstream Agents do not invent the market or the target.',            payload: 'Active Campaign -> Campaign Config -> Source Rules' },
+  config:       { title: 'Campaign Config',    type: 'Input',         summary: 'Loads the rules that define what counts as useful evidence.',                                          carries: 'Target market, exclusion rules, message angle, source rules.',                  why: 'This is where TAM becomes operational. The Agents search inside the market instead of wandering the web.',           payload: 'TAM + Exclusions + Message Frame' },
+  ahab:         { title: 'Ahab',               type: 'Agent',         summary: 'Finds direct source signals while avoiding loud job-board surfaces.',                                  carries: 'Company clues, role clues, source URLs, short evidence fragments.',             why: 'Ahab made the first record cleaner by treating source quality as the first QA gate.',                                payload: 'Direct Source Evidence -> Raw Lead Fragment' },
+  parser:       { title: 'Record Parser',      type: 'Parser',        summary: 'Turns messy model output into fields the next step can trust.',                                        carries: 'Normalized rows, split outputs, structured handoff fields.',                    why: 'This is the mechanical bridge between AI output and table logic. Without it, the next Agent inherits noise.',        payload: 'Messy Output -> Structured Row' },
+  router:       { title: 'Exclusion Router',   type: 'Gate',          summary: 'Removes duplicates, dead links, excluded accounts, and bad fits before enrichment.',                  carries: 'Pass/fail route, rejection reason, clean candidate list.',                      why: 'Bad rows are expensive because they pollute every downstream prompt. Routing keeps the payload clean.',              payload: 'Candidate Row -> Keep or Shipwreck' },
+  nemo:         { title: 'Nemo',               type: 'Agent',         summary: 'Diagnoses the row using source evidence and the Forensic Dictionary.',                                 carries: 'Friction type, proof URL, contact context, funding context when available.',   why: 'Nemo turns facts into a GTM diagnosis, which is the difference between enrichment and a pile of trivia.',            payload: 'Evidence -> Friction Diagnosis' },
+  neptune:      { title: 'Neptune',            type: 'Agent',         summary: 'Turns the diagnosis into a hook that can become an email.',                                            carries: 'Hook, tone, specific outcome, final message rules.',                            why: 'Neptune keeps the message grounded in the row so the final copy sounds observed instead of generated.',             payload: 'Diagnosis -> Hook -> Email Frame' },
+  payload:      { title: 'Postgres',           type: 'Output',        summary: 'The final review object: a GTM record with context still attached.',                                   carries: 'Company, contact, source role, friction type, funding signal, hook, email.',  why: 'This is the object an operator can review, enrich in Clay, or shape for HubSpot-ready handoff.',                    payload: 'CRM-Ready GTM Payload' },
+  ahabMemory:   { title: 'Ahab Memory',        type: 'Memory',        summary: 'Keeps source facts attached long enough for the next stage to use them.',                              carries: 'Search branches, job-page clues, direct URLs.',                                why: 'The record does not lose where it came from. That is what makes the next judgment auditable.',                       payload: 'Source Facts + URL Evidence' },
+  shipwreck:    { title: 'Shipwreck Log',      type: 'Failure Route', summary: 'Stores bad rows outside the final payload instead of letting them disappear silently.',               carries: 'Rejected records, failure reason, duplicate or dead-link notes.',               why: 'Failure data is still useful. It explains why the payload stayed clean.',                                            payload: 'Rejected Row + Reason' },
+  nemoMemory:   { title: 'Nemo Memory',        type: 'Memory',        summary: 'Stores the diagnosis layer that Neptune should inherit.',                                               carries: 'Friction type, proof, funding context, contact context.',                      why: 'This is the handoff that prevents the writer from starting over.',                                                   payload: 'Friction Profile + Proof' },
+  neptuneMemory:{ title: 'Neptune Memory',     type: 'Memory',        summary: 'Preserves final message rules and the hook logic.',                                                    carries: 'Hook, tone, one-reader rule, first-person framing.',                           why: 'The final copy stays tied to the diagnosis instead of drifting into generic outreach.',                              payload: 'Hook + Message Rules' }
+};
+
+const workflowDetail = document.getElementById('workflow-detail');
+
+function renderWorkflowStep(key) {
+  const item = workflowSteps[key];
+  if (!workflowDetail || !item) return;
+  workflowDetail.innerHTML =
+    '<div class="wf-detail-title">' + item.title + '</div>' +
+    '<div class="wf-detail-sub">' + item.type + '</div>' +
+    '<div class="raw-card">' +
+      '<div class="raw-row"><div class="raw-k">What it Does</div><div class="raw-v">'    + item.summary  + '</div></div>' +
+      '<div class="raw-row"><div class="raw-k">What it Carries</div><div class="raw-v">' + item.carries  + '</div></div>' +
+      '<div class="raw-row"><div class="raw-k">Why it Matters</div><div class="raw-v">'  + item.why      + '</div></div>' +
+    '</div>' +
+    '<div class="dl">Payload Movement</div>' +
+    '<div class="d-bite">' + item.payload + '</div>';
+}
+
+document.querySelectorAll('[data-flow]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-flow]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    renderWorkflowStep(btn.dataset.flow);
+  });
+});
+renderWorkflowStep('ignition');
+
+// ── Scroll reveal ─────────────────────────────────────────────────────────────
+const obs = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('vis'); }),
+  { threshold: 0.08 }
+);
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>
