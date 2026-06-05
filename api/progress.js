@@ -12,11 +12,17 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'GET') {
     const data = await redisGet(key);
+    console.log('[progress] GET', key, data ? 'found' : 'empty');
     return res.json(data || { v: 1, done: {}, days: [], updatedAt: 0 });
   }
 
   if (req.method === 'POST') {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    if (!body || typeof body !== 'object') {
+      console.error('[progress] POST bad body:', JSON.stringify(body));
+      return res.status(400).json({ error: 'Invalid body' });
+    }
+    console.log('[progress] POST', key, 'done keys:', Object.keys(body.done || {}).length);
     await redisSet(key, body);
     return res.json({ ok: true });
   }

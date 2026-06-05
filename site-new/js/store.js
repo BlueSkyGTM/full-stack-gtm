@@ -53,13 +53,15 @@
     },
     async write(p) {
       try {
-        fetch('/api/progress', {
+        const r = await fetch('/api/progress', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(p)
+          body: JSON.stringify(p),
+          keepalive: true
         });
-      } catch { /* local copy already written */ }
+        if (!r.ok) console.error('[store] progress write failed:', r.status);
+      } catch (e) { console.error('[store] progress write error:', e.message); }
     },
     clear() { return this.write(blank()); }
   };
