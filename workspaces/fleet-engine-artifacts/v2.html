@@ -800,10 +800,98 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   </div>
 </section>
 
-<!-- ══ SECTION 02: FAILURE LOG ══ -->
+<!-- ══ SECTION 03: ORCHESTRATION TERMINAL ══ -->
+<!-- Claude Code as Admiral — how the pipeline actually runs -->
+<section class="process" id="orchestration">
+  <div class="section-label reveal" data-num="Step 03">Run It</div>
+  <h2 class="process-h2 reveal">One command.<br><em>Three agents gate by gate.</em></h2>
+  <p class="process-lead reveal">
+    Run <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--accent);background:rgba(255,255,255,0.06);padding:2px 6px;">node run.js "campaign"</code> and Claude Code takes it from there — invokes Ahab, confirms the GCS write, hands to Nemo, confirms again, hands to Neptune. No middleware, no polling, no server. Watch all three agents run simultaneously below.
+  </p>
+
+  <div class="orch-grid reveal">
+
+    <div class="orch-term">
+      <div class="orch-bar">
+        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
+        <span class="orch-title">01 · Ahab Discovers</span>
+      </div>
+      <div class="orch-output" id="orch-0"></div>
+    </div>
+
+    <div class="orch-term">
+      <div class="orch-bar">
+        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
+        <span class="orch-title">02 · Nemo Enriches</span>
+      </div>
+      <div class="orch-output" id="orch-1"></div>
+    </div>
+
+    <div class="orch-term">
+      <div class="orch-bar">
+        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
+        <span class="orch-title">03 · Neptune Synthesizes</span>
+      </div>
+      <div class="orch-output" id="orch-2"></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══ SECTION 02: PYTHON CONTROL LAYER ══ -->
+<!-- Python validates, enforces contracts, and bridges to downstream tools -->
+<section class="process" id="python">
+  <div class="section-label reveal" data-num="Step 02">Validate</div>
+  <h2 class="process-h2 reveal">Node.js runs the agents.<br><em>Python checks every output.</em></h2>
+  <p class="process-lead reveal">
+    The pipeline writes four typed JSON files to GCS per run. Python reads them at the boundary, validates every field with Pydantic, enforces that leads can only move forward (no stage can skip), strips Gemini citation artifacts, and validates the Node-to-Python IPC handshake. If any field is wrong, it fails loud — before anything reaches a CRM. <span class="em">Select a pattern to read the field notes.</span>
+  </p>
+
+  <div class="cat-grid reveal" id="cat-grid">
+    <div class="cat-card on" data-cat="all">
+      <div class="cat-icon">⬡</div>
+      <div class="cat-name">All Patterns</div>
+      <div class="cat-problem">8 patterns across 4 categories. Each solves a specific control problem in a live LLM pipeline.</div>
+    </div>
+    <div class="cat-card" data-cat="Schema Enforcement">
+      <div class="cat-icon">🧱</div>
+      <div class="cat-name">Schema Enforcement</div>
+      <div class="cat-problem">LLM output is untyped text. Revenue data needs types, enums, and constraints. Pydantic closes that gap at the GCS boundary.</div>
+    </div>
+    <div class="cat-card" data-cat="State Machines">
+      <div class="cat-icon">⚙️</div>
+      <div class="cat-name">State Machines</div>
+      <div class="cat-problem">Illegal stage transitions are impossible, not just unlikely. No lead can reach Neptune before Nemo approves it.</div>
+    </div>
+    <div class="cat-card" data-cat="LLM Output Cleanup">
+      <div class="cat-icon">🧹</div>
+      <div class="cat-name">LLM Output Cleanup</div>
+      <div class="cat-problem">Gemini grounding adds citation markers. Vertex AI returns redirect URLs. Both were V1 failures. These are the V2 fixes.</div>
+    </div>
+  </div>
+
+  <div class="pattern-explorer reveal">
+    <div class="explorer-bar">
+      <div class="exp-dot exp-dot-r"></div>
+      <div class="exp-dot exp-dot-y"></div>
+      <div class="exp-dot exp-dot-g"></div>
+      <div class="exp-title">Python Control Layer · 8 Patterns · V2 Field Names</div>
+    </div>
+    <div class="explorer-body">
+      <div class="pattern-detail" id="pat-detail">
+        <div style="font-size:10px;color:var(--muted);text-align:center;padding:80px 0;line-height:2;">
+          // select a pattern<br>to open the field notes
+        </div>
+      </div>
+      <div class="pattern-list" id="pat-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SECTION 04: FAILURE LOG ══ -->
 <!-- What V1 proved: every fix introduced a new failure surface. The infrastructure was the enemy. -->
 <section class="process" id="failures">
-  <div class="section-label reveal" data-num="Step 02">What Breaks</div>
+  <div class="section-label reveal" data-num="Step 04">What Breaks</div>
   <h2 class="process-h2 reveal">18 failure modes.<br><em>None were the agent prompts.</em></h2>
   <p class="process-lead reveal">
     V1 ran 1,500 cycles. Every failure was logged. Use this as a troubleshooting reference — if something breaks in a multi-agent pipeline, the cause is almost certainly in this list. The agents themselves never failed. Everything underneath them did. <span class="em">Filter by domain to find what broke where.</span>
@@ -853,96 +941,6 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
     </div>
   </div>
 </section>
-
-<!-- ══ SECTION 03: ORCHESTRATION TERMINAL ══ -->
-<!-- Claude Code as Admiral — how the pipeline actually runs -->
-<section class="process" id="orchestration">
-  <div class="section-label reveal" data-num="Step 03">Run It</div>
-  <h2 class="process-h2 reveal">One command.<br><em>Three agents gate by gate.</em></h2>
-  <p class="process-lead reveal">
-    Run <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--accent);background:rgba(255,255,255,0.06);padding:2px 6px;">node run.js "campaign"</code> and Claude Code takes it from there — invokes Ahab, confirms the GCS write, hands to Nemo, confirms again, hands to Neptune. No middleware, no polling, no server. Watch all three agents run simultaneously below.
-  </p>
-
-  <div class="orch-grid reveal">
-
-    <div class="orch-term">
-      <div class="orch-bar">
-        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
-        <span class="orch-title">01 · Ahab Discovers</span>
-      </div>
-      <div class="orch-output" id="orch-0"></div>
-    </div>
-
-    <div class="orch-term">
-      <div class="orch-bar">
-        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
-        <span class="orch-title">02 · Nemo Enriches</span>
-      </div>
-      <div class="orch-output" id="orch-1"></div>
-    </div>
-
-    <div class="orch-term">
-      <div class="orch-bar">
-        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
-        <span class="orch-title">03 · Neptune Synthesizes</span>
-      </div>
-      <div class="orch-output" id="orch-2"></div>
-    </div>
-
-  </div>
-</section>
-
-<!-- ══ SECTION 04: PYTHON CONTROL LAYER ══ -->
-<!-- Python validates, enforces contracts, and bridges to downstream tools -->
-<section class="process" id="python">
-  <div class="section-label reveal" data-num="Step 04">Validate</div>
-  <h2 class="process-h2 reveal">Node.js runs the agents.<br><em>Python checks every output.</em></h2>
-  <p class="process-lead reveal">
-    The pipeline writes four typed JSON files to GCS per run. Python reads them at the boundary, validates every field with Pydantic, enforces that leads can only move forward (no stage can skip), strips Gemini citation artifacts, and validates the Node-to-Python IPC handshake. If any field is wrong, it fails loud — before anything reaches a CRM. <span class="em">Select a pattern to read the field notes.</span>
-  </p>
-
-  <div class="cat-grid reveal" id="cat-grid">
-    <div class="cat-card on" data-cat="all">
-      <div class="cat-icon">⬡</div>
-      <div class="cat-name">All Patterns</div>
-      <div class="cat-problem">8 patterns across 4 categories. Each solves a specific control problem in a live LLM pipeline.</div>
-    </div>
-    <div class="cat-card" data-cat="Schema Enforcement">
-      <div class="cat-icon">🧱</div>
-      <div class="cat-name">Schema Enforcement</div>
-      <div class="cat-problem">LLM output is untyped text. Revenue data needs types, enums, and constraints. Pydantic closes that gap at the GCS boundary.</div>
-    </div>
-    <div class="cat-card" data-cat="State Machines">
-      <div class="cat-icon">⚙️</div>
-      <div class="cat-name">State Machines</div>
-      <div class="cat-problem">Illegal stage transitions are impossible, not just unlikely. No lead can reach Neptune before Nemo approves it.</div>
-    </div>
-    <div class="cat-card" data-cat="LLM Output Cleanup">
-      <div class="cat-icon">🧹</div>
-      <div class="cat-name">LLM Output Cleanup</div>
-      <div class="cat-problem">Gemini grounding adds citation markers. Vertex AI returns redirect URLs. Both were V1 failures. These are the V2 fixes.</div>
-    </div>
-  </div>
-
-  <div class="pattern-explorer reveal">
-    <div class="explorer-bar">
-      <div class="exp-dot exp-dot-r"></div>
-      <div class="exp-dot exp-dot-y"></div>
-      <div class="exp-dot exp-dot-g"></div>
-      <div class="exp-title">Python Control Layer · 8 Patterns · V2 Field Names</div>
-    </div>
-    <div class="explorer-body">
-      <div class="pattern-detail" id="pat-detail">
-        <div style="font-size:10px;color:var(--muted);text-align:center;padding:80px 0;line-height:2;">
-          // select a pattern<br>to open the field notes
-        </div>
-      </div>
-      <div class="pattern-list" id="pat-list"></div>
-    </div>
-  </div>
-</section>
-
-
 
 <!-- ══ OPERATOR ══ -->
 <section class="contact" id="contact">
@@ -1119,10 +1117,13 @@ You are not selling. You are confirming what the prospect already knows.
 // ── §02 Failure log ───────────────────────────────────────
 const failures = [
   {id:'01',domain:'Scraping',title:'Aggregator URL Through the Blocklist',
+   story:'Ahab completed discovery, returned 40 leads, everything looked clean. Then Nemo started enriching and found that 6 of the "company URLs" resolved to indeed.com job listings, not company websites. The pipeline consumed 6 Pro calls enriching Indeed.',
+   code:'// Ahab output — looked correct on the surface\n{ "Direct_URL": "jobs.acme.com/engineer-role?src=indeed", "Company": "Acme Corp" }\n\n// After redirect resolution:\n// jobs.acme.com → 301 → indeed.com/jobs/1234567\n// Blocklist checked "jobs.acme.com" ✓, never resolved.',
    cause:'Ahab returned an Indeed URL wrapped in a company-branded redirect. The blocklist checked the root domain, not the resolved destination. The redirect resolved to indeed.com after Nemo already consumed it.',
    fix:'Expanded blocklist to check both the raw URL and any redirect destination. Added a URL resolution step before Nemo received the payload.',
    v2:'Eliminated. Ahab runs via Vertex AI Grounding — Google Search returns direct company URLs. There is no scraper to circumvent and no redirect chain to follow.'},
   {id:'02',domain:'Scraping',title:'Hallucinated Company With No Real URL',
+   story:'Nemo burned a full Gemini Pro API call — the most expensive in the pipeline — enriching a company that did not exist. The company name looked real: "Clearpath Revenue Solutions, Inc." No website. No LinkedIn. No Google results. Just plausible fiction.',
    cause:'Gemini returned a company name that appeared plausible but did not exist. Nemo could not verify the direct URL and spent a full Pro call returning null for every field.',
    fix:'Added a pre-enrichment filter that rejected any lead where a Google search returned zero results for the company name.',
    v2:'Eliminated. Vertex AI Grounding requires an indexed source for every returned company. If a company is not findable via Google Search, it cannot enter the Catch array.'},
@@ -1131,7 +1132,8 @@ const failures = [
    fix:'Added a freshness check that hit the job URL before passing it to Nemo. Stale links were marked EXPIRED and excluded from enrichment.',
    v2:'Mitigated. Grounding sources are indexed, not live scraped, reducing rotation risk. The CATALYST_STALE rule hard-gates leads with stale funding signals before enrichment.'},
   {id:'04',domain:'Scraping',title:'Exclusion List Lost on Server Restart',
-   cause:'The exclusion list (previously seen companies) was held in a Postgres table that was not backed up. A VM restart without clean shutdown cleared the index. Ahab re-discovered companies already enriched in prior runs.',
+   story:'After an unplanned VM restart (GCP maintenance), the next campaign run discovered all the same companies as the previous one. Leads that had already been enriched, emailed, and rejected surfaced again. The exclusion list — 3 campaigns of data — was gone.',
+   cause:'The exclusion list (previously seen companies) was held in Postgres in-memory state that was not backed up. A VM restart without clean shutdown cleared the index. Ahab re-discovered companies already enriched in prior runs.',
    fix:'Persisted the exclusion list to a Postgres table with daily snapshots. Added a startup integrity check that refused to run if the exclusion table was empty.',
    v2:'Eliminated. Exclusion lists persist in the Vertex AI RAG dedup corpus. The corpus survives across restarts, VMs, and sessions — it is the only shared state for deduplication.'},
   {id:'05',domain:'Scraping',title:'Duplicate Company From Two Job Board Entry Points',
@@ -1143,6 +1145,8 @@ const failures = [
    fix:'Added a post-processing step that split long signal strings on sentence boundaries and discarded entries over 60 characters.',
    v2:'Mitigated by prompt. AHAB_SYSTEM explicitly constrains: "STRICT KEYWORD EXTRACTION: only short phrases or keywords." responseSchema enforcement planned for Ahab in V3.'},
   {id:'07',domain:'Routing',title:'n8n Expression Failed on Lowercase Field Name',
+   story:'The run appeared to complete successfully. Nemo triggered, Neptune triggered, no errors. The final output was 0 leads. An hour of debugging later: Ahab had returned "catch" lowercase in one run, and the entire pipeline silently passed through empty arrays.',
+   code:'// n8n expression (case-sensitive)\n{{ $json.Catch }}  // ← expected\n{{ $json.catch }}  // ← what Ahab returned once\n\n// n8n evaluates undefined silently\n// No error. No warning. 0 leads passed to Nemo.',
    cause:'Ahab\'s output used "catch" (lowercase) in one run. The n8n expression {{$json.Catch}} was case-sensitive and evaluated to undefined, silently skipping all leads.',
    fix:'Normalized all field names to Title_Case in the Node.js parser before writing to Postgres. Added an n8n guard checking for both "Catch" and "catch".',
    v2:'Eliminated. There is no n8n. The Node.js parser normalizes field names before writing ahab_output.json to GCS. Nemo reads a typed file, not an n8n expression result.'},
@@ -1159,9 +1163,11 @@ const failures = [
    fix:'Increased the n8n execution log limit. Added a progress counter writing completed lead count to Postgres every 5 leads.',
    v2:'Eliminated. No n8n. Claude Code is the orchestrator. Each agent writes its output to a GCS file before the next agent reads it. There is no shared execution log to overflow.'},
   {id:'11',domain:'Routing',title:'Postgres Connection Pool Exhausted',
+   story:'Mid-run on the largest campaign (47 leads): the pipeline seized. Nemo was processing leads 22-27 concurrently when every new DB connection started timing out. Leads 22-47 were silently dropped. The final output looked like a 21-lead run.',
+   code:'// Node.js error (swallowed by n8n retry logic)\nError: connect ETIMEDOUT — too many connections\n  pool.connect() → timeout after 5000ms\n  active_connections: 10/10 (max)\n  waiting: 8 requests\n\n// pgBouncer fix — added, then removed, then the pool\n// exhausted again under a different load pattern.',
    cause:'Five concurrent Nemo calls each opened a Postgres connection. With n8n overhead and the Express server also holding connections, all 10 pool slots were consumed. New connections timed out and compounded.',
    fix:'Increased pool size and added pgBouncer. Reduced concurrent Nemo calls to 3.',
-   v2:'Eliminated entirely. No Postgres. Nemo reads ahab_output.json from GCS and processes leads sequentially, writing results to nemo_output.json. GCS HTTP calls are stateless.'},
+   v2:'Eliminated entirely. No Postgres. Nemo reads ahab_output.json from GCS and processes leads sequentially, writing results to nemo_output.json. GCS HTTP calls are stateless — no connection pool to exhaust.'},
   {id:'12',domain:'Routing',title:'HTTP Server Serialized All Agent Calls',
    cause:'The Express server was the single entry point for all agent invocations. Under concurrent load, calls queued behind each other. A slow Nemo call blocked all subsequent Ahab and Neptune calls.',
    fix:'Moved to async queue management. Added worker threads for concurrent Nemo processing.',
@@ -1179,9 +1185,11 @@ const failures = [
    fix:'Added a post-processing step stripping citation markers via regex before writing the Bite to Postgres.',
    v2:'Enforced at the utility layer. utils/payload.js strips citation markers and Vertex grounding artifacts before the Bite reaches any downstream system.'},
   {id:'16',domain:'Output QA',title:'Neptune Returned Prose Instead of JSON',
+   story:'Neptune had been running cleanly for 3 campaigns. Then on campaign 4, about 1 in 8 leads came back as a block of prose with the JSON embedded somewhere in the middle. The parser tried to extract it, failed half the time, and produced leads with null Outreach_Bite fields that reached the CRM.',
+   code:`// Neptune response without responseSchema:\n"Here is the structured output you requested:\\n\\n\`\`\`json\\n{\\n  \\"Outreach_Bite\\": \\"Jamie, saw the $16M...\\",\\n  \\"Neptune_Log\\": {...}\\n}\`\`\`"\n\n// Parser tried: JSON.parse → failed\n// Fallback: extract between ``` → sometimes worked\n// Result: ~50% null Outreach_Bite fields in the CRM`,
    cause:'Without responseSchema enforcement, Neptune occasionally returned the Outreach_Bite as a prose paragraph with embedded JSON rather than a clean JSON object. The parser failed silently.',
    fix:'Added fence-stripping logic and a JSON extraction fallback that attempted to parse markdown-wrapped JSON.',
-   v2:'Eliminated. Neptune uses responseSchema enforcement — the API rejects any response that does not match the typed schema. There is no fence to strip and no prose to parse.'},
+   v2:'Eliminated. Neptune uses responseSchema enforcement at the API level — Vertex AI rejects any response that does not match the typed schema before it reaches the application. There is no prose to parse and no fence to strip.'},
   {id:'17',domain:'Output QA',title:'Character Encoding Mismatch on Company Names',
    cause:'Company names with em-dashes or accented characters caused encoding mismatches between the Latin-1 scraping layer and the UTF-8 Postgres text field, producing mojibake in the final Outreach_Bite.',
    fix:'Forced UTF-8 encoding at every layer in the Node.js pipeline.',
@@ -1218,12 +1226,16 @@ const failures = [
   function renderDetail(id) {
     const f = failures.find(x => x.id === id);
     if (!f) return;
+    const storyBlock = f.story ? `<div class="detail-card" style="border-left:3px solid rgba(255,255,255,0.15)"><div class="detail-label" style="color:var(--muted)">What Happened</div><div class="detail-body">${f.story}</div></div>` : '';
+    const codeBlock = f.code ? `<div class="detail-card" style="border-left:3px solid rgba(118,161,255,0.4);padding:0;overflow:hidden"><div class="detail-label" style="color:var(--action);padding:12px 16px 0">Failure Output</div><pre style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.7;padding:10px 16px 14px;color:#D7E4FF;white-space:pre-wrap;margin:0;background:rgba(0,0,0,0.2)">${f.code}</pre></div>` : '';
     detailEl.innerHTML = `
       <div class="detail-num">${f.domain} · Failure ${f.id}</div>
       <div class="detail-title">${f.title}</div>
+      ${storyBlock}
+      ${codeBlock}
       <div class="detail-card cause"><div class="detail-label">Root Cause</div><div class="detail-body">${f.cause}</div></div>
-      <div class="detail-card fix"><div class="detail-label">V1 Fix Applied</div><div class="detail-body">${f.fix}</div></div>
-      <div class="detail-card v2"><div class="detail-label">V2 Status</div><div class="detail-body">${f.v2}</div></div>`;
+      <div class="detail-card fix"><div class="detail-label">V1 Patch Applied</div><div class="detail-body">${f.fix}</div></div>
+      <div class="detail-card v2"><div class="detail-label">V2 Resolution</div><div class="detail-body">${f.v2}</div></div>`;
   }
 
   domainGrid.querySelectorAll('.domain-card').forEach(c => {
