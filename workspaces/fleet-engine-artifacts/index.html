@@ -32,7 +32,7 @@ body {
     linear-gradient(rgba(255,107,53,0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,107,53,0.05) 1px, transparent 1px);
   background-size: 48px 48px;
-  background-attachment: fixed;
+  background-attachment: scroll;
   color: var(--text);
   font-size: 14px; line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -55,9 +55,8 @@ header {
 .header-left { display: flex; flex-direction: column; gap: 18px; }
 .header-right {
   padding: 24px 28px;
-  background: rgba(7,8,12,0.72);
-  border: 1px solid rgba(255,107,53,0.14);
-  backdrop-filter: blur(8px);
+  background: rgba(7,8,12,0.85);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 .eyebrow {
   font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
@@ -291,19 +290,7 @@ footer a:hover { color: var(--orange); }
   border-color: rgba(155,109,255,0.20);
 }
 
-/* ── MMBN: HP bar in crew items ──────────────────────────── */
-.crew-item {
-  position: relative;
-}
-.crew-item::before {
-  content: '';
-  position: absolute; left: 0; top: 0;
-  width: 3px; height: 100%;
-  opacity: 0.4;
-}
-.crew-item:nth-child(1)::before { background: var(--accent); }
-.crew-item:nth-child(2)::before { background: var(--action); }
-.crew-item:nth-child(3)::before { background: var(--purple); }
+/* crew items — no decorative bars, let content speak */
 
 /* ── panels-wrap ─────────────────────────────────────────── */
 .panels-wrap {
