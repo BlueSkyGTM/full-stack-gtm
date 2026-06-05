@@ -27,24 +27,17 @@
 html { scroll-behavior: smooth; }
 body {
   font-family: 'DM Sans', sans-serif;
-  background: var(--bg); color: var(--text);
+  background-color: #07080C;
+  background-image:
+    linear-gradient(rgba(255,107,53,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,107,53,0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-attachment: fixed;
+  color: var(--text);
   font-size: 14px; line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   display: flex; flex-direction: column;
-}
-
-/* ── dot grid bg ── */
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 48px 48px;
-  opacity: 0.18;
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* ── layout ── */
@@ -326,9 +319,8 @@ footer a:hover { color: var(--orange); }
 
   <header>
     <div class="header-left">
-      <div class="eyebrow">AI GTM Enrichment Pipeline</div>
-      <h1>Fleet<br><em>Engine</em></h1>
-      <p class="deck-sub" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--orange);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:16px;font-weight:500;">A three-agent GTM pipeline</p>
+      <h1>Fleet <em>Engine</em></h1>
+      <p class="deck-sub" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--orange);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:16px;font-weight:500;">Three-agent GTM pipeline · V1 archived · V2 live</p>
       <p class="deck">Three AI agents run in sequence. Ahab finds companies showing hiring signals. Nemo researches what's broken inside each one. Neptune writes a first message tailored to their specific situation — not a template, grounded in evidence. This is the engineering record of building it, breaking it 18 ways, and rebuilding it until it worked.</p>
       <div class="select-hint">Select a version to enter</div>
     </div>

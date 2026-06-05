@@ -42,7 +42,12 @@ html { scroll-behavior: smooth; }
 
 body {
   font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
+  background-color: #06090F;
+  background-image:
+    linear-gradient(rgba(118,161,255,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(118,161,255,0.055) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-attachment: fixed;
   color: var(--text);
   overflow-x: hidden;
   font-feature-settings: "ss01", "ss02";
@@ -88,16 +93,15 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outlin
   padding: 72px 48px 96px;
   position: relative;
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(118,161,255,0.15);
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 .hero-grid {
   position: absolute; inset: 0;
-  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 56px 56px;
-  opacity: 0.22;
+  background: transparent; /* page background grid is already the grid */
+  opacity: 1;
   pointer-events: none;
 }
 .hero-grid::after {
@@ -122,8 +126,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outlin
 .btn-b:hover { border-color: var(--text); }
 
 /* ── Stat bar ────────────────────────────────────────────── */
-.stat-bar { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--border); }
-.stat-cell { padding: 56px 40px 48px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 18px; }
+.stat-bar { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid rgba(118,161,255,0.12); background: rgba(6,9,15,0.7); backdrop-filter: blur(4px); }
+.stat-cell { padding: 56px 40px 48px; border-right: 1px solid rgba(118,161,255,0.10); display: flex; flex-direction: column; gap: 18px; }
 .stat-cell:last-child { border-right: none; }
 .stat-n { font-size: clamp(56px, 6.5vw, 88px); font-weight: 600; color: var(--white); line-height: 0.9; font-optical-sizing: auto; }
 .stat-d { font-size: 13px; color: var(--text); line-height: 1.5; font-weight: 400; max-width: 230px; }
@@ -135,7 +139,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outlin
 .process-h2 { font-family: 'Cabinet Grotesk', 'DM Sans', sans-serif; font-weight: 800; font-size: clamp(38px, 4.4vw, 64px); line-height: 1.0; margin-bottom: 32px; max-width: 18ch; font-optical-sizing: auto; }
 .process-h2 em { font-style: normal; font-weight: 500; color: var(--action); }
 
-.process { padding: 104px 36px 88px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.process { padding: 104px 36px 88px; border-bottom: 1px solid rgba(118,161,255,0.10); background: transparent; }
 .process-lead { font-size: 17px; color: var(--text); max-width: 640px; line-height: 1.6; margin-bottom: 56px; font-weight: 300; }
 .process-lead .em { color: var(--action); }
 
@@ -551,27 +555,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   color: #FFD580; white-space: pre; overflow-x: auto;
 }
 
-/* ── MMBN: Section area backgrounds (DESIGN.md §§01-04) ──── */
-section#languages {
-  background-color: #030810;
-  background-image: radial-gradient(rgba(118,161,255,0.08) 1px, transparent 1px);
-  background-size: 22px 22px;
-}
-section#failures {
-  background-color: #140306;
-  background-image: repeating-linear-gradient(0deg, rgba(255,85,85,0.05) 0px, rgba(255,85,85,0.05) 1px, transparent 1px, transparent 32px);
-}
-section#orchestration {
-  background-color: #030B03;
-  background-image: repeating-linear-gradient(90deg, rgba(185,227,106,0.04) 0px, rgba(185,227,106,0.04) 1px, transparent 1px, transparent 28px);
-}
-section#python {
-  background-color: #0D0800;
-  background-image:
-    linear-gradient(rgba(240,160,48,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(240,160,48,0.05) 1px, transparent 1px);
-  background-size: 30px 30px;
-}
+/* sections are transparent — page background grid shows through */
 
 /* ── MMBN: Section label as NET area marker ──────────────── */
 .section-label {
