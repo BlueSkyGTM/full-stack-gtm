@@ -803,7 +803,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 <!-- ══ SECTION 03: ORCHESTRATION TERMINAL ══ -->
 <!-- Claude Code as Admiral — how the pipeline actually runs -->
 <section class="process" id="orchestration">
-  <div class="section-label reveal" data-num="Step 03">Run It</div>
+  <div class="section-label reveal" data-num="Step 02">Run It</div>
   <h2 class="process-h2 reveal">One command.<br><em>Three agents gate by gate.</em></h2>
   <p class="process-lead reveal">
     Run <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--accent);background:rgba(255,255,255,0.06);padding:2px 6px;">node run.js "campaign"</code> and Claude Code takes it from there — invokes Ahab, confirms the GCS write, hands to Nemo, confirms again, hands to Neptune. No middleware, no polling, no server. Watch all three agents run simultaneously below.
@@ -841,7 +841,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 <!-- ══ SECTION 02: PYTHON CONTROL LAYER ══ -->
 <!-- Python validates, enforces contracts, and bridges to downstream tools -->
 <section class="process" id="python">
-  <div class="section-label reveal" data-num="Step 02">Validate</div>
+  <div class="section-label reveal" data-num="Step 03">Validate</div>
   <h2 class="process-h2 reveal">Node.js runs the agents.<br><em>Python checks every output.</em></h2>
   <p class="process-lead reveal">
     The pipeline writes four typed JSON files to GCS per run. Python reads them at the boundary, validates every field with Pydantic, enforces that leads can only move forward (no stage can skip), strips Gemini citation artifacts, and validates the Node-to-Python IPC handshake. If any field is wrong, it fails loud — before anything reaches a CRM. <span class="em">Select a pattern to read the field notes.</span>
