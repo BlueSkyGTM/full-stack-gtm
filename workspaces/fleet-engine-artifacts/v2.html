@@ -75,9 +75,9 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outlin
   background: rgba(10,10,10,0.92);
   backdrop-filter: blur(16px);
 }
-.nav-back { font-size: 13px; color: var(--muted); text-decoration: none; transition: color 0.2s; }
-.nav-back:hover { color: var(--action); }
-.nav-title { font-size: 13px; color: var(--muted); font-weight: 400; }
+.nav-back { font-size: 13px; color: var(--action); text-decoration: none; transition: color 0.2s; font-weight: 500; }
+.nav-back:hover { color: var(--white); }
+.nav-title { font-size: 13px; color: var(--text); font-weight: 500; }
 .nav-link { font-size: 13px; color: var(--action); text-decoration: none; border: 1px solid rgba(118,161,255,0.38); padding: 6px 14px; transition: all 0.18s; }
 .nav-link:hover { background: var(--action); color: var(--bg); }
 
@@ -105,7 +105,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outlin
 }
 .hero-inner { position: relative; z-index: 1; max-width: 1080px; }
 
-.hero-pre { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 40px; display: flex; align-items: center; gap: 12px; }
+.hero-pre { font-size: 12px; color: var(--action); letter-spacing: 0.04em; margin-bottom: 40px; display: flex; align-items: center; gap: 12px; font-weight: 500; }
 .hero-pre::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--action); box-shadow: 0 0 12px var(--action); }
 
 .hero-h1 { font-size: clamp(48px, 6.6vw, 92px); line-height: 1.04; font-weight: 500; margin-bottom: 40px; max-width: 16ch; font-optical-sizing: auto; }
@@ -129,8 +129,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--action); outlin
 .stat-d b { color: var(--text); font-weight: 500; display: block; margin-bottom: 2px; }
 
 /* ── Shared section primitives ───────────────────────────── */
-.section-label { font-size: 10px; color: var(--action); letter-spacing: 0.04em; margin-bottom: 22px; display: flex; align-items: center; gap: 12px; }
-.section-label::before { content: attr(data-num); color: var(--text); font-weight: 400; }
+.section-label { font-size: 11px; color: var(--action); letter-spacing: 0.06em; margin-bottom: 22px; display: flex; align-items: center; gap: 12px; font-weight: 600; text-transform: uppercase; }
+.section-label::before { content: attr(data-num); color: var(--accent); font-weight: 700; }
 
 .process-h2 { font-weight: 500; font-size: clamp(38px, 4.4vw, 64px); line-height: 1.0; margin-bottom: 32px; max-width: 18ch; font-optical-sizing: auto; }
 .process-h2 em { font-style: normal; font-weight: 500; color: var(--action); }
@@ -394,69 +394,75 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 .reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease, transform 0.7s ease; }
 .reveal.vis { opacity: 1; transform: translateY(0); }
 
-/* ── Trilingual code explorer ────────────────────────────── */
-.lang-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0; }
-.lang-tab { font-size: 12px; font-weight: 500; padding: 14px 24px; background: none; border: none; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.2s, border-color 0.2s; letter-spacing: 0.02em; }
-.lang-tab:hover { color: var(--text); }
-.lang-tab.on { color: var(--action); border-bottom-color: var(--action); }
-.lang-panel {
-  border: 1px solid var(--border);
-  border-top: none;
-  background: #07090e;
-  min-height: 340px;
-  overflow: hidden;
+/* ── Trilingual three-column layout ──────────────────────── */
+.lang-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--border2);
+  border: 1px solid var(--border2);
+  box-shadow: 0 42px 120px rgba(0,0,0,0.34);
 }
-.lang-code-wrap { padding: 0; }
-.lang-code-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); }
-.lang-code-dot { width: 9px; height: 9px; border-radius: 50%; }
-.lang-code-dot.r { background: #FF5F57; }
-.lang-code-dot.y { background: #FFBD2E; }
-.lang-code-dot.g { background: #28C840; }
-.lang-code-filename { font-size: 10px; color: var(--muted); margin: 0 auto; letter-spacing: 0.04em; }
-.lang-code {
-  font-family: 'Courier New', 'DM Mono', monospace;
-  font-size: 12px; line-height: 1.9; color: var(--text);
-  padding: 22px 28px; overflow-x: auto;
+.lang-col { background: #07090e; display: flex; flex-direction: column; }
+.lang-col-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); }
+.lang-col-dots { display: flex; gap: 5px; }
+.lang-dot { width: 9px; height: 9px; border-radius: 50%; }
+.lang-dot.r { background: #FF5F57; }
+.lang-dot.y { background: #FFBD2E; }
+.lang-dot.g { background: #28C840; }
+.lang-col-file { font-size: 10px; color: var(--muted); margin: 0 auto; letter-spacing: 0.04em; }
+.lang-col-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid; }
+.lang-col.node .lang-col-tag { color: var(--action); border-color: rgba(118,161,255,0.35); background: rgba(118,161,255,0.06); }
+.lang-col.py   .lang-col-tag { color: #f0a030; border-color: rgba(240,160,48,0.35); background: rgba(240,160,48,0.06); }
+.lang-col.pmt  .lang-col-tag { color: var(--accent); border-color: rgba(185,227,106,0.35); background: rgba(185,227,106,0.06); }
+.lang-col-code {
+  font-family: 'Courier New', monospace;
+  font-size: 12.5px; line-height: 1.85; color: var(--text);
+  padding: 18px 20px; overflow-x: auto;
   scrollbar-color: #365FA8 #0D1118; scrollbar-width: thin;
-  white-space: pre;
+  white-space: pre; flex: 1;
 }
+.lang-col-code .kw  { color: #76A1FF; }
+.lang-col-code .str { color: #FFD580; }
+.lang-col-code .cm  { color: #5A6070; }
+.lang-col-code .fn  { color: #B9E36A; }
+.lang-col-code .py  { color: #f0a030; }
+.lang-col-code .hi  { color: #E6E6E6; }
+.lang-col-desc { padding: 14px 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text); line-height: 1.55; font-weight: 300; background: rgba(0,0,0,0.2); }
+.lang-col-desc strong { font-weight: 500; }
+.lang-col.node .lang-col-desc strong { color: var(--action); }
+.lang-col.py   .lang-col-desc strong { color: #f0a030; }
+.lang-col.pmt  .lang-col-desc strong { color: var(--accent); }
+/* keep old vars for any fallback */
 .lang-code .kw   { color: #76A1FF; }
 .lang-code .str  { color: #FFD580; }
 .lang-code .cm   { color: #5A6070; }
 .lang-code .fn   { color: #B9E36A; }
 .lang-code .py   { color: #f0a030; }
 .lang-code .hi   { color: #E6E6E6; }
-.lang-desc { padding: 20px 28px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text); line-height: 1.65; font-weight: 300; background: rgba(0,0,0,0.2); }
-.lang-desc strong { color: var(--action); font-weight: 500; }
 
-/* ── Orchestration terminal ──────────────────────────────── */
-.orch-terminal {
+/* ── Orchestration three-terminal grid ───────────────────── */
+.orch-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--border2);
   border: 2px solid rgba(118,161,255,0.40);
-  background: #060810;
   box-shadow: 0 42px 120px rgba(0,0,0,0.48), 0 0 0 1px rgba(118,161,255,0.08);
-  overflow: hidden;
 }
-.orch-bar { display: flex; align-items: center; gap: 8px; padding: 12px 18px; background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--border); }
-.orch-dot { width: 10px; height: 10px; border-radius: 50%; }
+.orch-term { background: #060810; display: flex; flex-direction: column; }
+.orch-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--border); }
+.orch-dot { width: 9px; height: 9px; border-radius: 50%; }
 .orch-dot.r { background: #FF5F57; }
 .orch-dot.y { background: #FFBD2E; }
 .orch-dot.g { background: #28C840; }
-.orch-title { font-size: 10px; color: var(--muted); margin: 0 auto; letter-spacing: 0.04em; }
-.orch-stages { display: flex; border-bottom: 1px solid var(--border); }
-.orch-stage-btn { flex: 1; padding: 12px; font-size: 11px; font-weight: 600; color: var(--muted); background: none; border: none; border-right: 1px solid var(--border); cursor: pointer; letter-spacing: 0.04em; transition: all 0.18s; }
-.orch-stage-btn:last-child { border-right: none; }
-.orch-stage-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
-.orch-stage-btn.on { color: var(--action); background: rgba(118,161,255,0.06); border-bottom: 2px solid var(--action); }
+.orch-title { font-size: 10px; color: var(--action); margin: 0 auto; letter-spacing: 0.04em; font-weight: 600; }
 .orch-output {
   font-family: 'Courier New', monospace;
   font-size: 12px; line-height: 1.85;
-  padding: 24px 28px;
-  min-height: 280px;
+  padding: 20px 22px;
   overflow-y: auto;
+  flex: 1;
   scrollbar-color: #365FA8 #0D1118; scrollbar-width: thin;
 }
 .orch-line { display: block; }
-.orch-line.dim   { color: #3a4050; }
+.orch-line.dim   { color: #7a8898; }
 .orch-line.cmd   { color: #B9E36A; }
 .orch-line.info  { color: #8899AA; }
 .orch-line.ok    { color: #28C840; }
@@ -630,15 +636,40 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   <div class="section-label reveal" data-num="01">Three Languages. One Pipeline.</div>
   <h2 class="process-h2 reveal">Node.js. Python. <em>Agent Prompts.</em></h2>
   <p class="process-lead reveal">
-    Cortex runs across three distinct code layers — each written in a different language, each with a different job. Node.js runs the agents through Vertex AI. Python ADK hosts the orchestrator on Agent Engine and validates every output contract with Pydantic. Agent prompts are the third language: version-controlled instruction sets that define how each agent thinks. <span class="em">Select a layer to read it.</span>
+    Cortex runs across three distinct code layers — each written in a different language, each with a different job. Node.js runs the agents through Vertex AI. Python ADK hosts the orchestrator on Agent Engine and validates every output contract with Pydantic. Agent prompts are the third language: version-controlled instruction sets that define how each agent thinks.
   </p>
-  <div class="reveal">
-    <div class="lang-tabs" id="lang-tabs">
-      <button class="lang-tab on" data-lang="node">Node.js — Agent Runtime</button>
-      <button class="lang-tab" data-lang="python">Python ADK — Orchestrator</button>
-      <button class="lang-tab" data-lang="prompts">Agent Prompts — Instruction Layer</button>
+  <div class="lang-grid reveal" id="lang-grid">
+
+    <div class="lang-col node">
+      <div class="lang-col-bar">
+        <div class="lang-col-dots"><span class="lang-dot r"></span><span class="lang-dot y"></span><span class="lang-dot g"></span></div>
+        <span class="lang-col-file">agents/neptune.js</span>
+        <span class="lang-col-tag">Node.js</span>
+      </div>
+      <div class="lang-col-code" id="lang-node"></div>
+      <div class="lang-col-desc"><strong>Agent runtime.</strong> Each agent calls Vertex AI directly via google-auth-library. responseSchema enforcement means Neptune cannot return prose — Outreach_Bite, Neptune_Log, and funding_signal are typed fields at the API level.</div>
     </div>
-    <div class="lang-panel" id="lang-panel"></div>
+
+    <div class="lang-col py">
+      <div class="lang-col-bar">
+        <div class="lang-col-dots"><span class="lang-dot r"></span><span class="lang-dot y"></span><span class="lang-dot g"></span></div>
+        <span class="lang-col-file">agents.py</span>
+        <span class="lang-col-tag">Python ADK</span>
+      </div>
+      <div class="lang-col-code" id="lang-python"></div>
+      <div class="lang-col-desc"><strong>Orchestration layer.</strong> LlmAgent definitions deploy to Google Agent Engine. Each agent gets a RagTool pointing to its Vertex AI corpus. The ADK path runs hosted — no local process needed.</div>
+    </div>
+
+    <div class="lang-col pmt">
+      <div class="lang-col-bar">
+        <div class="lang-col-dots"><span class="lang-dot r"></span><span class="lang-dot y"></span><span class="lang-dot g"></span></div>
+        <span class="lang-col-file">REFERENCES.md → NEPTUNE_SYSTEM</span>
+        <span class="lang-col-tag">Agent Prompts</span>
+      </div>
+      <div class="lang-col-code" id="lang-prompts"></div>
+      <div class="lang-col-desc"><strong>Instruction layer.</strong> Version-controlled, tested across 1,500 cycles, transferred verbatim from V1 to V2. The Schwartz framework, contact framing, and output contract — all written as structured natural language.</div>
+    </div>
+
   </div>
 </section>
 
@@ -702,22 +733,35 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   <div class="section-label reveal" data-num="03">Claude Code Orchestration — The Admiral in Action</div>
   <h2 class="process-h2 reveal">One Command. <em>Three Agents. The Pipeline Runs.</em></h2>
   <p class="process-lead reveal">
-    Claude Code is the Admiral — it invokes Ahab, gates the handoff to Nemo, gates the handoff to Neptune, and delivers. No middleware. No server. No polling. GCS files are the only shared state. <span class="em">Click a stage to see how the pipeline actually moves.</span>
+    Claude Code is the Admiral — it invokes Ahab, gates the handoff to Nemo, gates the handoff to Neptune, and delivers. No middleware. No server. No polling. GCS files are the only shared state between stages.
   </p>
 
-  <div class="orch-terminal reveal">
-    <div class="orch-bar">
-      <span class="orch-dot r"></span>
-      <span class="orch-dot y"></span>
-      <span class="orch-dot g"></span>
-      <span class="orch-title">Claude Code → Fleet Engine: Cortex · pipeline run</span>
+  <div class="orch-grid reveal">
+
+    <div class="orch-term">
+      <div class="orch-bar">
+        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
+        <span class="orch-title">01 · Ahab Discovers</span>
+      </div>
+      <div class="orch-output" id="orch-0"></div>
     </div>
-    <div class="orch-stages" id="orch-stages">
-      <button class="orch-stage-btn on" data-stage="0">01 · Ahab Discovers</button>
-      <button class="orch-stage-btn" data-stage="1">02 · Nemo Enriches</button>
-      <button class="orch-stage-btn" data-stage="2">03 · Neptune Synthesizes</button>
+
+    <div class="orch-term">
+      <div class="orch-bar">
+        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
+        <span class="orch-title">02 · Nemo Enriches</span>
+      </div>
+      <div class="orch-output" id="orch-1"></div>
     </div>
-    <div class="orch-output" id="orch-output"></div>
+
+    <div class="orch-term">
+      <div class="orch-bar">
+        <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
+        <span class="orch-title">03 · Neptune Synthesizes</span>
+      </div>
+      <div class="orch-output" id="orch-2"></div>
+    </div>
+
   </div>
 </section>
 
@@ -771,46 +815,6 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   </div>
 </section>
 
-<!-- ══ SECTION 05: BUILD PHASES ══ -->
-<section class="process" id="phases">
-  <div class="section-label reveal" data-num="05">Three Phases</div>
-  <h2 class="process-h2 reveal">GCS Pipeline. Clay Delivery. <em>Self-Improving.</em></h2>
-  <p class="process-lead reveal">
-    V2 builds in three gates. Each gate produces something a human can inspect before the next phase opens. <span class="em">Phase 1 is live. Phase 2 delivers to Clay and HubSpot. Phase 3 closes the feedback loop.</span>
-  </p>
-
-  <div class="phase-grid reveal">
-    <div class="phase-card">
-      <div class="phase-num">Phase 1 <span class="phase-status done">LIVE</span></div>
-      <div class="phase-q">GCS Pipeline + RAG</div>
-      <div class="phase-desc">
-        Ahab hunts, Nemo enriches, Neptune writes the bite. All three write to GCS at each stage — <strong>no lead advances until the previous stage completes</strong>. Leads that fail Nemo's CATALYST_STALE check route to shipwrecked.json and never reach Neptune.<br><br>
-        Three RAG corpora are live. Every run compounds the dedup vault, the friction calibration store, and the bite variation store. The pipeline gets smarter each time.
-      </div>
-      <div class="phase-gate"><b>Success gate:</b> 50 leads in neptune_output.json with Outreach_Bite populated.</div>
-    </div>
-    <div class="phase-card">
-      <div class="phase-num">Phase 2</div>
-      <div class="phase-q">Clay + HubSpot Delivery</div>
-      <div class="phase-desc">
-        Two Clay tables — Fleet Engine: GTM and Fleet Engine: Accounting. Each sourced from a webhook. Neptune routes by Target_Service_Intent. <code>DELIVER=true node run.js</code> pushes after each run.<br><br>
-        Clay tables sync to HubSpot: contact + Outreach_Bite note written on arrival. No enrichment columns — Neptune delivers pre-enriched rows.<br><br>
-        MCP server delivery deferred to V3.
-      </div>
-      <div class="phase-gate"><b>Success gate:</b> Both Clay tables receiving rows. HubSpot contacts created.</div>
-    </div>
-    <div class="phase-card">
-      <div class="phase-num">Phase 3</div>
-      <div class="phase-q">MCP + Reply Feedback</div>
-      <div class="phase-desc">
-        MCP server exposes Neptune output to downstream tools — <code>get_leads</code>, <code>push_to_clay</code>, <code>push_to_sheet</code>. Claude Code as the only orchestrator, no Express server.<br><br>
-        Reply outcomes feed back into RAG: replied entries weight higher in Neptune retrieval. Current RAG improves Bite variety. Phase 3 closes the loop on quality vs. variety.<br><br>
-        See CLAUDE_V3.md.
-      </div>
-      <div class="phase-gate"><b>Success gate:</b> Neptune Bites vary structurally and improve reply rate over 3+ campaigns.</div>
-    </div>
-  </div>
-</section>
 
 
 <!-- ══ OPERATOR ══ -->
@@ -945,31 +949,13 @@ You are not selling. You are confirming what the prospect already knows.
   }
 };
 
-(function initLangExplorer() {
-  const tabs = document.querySelectorAll('.lang-tab');
-  const panel = document.getElementById('lang-panel');
-  function render(lang) {
-    const d = langContent[lang];
-    panel.innerHTML = `
-      <div class="lang-code-wrap">
-        <div class="lang-code-bar">
-          <span class="lang-code-dot r"></span>
-          <span class="lang-code-dot y"></span>
-          <span class="lang-code-dot g"></span>
-          <span class="lang-code-filename">${d.file}</span>
-        </div>
-        <div class="lang-code">${d.code}</div>
-        <div class="lang-desc">${d.desc}</div>
-      </div>`;
-  }
-  tabs.forEach(t => {
-    t.addEventListener('click', () => {
-      tabs.forEach(x => x.classList.remove('on'));
-      t.classList.add('on');
-      render(t.dataset.lang);
-    });
+// §01 — render all three columns simultaneously
+(function initLangColumns() {
+  const cols = { node: 'lang-node', python: 'lang-python', prompts: 'lang-prompts' };
+  Object.entries(cols).forEach(([lang, id]) => {
+    const el = document.getElementById(id);
+    if (el && langContent[lang]) el.innerHTML = langContent[lang].code;
   });
-  render('node');
 })();
 
 // ── §02 Failure log ───────────────────────────────────────
@@ -1160,25 +1146,14 @@ const orchStages = [
   ]
 ];
 
-(function initOrchTerminal() {
-  const btns = document.querySelectorAll('.orch-stage-btn');
-  const out = document.getElementById('orch-output');
-
-  function renderStage(i) {
-    out.innerHTML = orchStages[i].map(l =>
+// §03 — render all three terminals simultaneously
+(function initOrchTerminals() {
+  [0, 1, 2].forEach(i => {
+    const el = document.getElementById('orch-' + i);
+    if (el) el.innerHTML = orchStages[i].map(l =>
       `<span class="orch-line ${l.cls}">${l.t || ''}</span>`
     ).join('\n');
-  }
-
-  btns.forEach(b => {
-    b.addEventListener('click', () => {
-      btns.forEach(x => x.classList.remove('on'));
-      b.classList.add('on');
-      renderStage(+b.dataset.stage);
-    });
   });
-
-  renderStage(0);
 })();
 
 // ── §04 Python pattern explorer ───────────────────────────
@@ -1406,7 +1381,9 @@ def read_with_retry(bucket, blob_name: str, model, retries=3, delay=2.0):
     });
   });
 
+  currentPat = '01';
   renderList();
+  renderPatDetail('01');
 })();
 </script>
 </body>

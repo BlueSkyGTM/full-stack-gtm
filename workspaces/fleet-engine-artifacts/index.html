@@ -51,13 +51,18 @@ body::before {
 
 /* ── header ── */
 header {
-  padding: 48px 48px 0;
-  display: flex; flex-direction: column; gap: 16px;
+  padding: 56px 48px 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: start;
   max-width: 1200px; margin: 0 auto; width: 100%;
 }
+.header-left { display: flex; flex-direction: column; gap: 18px; }
+.header-right { padding-top: 8px; }
 .eyebrow {
-  font-size: 10px; font-weight: 500; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--muted);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--orange);
   display: flex; align-items: center; gap: 10px;
 }
 .eyebrow::before {
@@ -65,20 +70,41 @@ header {
   background: var(--orange); box-shadow: 0 0 10px var(--orange); flex-shrink: 0;
 }
 h1 {
-  font-size: clamp(32px, 4vw, 52px); font-weight: 500;
-  line-height: 1.08; letter-spacing: -0.01em; max-width: 14ch;
+  font-size: clamp(36px, 4.5vw, 58px); font-weight: 500;
+  line-height: 1.06; letter-spacing: -0.01em;
 }
 h1 em { font-style: normal; color: var(--orange); }
 .deck {
-  font-size: 15px; color: var(--muted); font-weight: 300;
-  max-width: 480px; line-height: 1.65;
+  font-size: 15px; color: var(--text); font-weight: 300;
+  line-height: 1.7;
 }
+
+/* ── right-side crew details ── */
+.crew-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--orange); margin-bottom: 18px; display: flex; align-items: center; gap: 10px;
+}
+.crew-label::before { content: ''; flex: 1; height: 1px; background: var(--orange); opacity: 0.3; max-width: 32px; }
+.crew-list { display: flex; flex-direction: column; gap: 0; }
+.crew-item {
+  display: grid; grid-template-columns: 80px 1fr; gap: 16px;
+  padding: 16px 0; border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.crew-item:last-child { border-bottom: none; }
+.crew-name { font-size: 13px; font-weight: 700; line-height: 1.2; }
+.crew-name .v1 { color: var(--accent); }
+.crew-name .v2 { color: var(--action); }
+.crew-name .v3 { color: var(--purple); }
+.crew-role { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.crew-desc { font-size: 13px; color: var(--text); line-height: 1.6; font-weight: 300; }
+.crew-desc strong { font-weight: 500; }
 
 /* ── select hint ── */
 .select-hint {
-  margin-top: 8px; font-size: 11px; font-weight: 500;
+  margin-top: 4px; font-size: 12px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--orange); display: flex; align-items: center; gap: 8px;
+  color: var(--orange); display: flex; align-items: center; gap: 10px;
 }
 .select-hint::before { content: ''; width: 20px; height: 1px; background: var(--orange); opacity: 0.5; }
 
@@ -248,7 +274,8 @@ footer a { font-size: 10px; color: var(--muted); text-decoration: none; transiti
 footer a:hover { color: var(--orange); }
 
 /* ── responsive ── */
-@media (max-width: 860px) {
+@media (max-width: 1000px) {
+  header { grid-template-columns: 1fr; gap: 32px; }
   .panels-wrap { grid-template-columns: 1fr; padding: 28px; }
   header { padding: 36px 28px 0; }
   footer { padding: 20px 28px; }
@@ -259,10 +286,29 @@ footer a:hover { color: var(--orange); }
 <div class="page">
 
   <header>
-    <div class="eyebrow">AI GTM Enrichment Pipeline · Raymond Fenton</div>
-    <h1>Three versions.<br>One problem.<br><em>Not finished.</em></h1>
-    <p class="deck">Fleet Engine is an AI pipeline that turns job listings and funding signals into warm, grounded outreach. Three agents work as one crew: Ahab hunts the open water for companies showing the right signals, Nemo dives deep into each one and surfaces the friction behind why they're hiring, and Neptune — commanding the whole sea — synthesizes an outreach bite that speaks to that exact pressure. This is three versions of building them until they ran clean.</p>
-    <div class="select-hint">Select a version to enter</div>
+    <div class="header-left">
+      <div class="eyebrow">AI GTM Enrichment Pipeline · Raymond Fenton</div>
+      <h1>Three versions.<br>One problem.<br><em>Not finished.</em></h1>
+      <p class="deck">Fleet Engine turns job listings and funding signals into warm, grounded outreach. Three AI agents work as one crew — hunting, enriching, and writing — across three iterations of infrastructure until the architecture stopped failing.</p>
+      <div class="select-hint">Select a version to enter</div>
+    </div>
+    <div class="header-right">
+      <div class="crew-label">The Crew</div>
+      <div class="crew-list">
+        <div class="crew-item">
+          <div><div class="crew-name"><span class="v1">🐋 Ahab</span></div><div class="crew-role">Find · Discovery</div></div>
+          <div class="crew-desc">Hunts job listings and funding signals via <strong>Vertex AI Grounding</strong>. Runs 5+ search queries per campaign. Applies company-level filters, excludes aggregator URLs, and builds the Catch array. Cross-campaign deduplication happens automatically via RAG.</div>
+        </div>
+        <div class="crew-item">
+          <div><div class="crew-name"><span class="v2">🔬 Nemo</span></div><div class="crew-role">Enrich · Intelligence</div></div>
+          <div class="crew-desc">Takes each raw lead from Ahab and dives deep. Verifies the company URL, identifies a decision-maker, classifies the <strong>friction type</strong> (API Stutter / Scale Friction / Manual Data Debt / Displacement Signal), and applies <strong>CATALYST_STALE</strong> — any funding signal older than 18 months routes to shipwrecked, never reaches Neptune.</div>
+        </div>
+        <div class="crew-item">
+          <div><div class="crew-name"><span class="v3">🔱 Neptune</span></div><div class="crew-role">Synthesize · Outreach</div></div>
+          <div class="crew-desc">Receives Nemo's friction profile. Writes a 3–4 sentence <strong>Schwartz-style Outreach Bite</strong> — reflects what the prospect is already doing, names the specific villain (the tool or process failing them), and offers the exact operational outcome they already want. <strong>responseSchema enforcement</strong> means Neptune cannot return prose.</div>
+        </div>
+      </div>
+    </div>
   </header>
 
   <div class="panels-wrap">
