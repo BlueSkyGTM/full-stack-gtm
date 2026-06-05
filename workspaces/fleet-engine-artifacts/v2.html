@@ -401,11 +401,17 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 .lang-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
   background: var(--border2);
-  border: 2px solid rgba(118,161,255,0.50);
-  box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(118,161,255,0.10);
+  border: 2px solid rgba(118,161,255,0.65);
+  box-shadow: 0 0 60px rgba(118,161,255,0.12), 0 42px 120px rgba(0,0,0,0.5);
 }
-.lang-col { background: #07090e; display: flex; flex-direction: column; }
-.lang-col-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); }
+.lang-col { display: flex; flex-direction: column; }
+.lang-col.node { background: #05080F; }
+.lang-col.py   { background: #0D0800; }
+.lang-col.pmt  { background: #060A05; }
+.lang-col-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 2px solid; }
+.lang-col.node .lang-col-bar { background: rgba(118,161,255,0.05); border-bottom-color: rgba(118,161,255,0.30); }
+.lang-col.py   .lang-col-bar { background: rgba(240,160,48,0.05);  border-bottom-color: rgba(240,160,48,0.30); }
+.lang-col.pmt  .lang-col-bar { background: rgba(185,227,106,0.05); border-bottom-color: rgba(185,227,106,0.30); }
 .lang-col-dots { display: flex; gap: 5px; }
 .lang-dot { width: 9px; height: 9px; border-radius: 50%; }
 .lang-dot.r { background: #FF5F57; }
@@ -430,6 +436,13 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 .lang-col-code .py  { color: #f0a030; }
 .lang-col-code .hi  { color: #E6E6E6; }
 .lang-col-desc { padding: 14px 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text); line-height: 1.55; font-weight: 300; background: rgba(0,0,0,0.2); }
+.inline-cmd { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--accent); background: rgba(255,255,255,0.06); padding: 2px 6px; }
+.panel-placeholder { font-size: 10px; color: var(--muted); text-align: center; padding: 80px 0; line-height: 2; }
+.detail-card--story { border-left: 3px solid rgba(255,255,255,0.15); }
+.detail-card--story .detail-label { color: var(--muted); }
+.detail-card--code { border-left: 3px solid rgba(118,161,255,0.4); padding: 0; overflow: hidden; }
+.detail-card--code .detail-label { color: var(--action); padding: 12px 16px 0; }
+.detail-card--code pre { font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.7; padding: 10px 16px 14px; color: #D7E4FF; white-space: pre-wrap; margin: 0; background: rgba(0,0,0,0.2); }
 .lang-col-desc strong { font-weight: 500; }
 .lang-col.node .lang-col-desc strong { color: var(--action); }
 .lang-col.py   .lang-col-desc strong { color: #f0a030; }
@@ -448,6 +461,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   background: var(--border2);
   border: 2px solid rgba(118,161,255,0.50);
   box-shadow: 0 42px 120px rgba(0,0,0,0.48), 0 0 0 1px rgba(118,161,255,0.12);
+  height: 500px;
 }
 .orch-term { background: #060810; display: flex; flex-direction: column; border-right: 1px solid rgba(255,255,255,0.08); }
 .orch-term:last-child { border-right: none; }
@@ -487,7 +501,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 .orch-line.blank { display: block; height: 10px; }
 
 /* ── Failure log (absorbed from changelog) ───────────────── */
-.failure-log { border: 2px solid rgba(255,85,85,0.50); background: var(--surface); box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(255,85,85,0.10); }
+.failure-log { border: 2px solid rgba(255,85,85,0.65); background: #0F0608; box-shadow: 0 0 60px rgba(255,85,85,0.10), 0 42px 120px rgba(0,0,0,0.5); }
 .log-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: var(--surface2); border-bottom: 1px solid var(--border); }
 .log-dot { width: 10px; height: 10px; border-radius: 50%; }
 .log-dot-r { background: #FF5F57; }
@@ -519,7 +533,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
 .detail-body code { font-family: monospace; font-size: 11px; background: rgba(255,255,255,0.06); padding: 1px 5px; color: var(--accent); }
 
 /* ── Python pattern explorer (absorbed) ─────────────────── */
-.pattern-explorer { border: 2px solid rgba(240,160,48,0.50); background: var(--surface); box-shadow: 0 42px 120px rgba(0,0,0,0.34), 0 0 0 1px rgba(240,160,48,0.10); }
+.pattern-explorer { border: 2px solid rgba(240,160,48,0.65); background: #0D0800; box-shadow: 0 0 60px rgba(240,160,48,0.10), 0 42px 120px rgba(0,0,0,0.5); }
 .explorer-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: var(--surface2); border-bottom: 1px solid var(--border); }
 .exp-dot { width: 10px; height: 10px; border-radius: 50%; }
 .exp-dot-r { background: #FF5F57; }
@@ -805,7 +819,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
   <div class="section-label reveal" data-num="Step 02">Run It</div>
   <h2 class="process-h2 reveal">One command.<br><em>Three agents gate by gate.</em></h2>
   <p class="process-lead reveal">
-    Run <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--accent);background:rgba(255,255,255,0.06);padding:2px 6px;">node run.js "campaign"</code> and Claude Code takes it from there — invokes Ahab, confirms the GCS write, hands to Nemo, confirms again, hands to Neptune. No middleware, no polling, no server. Watch all three agents run simultaneously below.
+    Run <code class="inline-cmd">node run.js "campaign"</code> and Claude Code takes it from there — invokes Ahab, confirms the GCS write, hands to Nemo, confirms again, hands to Neptune. No middleware, no polling, no server. Watch all three agents run simultaneously below.
   </p>
 
   <div class="orch-grid reveal">
@@ -813,7 +827,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
     <div class="orch-term">
       <div class="orch-bar">
         <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
-        <span class="orch-title">01 · Ahab Discovers</span>
+        <span class="orch-title">🐋 Ahab · Discovers</span>
       </div>
       <div class="orch-output" id="orch-0"></div>
     </div>
@@ -821,7 +835,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
     <div class="orch-term">
       <div class="orch-bar">
         <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
-        <span class="orch-title">02 · Nemo Enriches</span>
+        <span class="orch-title">🔬 Nemo · Enriches</span>
       </div>
       <div class="orch-output" id="orch-1"></div>
     </div>
@@ -829,7 +843,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
     <div class="orch-term">
       <div class="orch-bar">
         <span class="orch-dot r"></span><span class="orch-dot y"></span><span class="orch-dot g"></span>
-        <span class="orch-title">03 · Neptune Synthesizes</span>
+        <span class="orch-title">🔱 Neptune · Synthesizes</span>
       </div>
       <div class="orch-output" id="orch-2"></div>
     </div>
@@ -878,7 +892,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
     </div>
     <div class="explorer-body">
       <div class="pattern-detail" id="pat-detail">
-        <div style="font-size:10px;color:var(--muted);text-align:center;padding:80px 0;line-height:2;">
+        <div class="panel-placeholder">
           // select a pattern<br>to open the field notes
         </div>
       </div>
@@ -932,7 +946,7 @@ footer { padding: 36px 48px; display: flex; align-items: center; justify-content
     </div>
     <div class="log-body">
       <div class="log-detail" id="log-detail">
-        <div style="font-size:10px;color:var(--muted);text-align:center;padding:80px 0;line-height:2;">
+        <div class="panel-placeholder">
           // select any failure<br>to open the forensic record
         </div>
       </div>
@@ -1220,8 +1234,8 @@ const failures = [
   function renderDetail(id) {
     const f = failures.find(x => x.id === id);
     if (!f) return;
-    const storyBlock = f.story ? `<div class="detail-card" style="border-left:3px solid rgba(255,255,255,0.15)"><div class="detail-label" style="color:var(--muted)">What Happened</div><div class="detail-body">${f.story}</div></div>` : '';
-    const codeBlock = f.code ? `<div class="detail-card" style="border-left:3px solid rgba(118,161,255,0.4);padding:0;overflow:hidden"><div class="detail-label" style="color:var(--action);padding:12px 16px 0">Failure Output</div><pre style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.7;padding:10px 16px 14px;color:#D7E4FF;white-space:pre-wrap;margin:0;background:rgba(0,0,0,0.2)">${f.code}</pre></div>` : '';
+    const storyBlock = f.story ? `<div class="detail-card detail-card--story"><div class="detail-label">What Happened</div><div class="detail-body">${f.story}</div></div>` : '';
+    const codeBlock = f.code ? `<div class="detail-card detail-card--code"><div class="detail-label">Failure Output</div><pre>${f.code}</pre></div>` : '';
     detailEl.innerHTML = `
       <div class="detail-num">${f.domain} · Failure ${f.id}</div>
       <div class="detail-title">${f.title}</div>
@@ -1239,7 +1253,7 @@ const failures = [
       currentDomain = c.dataset.domain;
       currentId = null;
       renderList();
-      detailEl.innerHTML = '<div style="font-size:10px;color:var(--muted);text-align:center;padding:80px 0;line-height:2;">// select any failure<br>to open the forensic record</div>';
+      detailEl.innerHTML = '<div class="panel-placeholder">// select any failure<br>to open the forensic record</div>';
     });
   });
 
@@ -1543,7 +1557,7 @@ def read_with_retry(bucket, blob_name: str, model, retries=3, delay=2.0):
       currentCat = c.dataset.cat;
       currentPat = null;
       renderList();
-      patDetail.innerHTML = '<div style="font-size:10px;color:var(--muted);text-align:center;padding:80px 0;line-height:2;">// select a pattern<br>to open the field notes</div>';
+      patDetail.innerHTML = '<div class="panel-placeholder">// select a pattern<br>to open the field notes</div>';
     });
   });
 
