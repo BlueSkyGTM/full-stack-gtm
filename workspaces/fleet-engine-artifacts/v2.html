@@ -984,6 +984,19 @@ const obs = new IntersectionObserver(
 );
 document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
 
+// Fallback: force all in-viewport reveals visible after 400ms
+// (IntersectionObserver can silently not fire on some browser/CDN combos)
+setTimeout(() => {
+  document.querySelectorAll('.reveal').forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.top < window.innerHeight + 200) el.classList.add('vis');
+  });
+}, 400);
+// Full fallback at 1s — nothing should stay invisible
+setTimeout(() => {
+  document.querySelectorAll('.reveal:not(.vis)').forEach(el => el.classList.add('vis'));
+}, 1000);
+
 // ── HP bar fill on scroll ─────────────────────────────────
 const hpObs = new IntersectionObserver(
   entries => entries.forEach(e => {
