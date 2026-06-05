@@ -88,9 +88,12 @@ V3 panel: #08041A  — dark purple tint (locked)
 - **Panel borders**: 2px solid rgba(agent-color, 0.50) + glow shadow
 
 ## Motion
-- **Approach**: Minimal-functional
-- **Easing**: ease-out entering, ease-in exiting
-- **Duration**: reveal 0.7s, hover 0.15-0.2s, tab switches instant
+- **Approach**: Intentional only — motion signals something happened, doesn't perform
+- **Easing**: ease-out entering, cubic-bezier(0.16,1,0.3,1) for HP bars (spring feel)
+- **Duration**: reveal 0.7s, HP bar fill 1.2s, terminal pulse 0.6s staggered, hover 0.15-0.2s
+- **HP bars**: animate 0→target on scroll enter (IntersectionObserver, threshold 0.5)
+- **§03 terminals**: header background pulses once (green/blue/purple, 0/100/200ms stagger) on section enter
+- **DO NOT add**: character-by-character scan-in, typing animations, scroll-linked parallax — slows readers
 
 ## Gamification Elements
 - **HP bars**: 4px colored bar under each stat number, fills according to value
