@@ -1,0 +1,78 @@
+{
+  "lesson": "30-containerizing-ml-code",
+  "title": "Containerizing ML Code",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "A model trains successfully on a developer's laptop but fails in the cloud VM with 'numpy version incompatibility'. Which Docker concept directly prevents this class of failure?",
+      "options": [
+        "Docker volumes, which sync local files to the container at runtime",
+        "Docker images, which package the runtime, libraries, and code into a single immutable artifact",
+        "Docker networks, which isolate container traffic from the host OS",
+        "Docker secrets, which encrypt dependency manifests at build time"
+      ],
+      "correct": 1,
+      "explanation": "A Docker image is an immutable filesystem snapshot containing a specific OS, Python version, and library versions. The same image runs identically on any host with Docker installed, eliminating environment drift."
+    },
+    {
+      "stage": "check",
+      "question": "In the lesson's Dockerfile, `COPY requirements.txt .` and `RUN pip install` appear before `COPY main.py .`. Why does this ordering matter?",
+      "options": [
+        "Python requires dependencies before source code in all build systems",
+        "Docker processes COPY instructions before RUN instructions regardless of order",
+        "The layer cache reuses the pip install layer on rebuilds unless requirements.txt changes, so code edits do not trigger a slow reinstall",
+        "The multi-stage builder stage only allows COPY instructions at the top"
+      ],
+      "correct": 2,
+      "explanation": "Docker caches each layer. If requirements.txt is unchanged, the pip install layer is a cache hit and the slow install is skipped. If main.py is copied first, any code change invalidates the requirements layer and forces a full reinstall."
+    },
+    {
+      "stage": "check",
+      "question": "The lesson's Dockerfile uses two `FROM` instructions. What does the second stage copy from the first, and what does it intentionally leave behind?",
+      "options": [
+        "It copies the installed packages from `/install` and leaves behind pip, build tools, and the build cache",
+        "It copies the Dockerfile and leaves behind the requirements.txt",
+        "It copies the source code and leaves behind the OS base image",
+        "It copies the CUDA toolkit and leaves behind the Python interpreter"
+      ],
+      "correct": 0,
+      "explanation": "Multi-stage builds use `COPY --from=builder /install /usr/local` to pull only the installed packages. The final runtime stage contains no pip, no compilers, and no build cache â€” reducing image size by 60-80% and the attack surface accordingly."
+    },
+    {
+      "stage": "check",
+      "question": "The lesson's `.dockerignore` excludes `mlruns/` and `data/`. Without this file, what happens when `docker build .` runs?",
+      "options": [
+        "Docker refuses to build and reports a security violation for large directories",
+        "Docker automatically excludes files larger than 100MB using content-addressing",
+        "Docker mounts the excluded directories as read-only volumes inside the container",
+        "Docker sends the entire project directory as the build context, potentially shipping gigabytes of model weights and experiment data to the daemon before the first instruction runs"
+      ],
+      "correct": 3,
+      "explanation": "The build context is everything transferred to the Docker daemon before building. Without .dockerignore, ml projects with large data and model directories can produce build contexts of 10GB+, making every build extremely slow regardless of layer caching."
+    },
+    {
+      "stage": "post",
+      "question": "The lesson's FastAPI server loads the model inside a `lifespan` context manager rather than at module level. What production problem does this solve that module-level loading does not?",
+      "options": [
+        "Lifespan loading enables GPU memory sharing between concurrent requests",
+        "Lifespan loading runs after the process is fully initialized, so startup errors (missing model file) are reported cleanly rather than crashing the import step during container startup checks",
+        "Lifespan loading compresses the model using zlib before caching it in memory",
+        "Lifespan loading allows the model to be reloaded mid-flight without restarting the container"
+      ],
+      "correct": 1,
+      "explanation": "Module-level code runs during import, before the ASGI server is ready to report errors. A missing model file at module level produces an unhandled import error that is hard to surface in container orchestrators. Lifespan runs after startup, where the error becomes a readable startup failure with a clean log message."
+    },
+    {
+      "stage": "post",
+      "question": "According to the lesson's base image table, a team deploying the Iris classifier for CPU-only inference should use `python:3.12-slim` rather than `pytorch/pytorch:2.x-cuda12.x-runtime`. What is the primary operational reason?",
+      "options": [
+        "The slim base supports Pydantic v2 while the PyTorch base requires Pydantic v1",
+        "The slim base enables multi-stage builds while the PyTorch base does not support the FROM instruction",
+        "The slim base (~150MB) pulls and scans significantly faster than the PyTorch CUDA base (~6GB), reducing deployment latency and security scan time for a workload that does not use the GPU",
+        "The slim base includes optimized BLAS libraries that outperform the PyTorch base for scikit-learn workloads"
+      ],
+      "correct": 2,
+      "explanation": "The lesson's base image table shows python:3.12-slim at ~150MB vs pytorch/pytorch CUDA runtime at ~6GB. For CPU inference, the CUDA toolkit provides no benefit and the 40x size difference has direct operational costs: slower registry pulls, slower CI, and larger security scan surface."
+    }
+  ]
+}

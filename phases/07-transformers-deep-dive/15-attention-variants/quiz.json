@@ -1,0 +1,78 @@
+{
+  "lesson": "15-attention-variants",
+  "title": "Attention Variants — Sliding Window, Sparse, Differential",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Full causal attention costs O(N²) memory and compute. Flash Attention (Lesson 12) already hides the O(N²) activation memory. What do sliding-window, sparse, and differential attention variants address that Flash Attention does not?",
+      "options": [
+        "They reduce the arithmetic cost by changing the topology of which tokens can attend to which, not just how the kernel is tiled in SRAM",
+        "They eliminate positional embeddings, which are the true bottleneck at long context",
+        "They compress the KV cache into a fixed-size summary vector, removing it entirely",
+        "They replace the softmax with a linear operation, lowering the precision required"
+      ],
+      "correct": 0,
+      "explanation": "Flash Attention is a kernel-rewrite that hides O(N²) activation memory by recomputing attention tiles on-chip, but every token still scores every other token — the arithmetic cost is unchanged. SWA, sparse patterns, and differential attention change the attention matrix itself: fewer (query, key) pairs are scored, so both compute and KV cache shrink."
+    },
+    {
+      "stage": "check",
+      "question": "Sliding-window attention with window W=1024 on a 128K-context model shrinks the KV cache by 128×. Why does the KV cache shrink specifically by N/W, and what is the quality cost of a pure-SWA stack without any global attention layers?",
+      "options": [
+        "The cache shrinks because tokens outside the window are quantized to 1-bit; a pure-SWA stack is lossless because Megatron proved receptive field covers full context after one pass",
+        "The cache shrinks because tokens outside the window are quantized to 1-bit; a pure-SWA stack struggles with long-range retrieval because the effective receptive field per layer is only W tokens",
+        "The cache shrinks because each layer keeps only its last W K/V entries; a pure-SWA stack struggles with long-range retrieval because no single token ever attends beyond W positions",
+        "The cache shrinks because each layer keeps only its last W K/V entries; a pure-SWA stack has no quality cost because Gemma 3 uses pure SWA for all 80 layers"
+      ],
+      "correct": 2,
+      "explanation": "SWA keeps exactly the last W key and value vectors per layer — everything older is dropped, so KV cache is O(W) instead of O(N), a factor of N/W. A pure-SWA stack can attend at most W positions back per layer; even with L layers the effective field is L×W, not full N. Without global layers, tokens far apart never attend to each other, causing retrieval failures. Gemma 3's 5:1 SWA-to-global mix restores long-range signal."
+    },
+    {
+      "stage": "check",
+      "question": "Differential attention outputs (A1 − λ·A2)V where A1 and A2 are separate softmax maps. What specific phenomenon does the subtraction cancel, and why does it not accidentally cancel genuine signal too?",
+      "options": [
+        "It cancels gradient instability in deep stacks; genuine signal survives because gradients flow through A1 only",
+        "It cancels the positional bias from RoPE embeddings; genuine signal survives because A2 is computed without position embeddings",
+        "It cancels the attention sink — the small but non-zero weight softmax forces onto every unrelated token; genuine signal survives because relevant tokens appear with different magnitudes in A1 vs A2 under training",
+        "It cancels duplicated computation from multi-head attention; genuine signal survives because each head uses a different random projection"
+      ],
+      "correct": 2,
+      "explanation": "Softmax normalisation forces every row to sum to 1, so uninformative tokens receive residual mass — the 'attention sink' concentrated near position 0. Both A1 and A2 share this roughly uniform noise distribution, so subtracting cancels it. Relevant tokens, however, appear with different magnitudes in the two maps (the model learns this), so their contribution survives the subtraction. Reported results: 5–10% lower perplexity, sharper needle-in-haystack retrieval."
+    },
+    {
+      "stage": "check",
+      "question": "Gemma 3 uses a 5:1 SWA-to-global layer ratio. The doc says pure SWA stacks fail at long-range retrieval while pure global stacks preserve quality but miss the memory savings. What does interleaving achieve that neither pure approach does?",
+      "options": [
+        "It allows the model to use FlexAttention for the SWA layers and FlashAttention-3 for global layers, maximising kernel throughput",
+        "It doubles the model's parameter count by training two separate networks and ensembling at inference",
+        "Interleaving SWA and global layers gives each global layer a larger effective receptive field (via the preceding SWA layers) while keeping KV cache near O(W) for most layers",
+        "Global layers read full-attention outputs but write to the SWA cache only, so no extra memory is used while long-range tokens are cached"
+      ],
+      "correct": 2,
+      "explanation": "In a 5:1 mix, five cheap SWA layers compress local context, then one global layer reads the full prefix to capture long-range dependencies. Because only 1-in-6 layers pays the O(N) KV cost, average cache size stays near O(W). The SWA layers also extend the receptive field for the global layer via the residual stream. Gemma 3 shows this is the 2026 textbook default for context >32K."
+    },
+    {
+      "stage": "post",
+      "question": "The Build code implements a causal mask comparator with swa_mask(n, window). When window >= n, the doc states the function recovers full causal attention bit-identically. Verify this claim algebraically: what does the loop produce when window = n?",
+      "options": [
+        "The loop sets M[i][j]=0.0 for all j in range(max(0, i-n+1), i+1) = range(0, i+1), which is exactly the full lower-triangular causal mask",
+        "The loop sets M[i][j]=0.0 for all j in range(i-n, i+1), which adds one extra position per row and exceeds full causal attention",
+        "The loop cannot produce full causal attention because the window clips to i even when window >= n",
+        "When window = n the SWA mask equals the strided sparse mask, not the full causal mask, because stride defaults to 1"
+      ],
+      "correct": 0,
+      "explanation": "With window=n, lo = max(0, i - n + 1). For i < n-1, this equals 0; for i = n-1, lo = 0 as well. So the inner loop sets M[i][j]=0.0 for j in [0, i+1), which is the full lower-triangular pattern — identical to the full causal mask. The variant table confirms: SWA at window >= n is defined as the baseline case."
+    },
+    {
+      "stage": "post",
+      "question": "The variant comparison table shows differential attention has O(2·N²) compute and O(2N) KV cache per layer — twice the cost of full attention. Given this, under what conditions does the doc say differential attention is worth deploying?",
+      "options": [
+        "Any workload with context over 1K tokens, because the signal-to-noise improvement always outweighs the 2× cost",
+        "Only on training runs where the model is initialised with λ near 1.0, otherwise the cost is not justified",
+        "Workloads shorter than 4K tokens where the attention sink is most severe and the 2× cost is least noticeable",
+        "Long-context retrieval workloads (RAG, needle-in-haystack) where attention-sink contamination causes measurable quality loss — the 2× compute buys 1.5–2× effective context and sharper retrieval"
+      ],
+      "correct": 3,
+      "explanation": "Differential attention costs 2× compute and 2× KV cache but eliminates the attention sink. The doc's 'When to pick each' table says: pure full attention up to ~16K, SWA+global mix above 32K, and differential attention specifically for workloads where attention-sink contamination hurts — long-context RAG and needle-in-haystack tasks. For short-context or non-retrieval tasks the extra cost is not justified."
+    }
+  ]
+}

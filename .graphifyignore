@@ -1,0 +1,8 @@
+node_modules/
+.venv/
+venv/
+__pycache__/
+.vercel/
+graphify-out/
+.git/
+site/data.js

@@ -1,0 +1,78 @@
+{
+  "lesson": "12-kv-cache-flash-attention",
+  "title": "KV Cache, Flash Attention & Inference Optimization",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Naive autoregressive decoding recomputes full attention over the growing prefix at every step, costing O(N²) total operations for an N-token response. What property of autoregressive decoding makes this reducible to O(N) total work?",
+      "options": [
+        "Each prefix token's K and V vectors are fully determined once computed and never change — they can be stored after the first forward pass and reused for every subsequent generation step, reducing attention per step from O(prefix_len²) to O(prefix_len) via the KV cache",
+        "Q vectors are shared between the encoder and decoder, so the prefix only needs encoding once per request, not per token",
+        "The softmax distribution over the prefix is constant once the model is frozen, so it can be cached and replayed",
+        "Batching multiple sequences together amortises the attention cost across the batch, turning O(N²) per sequence into O(N) per token"
+      ],
+      "correct": 0,
+      "explanation": "In causal language model decoding, every prefix token's key K_t and value V_t are pure functions of that token and the weights — they do not depend on future tokens. The KV cache stores them on the first forward pass. Each new token generates one new Q and needs to attend to prefix K/V vectors, but those are already computed. Step cost drops from O(current_prefix_len²) to O(current_prefix_len) × constant per new token. Total cost for N tokens: O(N) instead of O(N²)."
+    },
+    {
+      "stage": "check",
+      "question": "Standard attention writes three N×N matrices to GPU HBM: scores, softmax output, and the final weighted sum. Flash Attention produces bit-identical output without materialising any of these. What is its core technique?",
+      "options": [
+        "Flash Attention quantises scores to INT4 before writing to HBM, reducing bandwidth by 4× but introducing approximation error",
+        "Flash Attention reformulates softmax as a linear operation that requires no normalisation term, eliminating the N×N intermediate",
+        "Flash Attention tiles Q, K, V into SRAM-sized blocks and computes attention entirely within each tile using a running-max/sum algorithm, so the N×N score matrix is never written to HBM — total memory footprint is O(N) instead of O(N²)",
+        "Flash Attention reorders the matmul dimensions so each output row can be computed from a single K row, eliminating the broadcast over all keys"
+      ],
+      "correct": 2,
+      "explanation": "SRAM bandwidth (~30 TB/s on H100) is 10× faster than HBM bandwidth (~3 TB/s). Flash Attention keeps all intermediate matrices in SRAM by processing attention in tiles: load Q_tile, K_tile, V_tile; compute S_tile in SRAM; update running (max, sum, accumulator); write only the final O_tile to HBM. The backward pass recomputes the softmax from stored log-sum-exp scalars rather than storing the N×N matrix. Output is bit-identical to standard attention (subject to fp16 non-associativity)."
+    },
+    {
+      "stage": "check",
+      "question": "For Llama 3 70B (80 layers, 8 KV heads via GQA, d_head=128, fp16), the doc computes the KV cache as approximately 10.4 GB at 32K context. Standard MHA with 64 heads would be roughly 83 GB. What feature is responsible for the 8× reduction?",
+      "options": [
+        "Llama 3 uses INT8 quantisation for its KV cache, halving the bytes per head from FP16",
+        "Llama 3 uses sparse attention that only stores the top-16 activated KV pairs per layer",
+        "Llama 3 uses MLA (Multi-head Latent Attention) which compresses the KV cache into a low-rank projection",
+        "GQA (Grouped-Query Attention) uses 8 KV heads shared across all 64 Q heads — only 8 K and 8 V vectors are stored per token per layer instead of 64, directly scaling down cache from 64 heads to 8 heads"
+      ],
+      "correct": 3,
+      "explanation": "MHA stores one K and one V per attention head per token. At 64 heads, d_head=128, fp16: 2 × 64 × 128 × 2 = 32 KB/token/layer. GQA with 8 KV heads: 2 × 8 × 128 × 2 = 4 KB/token/layer — an 8× reduction. The doc's arithmetic: 4 KB × 80 layers × 32768 tokens = 10.49 GB. This is why GQA became standard in every major 2023–2026 model: KV cache size is often the binding memory constraint at long context."
+    },
+    {
+      "stage": "check",
+      "question": "Classic batched inference waits for the slowest sequence in a batch to finish before admitting new requests. What does continuous batching change, and what is the documented throughput improvement for typical chat workloads?",
+      "options": [
+        "Continuous batching pre-loads the next batch in HBM while the current batch computes, removing batch-loading latency — approximately 2× improvement",
+        "Continuous batching slots new requests into vacant positions in the batch as soon as any sequence finishes, without waiting for the full batch to drain — 5–10× throughput improvement for typical chat workloads",
+        "Continuous batching trains and serves simultaneously, using gradient checkpointing to share activations between training and inference passes — 3× improvement",
+        "Continuous batching uses KV cache compression to batch more sequences simultaneously — 4× improvement by fitting twice as many contexts in GPU memory"
+      ],
+      "correct": 1,
+      "explanation": "Classic batching: a 10-sequence batch completes when the last sequence generates its final token. If 9 of 10 sequences finish at token 50 and one runs to token 200, the GPU is at 1/10th utilisation for 150 steps. Continuous batching (Orca, vLLM): as soon as any sequence finishes, a queued request takes its slot. GPU utilisation approaches 100% of memory capacity, not 100% of batch capacity. The 5–10× figure assumes typical chat distribution with short median length but heavy tail."
+    },
+    {
+      "stage": "post",
+      "question": "The Build code's tiled_softmax_dot maintains a running (m, s) state: m is the running max, s is the running normalised sum. Why does the one-pass running-max algorithm produce the same result as a two-pass approach (pass 1: find global max; pass 2: compute softmax)?",
+      "options": [
+        "It processes K in chunks so the total bandwidth is O(N/tile) instead of O(N), which coincidentally produces the same output due to the distributive property of softmax",
+        "The running-max algorithm is an approximation that matches the two-pass result only when tile size equals N — in practice the small approximation error is below fp16 epsilon and therefore invisible",
+        "When each new tile arrives with max new_m, the previous partial sum s and accumulator out are rescaled by exp(m − new_m), exactly reweighting the already-seen contributions as if new_m had been the global max all along — mathematically identical to knowing the global max upfront",
+        "The running max converges to the true softmax only on sequences longer than 64 tokens — for shorter sequences a direct softmax is used as fallback"
+      ],
+      "correct": 2,
+      "explanation": "Softmax denominator for a tile with local max m_tile: sum(exp(x_i − m_tile)). When the global max turns out to be m_global > m_tile, rescale by exp(m_tile − m_global). The running-max trick does this incrementally: when new_m > m, multiply the accumulated s and out by exp(m − new_m) before adding the new tile's contribution. The final result is mathematically identical to computing exp(x_i − global_max) for all i at once. This is why Flash Attention's output is called 'exact' — not an approximation."
+    },
+    {
+      "stage": "post",
+      "question": "PagedAttention (vLLM) stores KV cache in fixed 16-token blocks with a page table. The doc claims 4× throughput improvement over naive contiguous KV allocation. What failure mode of contiguous allocation does PagedAttention fix, beyond just fragmentation?",
+      "options": [
+        "Contiguous allocation forces all sequences to have the same maximum context length, wasting memory for shorter sequences and limiting batch size",
+        "Contiguous allocation cannot use fp8 for KV cache values while PagedAttention can, since the block boundaries align with fp8 quantisation boundaries",
+        "Contiguous allocation reserves peak-possible context for each sequence upfront; PagedAttention allocates blocks on demand (freeing them on completion) and enables KV block sharing across parallel beam-search or prompt-cached requests — reducing waste and increasing effective batch size",
+        "Contiguous allocation copies the full KV cache to CPU between prefill and decode stages, while PagedAttention keeps it on GPU throughout"
+      ],
+      "correct": 2,
+      "explanation": "Naive contiguous allocation reserves max_context × d_kv × n_layers bytes per sequence when it starts. A 2K-token actual response in a 32K-context-window model wastes 93% of its allocation. PagedAttention allocates 16-token blocks as needed; when the sequence finishes, all blocks return to the pool immediately. Additionally, a block containing a shared prefix (same system prompt, RAG document) can be mapped into multiple sequences' page tables without duplication — prefix caching across requests is a direct consequence."
+    }
+  ]
+}

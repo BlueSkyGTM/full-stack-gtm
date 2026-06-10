@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Engineering From Scratch — Glossary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/library.css">
+<link rel="stylesheet" href="css/cmdpalette.css">
+</head>
+<body>
+
+  <header class="top">
+    <a class="brand" href="index.html"><span class="mark"></span><b>Synapse Academy</b></a>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="course.html">Course</a>
+
+      <a href="catalog.html">Catalog</a>
+      <a href="library.html">Library</a>
+      <a href="projects.html">Projects</a>
+      <a href="glossary.html" aria-current="page">Glossary</a>
+    </nav>
+    <button class="search-btn" type="button" data-cmd-palette aria-label="Search (Cmd-K)" title="Search (Cmd-K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span><kbd>⌘K</kbd>
+    </button>
+    <span id="sa-auth-btn"></span>
+  </header>
+
+  <main class="wrap page" data-screen-label="Glossary">
+    <div class="mast">
+      <h1 class="mast__t">Glossary</h1>
+      <p class="mast__sub">What people <em>say</em> vs what it actually <em>means</em>.</p>
+    </div>
+
+    <div class="cat-search" style="margin-top:var(--s4)">
+      <span class="cat-search__cue">▸</span>
+      <input class="cat-search__in" id="search" type="text" placeholder="Search terms…" autocomplete="off">
+    </div>
+    <div class="count" id="count" style="margin-top:var(--s3)"></div>
+
+    <div class="gloss-grid" id="grid"></div>
+  </main>
+
+  <script src="js/auth.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/glossary.js"></script>
+  <script src="js/cmdpalette.js"></script>
+</body>
+</html>

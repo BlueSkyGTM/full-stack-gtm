@@ -1,0 +1,78 @@
+{
+  "lesson": "16-differential-attention-v2",
+  "title": "Differential Attention (V2)",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Standard softmax attention assigns a small positive weight to every token — no weight is ever exactly zero. The doc states that at 128k tokens, even if each non-matching token gets only 0.001% of the probability, those 127,999 tokens collectively contribute about 12% of total attention mass. Which statement correctly identifies why this noise floor is tolerable at short contexts but harmful at long ones?",
+      "options": [
+        "At short contexts the noise floor is negligible — O(1/N) per unrelated token sums to O(1) across all N tokens at any context length, but at 128k the per-token noise also grows, making the total mass O(N) rather than O(1)",
+        "At short contexts softmax temperature effectively scales with N, suppressing small scores; at long contexts temperature scaling breaks down and all scores flatten toward 1/N regardless of query alignment",
+        "At short contexts key vectors for unrelated tokens are near-zero due to training regularization; at long contexts the model exhausts its representational capacity to suppress them",
+        "At short contexts the noise is O(1/N) per token and N is small enough that the model can weight signal tokens heavily relative to the modest total noise; at 128k the O(1/N) × (N-1) noise tokens sum to nearly O(1) — the same order as the signal — making retrieval accuracy degrade as context grows"
+      ],
+      "correct": 0,
+      "explanation": "Each unrelated token gets O(1/N) probability mass. For N=4k tokens, that is still ~O(1) total noise — but the signal token can also receive a high absolute weight (say 5%), and 4k noise tokens each getting ~0.024% is manageable. At N=128k, the same O(1) total noise mass is now shared with 127,999 tokens each at ~0.0008%, and the signal's relative advantage shrinks sharply. The doc measures this concretely: 127,999 tokens at 0.001% each = ~12.8% total, a noise mass comparable to a signal token's weight. The key insight: total noise mass is always O(1) regardless of N, but at long contexts it drowns the signal because the signal's own weight cannot reliably exceed O(1) either."
+    },
+    {
+      "stage": "check",
+      "question": "The differential formula is DiffAttn = (A1 - lambda * A2) V where A1 = softmax(Q1 K1^T / sqrt(d)) and A2 = softmax(Q2 K2^T / sqrt(d)). The subtraction cancels the shared noise floor that both maps have on the 127k unrelated tokens. Why does the signal NOT cancel out the same way?",
+      "options": [
+        "The signal token always receives probability 1.0 from softmax because the query is perfectly aligned, so any lambda*A2 subtraction leaves a net positive weight on it regardless",
+        "Lambda is always strictly less than 1 at convergence, so the noise (equal in A1 and A2) partially cancels, but the signal in A1 always exceeds lambda times its A2 value by construction",
+        "The Q1/K1 and Q2/K2 projection matrices are initialized as mutual inverses, so the signal's high score in A1 corresponds to a guaranteed low score in A2",
+        "After training, Q1/K1 learns to produce a sharp peak at the signal position while Q2/K2 projects onto different subspaces; the two branches differ precisely where the signal is — shared uniform noise on 127k tokens cancels, but the signal's magnitude in A1 is no longer equal to lambda times its A2 magnitude, so subtraction preserves the signal"
+      ],
+      "correct": 3,
+      "explanation": "The doc's 'noisy microphone' analogy is the key: both microphones capture the same background noise (the near-uniform mass softmax places on all unrelated tokens), so subtracting one from the other removes the shared noise. The voice (signal) survives because the two microphones differ in how they pick up the signal. Similarly, Q1/K1 and Q2/K2 are independent learned projections — once trained, they peak at different signal positions or with different magnitudes. The per-head lambda controls the subtraction ratio. If A1 peaks strongly at the signal and A2 does not (or peaks at a different position), the difference amplifies the signal from A1 rather than cancelling it."
+    },
+    {
+      "stage": "check",
+      "question": "DIFF V1 halved the head dimension to preserve total parameter count while adding two Q and K branches. DIFF V2 keeps the head dimension unchanged and instead doubles the number of query heads. What specific decode-latency problem in V1 does V2's design directly fix?",
+      "options": [
+        "V1's halved head dimension caused attention score underflow for long keys, requiring compensatory clipping that added decode overhead",
+        "V1's per-head RMSNorm added a normalization kernel call per decode step, increasing latency by one kernel launch per head per layer",
+        "V1's halved head dimension effectively split the value cache into two separate per-branch KV configurations, forcing decode to load the value cache twice per step — once per softmax branch; V2 keeps KV heads unchanged so decode loads the cache exactly once, matching baseline latency",
+        "V1's custom CUDA kernel serialized the two softmax branches rather than parallelizing them, adding an extra synchronization barrier per decode step"
+      ],
+      "correct": 2,
+      "explanation": "The doc states V1 'halved the value cache per head. Decode had to load the value cache twice per step (once per softmax branch). Result: decode slower than baseline despite matching parameter count.' Value cache loading is memory-bandwidth bound at decode — two loads doubles the KV bandwidth cost. V2 keeps full head dimension for KV and borrows the extra Q capacity by doubling the number of Q heads. Decode now loads the unified KV cache exactly once per step. The doc confirms: 'Decode speed matches baseline (KV cache is loaded once).'"
+    },
+    {
+      "stage": "check",
+      "question": "DIFF V1 applied a per-head RMSNorm after the difference (A1 - lambda*A2) to stabilize training. V2 removed it. The doc says this RMSNorm 'destabilized long-run training at 70B-plus scale.' Which statement best explains why a normalization intended to add stability would instead cause instability at scale?",
+      "options": [
+        "RMSNorm rescaled all differential outputs to unit norm per head, making the lambda parameter redundant — the model learned to set lambda→0, disabling noise cancellation and causing gradient collapse in long runs",
+        "When the difference (A1 - lambda*A2) is near zero — which happens when the two branches produce similar maps before the head has learned to differentiate — RMSNorm divides by a near-zero denominator, producing exploding values that compound over trillions of training steps at 70B-plus scale",
+        "The per-head RMSNorm's affine scale and bias parameters introduced gradient interference between attention heads at 70B scale, causing attention blocks to collapse to uniform patterns over long pre-training",
+        "Per-head RMSNorm was applied to the concatenated outputs of both branches before subtraction, which lost the sign information differential attention relies on and produced zero-gradient regions late in training"
+      ],
+      "correct": 1,
+      "explanation": "The differential output (A1 - lambda*A2) can be near zero when the two softmax maps are nearly equal — this is common early in training before the head has learned to differentiate signal from noise. RMSNorm divides by the root-mean-square of this near-zero vector, amplifying any tiny numerical perturbation into a very large normalized output. At 70B-class pre-training over trillions of tokens, these near-zero events accumulate into late-training instability. V2 replaces the runtime normalization with a controlled initialization for lambda (exp-based, starting at lambda_init ≈ 0.8), keeping the difference magnitude well-scaled by construction rather than correcting it post-hoc."
+    },
+    {
+      "stage": "post",
+      "question": "In `diff_attention()` in code/main.py, `diff_weights` is computed as `[a1 - lam * a2 for a1, a2 in zip(row1, row2)]`, which can produce negative values. These are then multiplied by V directly. The doc notes 'the output weights can be negative — that is fine — the value cache still handles signed contributions.' In standard softmax attention, why would negative weights be problematic in a way they are NOT for differential attention?",
+      "options": [
+        "Standard attention applies an absolute value to weights before multiplying V, so it structurally cannot represent signed weighting; differential attention breaks this constraint and requires a separate positive-projection step",
+        "Standard softmax weights are always in [0,1] and sum to 1, making the output a convex combination of V rows — a valid weighted average. Differential attention weights can be negative, making the output a signed linear combination outside V's convex hull. This is valid because the subsequent O projection is a full learned linear map that can absorb any sign, mapping the signed sum back into the representation space without additional constraints",
+        "Negative weights flip the sign of the corresponding V row's contribution, which reverses the semantic meaning of that position's value — acceptable only when the output head's loss function is symmetric around zero",
+        "Standard softmax attention is numerically stable precisely because all weights are positive; differential attention requires fp32 precision throughout to prevent sign-flip overflow that fp16 cannot represent"
+      ],
+      "correct": 3,
+      "explanation": "Standard softmax attention's w ∈ [0,1] with Σw = 1 ensures the output is a convex combination of V rows — it stays within V's convex hull. Differential attention's (A1 - lambda*A2) can be negative, producing a general signed linear combination. This is mathematically fine: the O projection that follows is a fully learned linear transform with unconstrained weights (both positive and negative). Any real-valued vector, whether from convex or signed combinations, is a valid input to a linear projection. The sign is 'absorbed' in the sense that O maps the full space of real vectors, not just convex combinations."
+    },
+    {
+      "stage": "post",
+      "question": "The doc's compatibility table shows DIFF V2 is compatible with GQA ('Yes — V2 increases Q heads, not KV heads'). A 7B baseline uses GQA with 8 KV heads and 32 Q heads (ratio 4:1). After converting to DIFF V2, Q heads double to 64. What is the new Q/KV head ratio, and why does the KV cache size remain identical to the pre-conversion baseline?",
+      "options": [
+        "Q heads become 64, KV heads stay at 8; the Q/KV ratio is 8:1. KV cache size is determined solely by KV head count and head dimension — DIFF V2's doubled Q heads add Q projection parameters but contribute zero bytes to the KV cache, leaving it identical to the pre-conversion GQA baseline",
+        "Q heads become 64, KV heads also scale to 16 to maintain the original 4:1 Q/KV ratio; the KV cache grows by 2× relative to baseline",
+        "Q heads become 64, KV heads stay at 8, but each Q head now attends over half the key dimension to compensate, halving the effective KV cache bandwidth per decode step",
+        "Q heads become 32 per differential branch (64 total), and each branch gets its own KV cache; effective KV cache per layer doubles per decode step"
+      ],
+      "correct": 0,
+      "explanation": "KV cache memory = n_kv_heads × d_head × seq_len × n_layers × dtype_bytes. The doc explicitly states V2 'doubles the number of query heads and keeps the KV heads the same.' After DIFF V2 conversion: KV heads remain at 8, d_head remains unchanged, so KV cache is byte-for-byte identical to the pre-conversion GQA baseline. The new Q/KV ratio is 64/8 = 8:1 (vs original 4:1). This is also exactly why V2 fixed V1's decode-latency problem: V1 effectively required two KV loads per step; V2 loads the single unchanged KV cache once. GQA compatibility is preserved because DIFF V2 modifies only the Q (and O) projections, not the KV structure."
+    }
+  ]
+}

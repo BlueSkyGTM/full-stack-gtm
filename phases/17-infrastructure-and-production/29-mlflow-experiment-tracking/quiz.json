@@ -1,0 +1,78 @@
+{
+  "lesson": "29-mlflow-experiment-tracking",
+  "title": "MLflow Experiment Tracking",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "A team runs the same training script twenty times and cannot recall which hyperparameter configuration produced the model currently in production. Which MLflow component directly solves this?",
+      "options": [
+        "MLflow Projects, which packages code for remote execution",
+        "MLflow Tracking, which records parameters, metrics, and artifacts per run",
+        "MLflow Models, which standardizes model packaging format",
+        "MLflow Pipelines, which orchestrates multi-step workflows"
+      ],
+      "correct": 1,
+      "explanation": "MLflow Tracking assigns every run a UUID and records parameters (what you set), metrics (what you measured), and artifacts (what you saved). The team can query runs by metric to find the production checkpoint in seconds."
+    },
+    {
+      "stage": "check",
+      "question": "In the lesson's training loop, `mlflow.log_metric('fold_accuracy', acc, step=fold)` is called inside a cross-validation loop. What does the `step` argument control?",
+      "options": [
+        "The learning rate schedule step for that epoch",
+        "The fold number used as the model version in the registry",
+        "The index used to plot the metric as a curve over time in the MLflow UI",
+        "The number of gradient accumulation steps before logging"
+      ],
+      "correct": 2,
+      "explanation": "The `step` argument attaches a sequence index to the metric value. MLflow stores (step, value) pairs so the UI can plot fold_accuracy as a curve across folds rather than overwriting a single scalar."
+    },
+    {
+      "stage": "check",
+      "question": "The lesson code calls `mlflow.sklearn.autolog()` equivalent behavior via explicit logging. What is the primary advantage of calling `mlflow.sklearn.autolog()` instead of manual `log_param` / `log_metric` calls?",
+      "options": [
+        "Autolog instruments the library's standard fit/score callbacks automatically, capturing parameters and metrics without manual calls",
+        "Autolog compresses model artifacts to reduce storage costs",
+        "Autolog enables multi-GPU logging that manual logging cannot support",
+        "Autolog bypasses the tracking server and writes directly to S3"
+      ],
+      "correct": 0,
+      "explanation": "Autolog hooks into the library's native callbacks (e.g., sklearn's fit method) and logs standard parameters and metrics automatically. Manual logging is still needed for domain-specific metrics the library does not know about."
+    },
+    {
+      "stage": "check",
+      "question": "The lesson transitions a registered model version to `Production` using `client.transition_model_version_stage`. What does this enable downstream serving tools to do?",
+      "options": [
+        "Automatically retrain the model when production accuracy degrades",
+        "Serialize the model to ONNX format for cross-framework deployment",
+        "Pin the model to a fixed infrastructure node for deterministic latency",
+        "Load the model using `models:/IrisClassifier/Production` without hardcoding a run_id"
+      ],
+      "correct": 3,
+      "explanation": "The `models:/ModelName/Production` URI always resolves to the current production version. Serving code never needs to change when a new model is promoted â€” only the registry stage changes."
+    },
+    {
+      "stage": "post",
+      "question": "The lesson's `find_best_run` function uses `mlflow.search_runs(order_by=['metrics.val_accuracy DESC'])`. If two runs have identical `val_accuracy`, which additional piece of run metadata would you add to `order_by` to break the tie deterministically?",
+      "options": [
+        "parameters.C, because higher regularization strength always yields better generalization",
+        "metrics.val_accuracy_std ASC, to prefer the run with lower variance across folds",
+        "tags.mlflow.source.name, to prefer runs from the canonical training script",
+        "attributes.start_time DESC, to prefer the most recent run"
+      ],
+      "correct": 1,
+      "explanation": "The lesson logs `val_accuracy_std` as a secondary metric. Sorting by `val_accuracy_std ASC` breaks ties by preferring the run whose cross-fold scores were most consistent â€” a sound statistical tie-breaker documented in the lesson's metric table."
+    },
+    {
+      "stage": "post",
+      "question": "The lesson's `main.py` sets `mlflow.set_tracking_uri('mlruns')` for local development. According to the lesson's tracking server backend table, what single change makes the same code write to a team-shared PostgreSQL + S3 backend?",
+      "options": [
+        "Replace `mlflow.sklearn.log_model` with `mlflow.pyfunc.log_model`",
+        "Add `mlflow.set_registry_uri('s3://bucket')` before `mlflow.set_experiment`",
+        "Set `MLFLOW_TRACKING_URI` to the PostgreSQL connection string; artifact store is configured server-side",
+        "Switch from `mlflow.start_run()` context manager to `mlflow.create_run()` API"
+      ],
+      "correct": 2,
+      "explanation": "The lesson states: 'The code does not change between backends â€” only the MLFLOW_TRACKING_URI environment variable.' Setting this env var to a PostgreSQL URI points the client at the remote tracking server, which handles S3 artifact routing server-side."
+    }
+  ]
+}

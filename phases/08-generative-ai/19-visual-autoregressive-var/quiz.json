@@ -1,0 +1,78 @@
+{
+  "lesson": "19-visual-autoregressive-var",
+  "title": "Visual Autoregressive Modeling (VAR): Next-Scale Prediction",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Pixel-by-pixel autoregressive models (PixelRNN, DALL-E 1) process image tokens in 1D raster order. VAR fixes a fundamental generation-order problem this creates. What is that problem and how does VAR eliminate it?",
+      "options": [
+        "Early tokens must commit to content before the full image context is available; VAR eliminates this by making every scale attend to later scales in a bidirectional pass",
+        "Early tokens must commit to specific content before later spatial context is available; VAR eliminates this by predicting entire resolution scales at once — all tokens at scale k are produced after seeing all of scale k-1, so no token commits before its coarser context is established",
+        "Raster order forces high-frequency detail to be predicted before low-frequency structure; VAR fixes this by reversing the scan order so fine-grained tokens are generated first",
+        "Every token attends to all past tokens causing O(N²) memory; VAR reduces this by grouping tokens into scales and only attending across scale boundaries"
+      ],
+      "correct": 1,
+      "explanation": "In raster-order AR, each token at position (i,j) is predicted with only the tokens above it and to its left — no information about the right half or lower portion of the image. An early corner token has no idea what the image becomes. VAR eliminates this by generating a whole scale simultaneously: all positions at scale k are sampled in one pass, after seeing all positions at scale k-1. No token at scale k is committed before the full prior scale is established. The doc explicitly names this 'no generation order bias' as one of the three structural wins of next-scale prediction."
+    },
+    {
+      "stage": "check",
+      "question": "The multi-scale VQ tokenizer encodes an image as token grids z_1, z_2, ..., z_K at increasing resolution. The decoder reconstructs by summing the upsampled embeddings: f ≈ Σ upsample(embed(z_k), target_size). Which line of `tokenize_multiscale()` in code/main.py directly implements the property that makes this sum reconstruct the original?",
+      "options": [
+        "`encode(coarse, book)` — snapping each downsampled value to the nearest codebook entry at the current scale",
+        "`upsample(recon, IMG)` — nearest-neighbor upsampling the coarse reconstruction back to full resolution",
+        "`residual = residual - upsample(recon, IMG)` — subtracting the current scale's reconstruction from the running residual so the next scale receives only what the current scale failed to represent",
+        "`downsample(residual, scale)` — average-pooling the residual down to the target resolution before encoding"
+      ],
+      "correct": 2,
+      "explanation": "The residual update `residual = residual - upsample(recon, IMG)` is the residual VQ step. After scale k tokenizes the coarse view and reconstructs it, that reconstruction is subtracted from the signal. Scale k+1 then receives only the error — the portion of the image not yet captured. When the decoder sums all scale embeddings, it accumulates these residuals back into the original signal. Without this subtraction, each scale would redundantly encode the same content rather than the residual left by previous scales."
+    },
+    {
+      "stage": "check",
+      "question": "The code uses `SCALES = (1, 2, 4, 8)` — four resolution levels. At inference, `generate()` runs one transformer pass per scale, sampling all positions in parallel within each pass. How many total autoregressive forward passes does VAR require for this 4-scale setup, and how does this compare to a next-token AR model generating the same 8×8 = 64 tokens in raster order?",
+      "options": [
+        "4 passes (one per scale) versus 64 passes for raster-order AR — all 1, 4, 16, and 64 token positions at each respective scale are sampled in parallel from the scale's conditional distribution in a single pass",
+        "64 passes (one per token), the same as raster-order AR — VAR replaces raster order with scale order but still generates tokens one at a time",
+        "85 passes (1+4+16+64 total positions) — each token at each scale requires a separate forward pass regardless of scale",
+        "10 passes — VAR requires one pass per distinct codebook cluster rather than per scale, and the 4-scale, 64-token image maps to roughly 10 distinct codebook centers at training"
+      ],
+      "correct": 0,
+      "explanation": "VAR's generation loop in `generate()` iterates over SCALES (1,2,4,8) — exactly 4 iterations, one per scale. Within each iteration, every position at that scale (1, 4, 16, 64 positions respectively) is sampled from the same conditional distribution in a single call. No per-token sequentiality within a scale. A raster-order next-token model for the same 64 tokens would require 64 sequential passes. VAR's effective generation length is K (the number of scales), not the total token count — the doc calls this 'log-scale instead of linear.'"
+    },
+    {
+      "stage": "check",
+      "question": "VAR uses a scale position embedding that the Key Terms table calls a '(scale, row, col) triple.' A standard 1D GPT position embedding assigns one integer index per token. What two pieces of information would be lost if VAR used a standard 1D position embedding instead of the (scale, row, col) triple?",
+      "options": [
+        "Only the raster-order index within the flattened token sequence would be encoded — identical to GPT's existing 1D embedding — so no information would be lost",
+        "Only the scale index k, not the spatial (row, col) position within the scale, since position within a scale is irrelevant for cross-scale attention",
+        "The distance in pixels between each token and the query token, preventing spatial proximity reasoning within a scale",
+        "Both which scale the token belongs to and where it sits within that scale's 2D grid — the same center pixel (e.g., (4,4) in an 8×8 image) exists at multiple scales and must be disambiguated; 2D spatial coordinates within a scale are also needed for the model to reason about spatial proximity"
+      ],
+      "correct": 3,
+      "explanation": "A 1D integer index conflates two distinct pieces of information: (1) which resolution scale the token belongs to, and (2) its 2D spatial position within that scale. Without the scale index, the model cannot tell whether a token is the single 1×1 summary (scale 1) or one of 64 tokens in the 8×8 grid (scale 4). Without (row, col), the model cannot reason about spatial proximity within a scale. The VAR paper uses a (scale, row, col) triple in the position embedding precisely to carry all three coordinates so cross-scale and within-scale spatial structure can be exploited."
+    },
+    {
+      "stage": "post",
+      "question": "In `generate()` in code/main.py, `context_key(drawn[:k])` is called at each scale k before sampling. The function hashes a coarsened summary of all previously drawn token grids. What VAR property does this implement, and what production transformer component does it stand in for?",
+      "options": [
+        "It serves as a content-addressable cache lookup to retrieve a saved attention output from a prior scale, standing in for the KV cache in transformer inference",
+        "It implements scale-ordered conditioning: it creates a hashable fingerprint of scales 1..k-1 that keys the next-scale predictor, standing in for the cross-scale attention (or the KV cache of all prior-scale tokens) in a real VAR transformer",
+        "It serves as a reconstruction checksum to verify that `detokenize_multiscale` produces the same image as the input, standing in for the training loss function",
+        "It implements intra-scale autoregression, tracking which spatial positions within scale k have already been sampled so the model can avoid double-sampling"
+      ],
+      "correct": 1,
+      "explanation": "`context_key(drawn[:k])` extracts a coarse fingerprint of all scales drawn before scale k. This fingerprint is passed as the key into `predictors[k]` — the conditional distribution p(z_k | z_1..z_{k-1}). It implements the 'causal across scales' property: scale k is predicted conditional on all prior scales. In a full VAR transformer this conditioning flows through attention over the complete token sequence of prior-scale tokens (the transformer's KV cache of prefix tokens from scales 1..k-1). The toy histogram predictor approximates the same conditional via a lookup table keyed on this summary."
+    },
+    {
+      "stage": "post",
+      "question": "The doc states VAR 'was the first image-generative model to exhibit [GPT-style scaling] behavior as cleanly as language models.' What is the specific empirical form of this claim, and why does next-scale prediction enable it when pixel-level AR and PixelRNN failed to scale as predictably?",
+      "options": [
+        "VAR achieved lower FID than all diffusion models at every parameter budget from 33M to 5B, establishing a compute-optimal Pareto frontier for image generation analogous to Chinchilla for language",
+        "VAR's perplexity on ImageNet token prediction follows a power law in parameters with a constant slope from small to large models — the same coefficient as GPT scaling on language benchmarks",
+        "VAR's FID on class-conditional ImageNet follows a power-law decrease in compute — doubling parameters or training FLOPs predictably halves FID — a scaling regularity that prior token-level image AR and PixelRNN models did not exhibit as cleanly",
+        "VAR requires exactly log₂(K) transformer passes for a K-scale pyramid, so its training compute grows logarithmically in resolution — the same big-O as language model perplexity improvement with scale"
+      ],
+      "correct": 2,
+      "explanation": "Tian et al. 2024 demonstrated that VAR's FID on class-conditional ImageNet 256×256 follows a clean power law in compute, analogous to GPT's perplexity-vs-compute curve. Pixel-level AR (PixelRNN, DALL-E 1) had to learn irregular spatial statistics at every resolution simultaneously, producing a harder per-step prediction problem without a clean scaling structure. VAR decomposes generation into K well-defined cross-entropy problems (one per scale), each predicting VQ codes given a coarser conditioning. This structured decomposition produces the same kind of scaling regularity language models exhibit — the doc calls this 'VAR-scale predictions become predictable from compute, not empirical guesses per architecture.'"
+    }
+  ]
+}
