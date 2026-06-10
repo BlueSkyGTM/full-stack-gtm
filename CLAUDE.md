@@ -1,85 +1,76 @@
-# Interpreted-Context-Methdology
+# Full-Stack GTM
 
-ICM is a framework for building structured, multi-stage AI workflows out of markdown files and folder conventions. Each workspace gives AI agents the right context at each stage of a task, and gives humans clear edit surfaces between stages.
+Build the Full-Stack GTM course — a curriculum proving the convergence of AI engineering and GTM engineering, built using the same agentic methodology it teaches.
 
 ## Folder Map
 
 ```
-model-workspace-protocol/
-├── CLAUDE.md                          (you are here)
-├── README.md                          (project overview)
-├── LICENSE
-├── _core/                             (shared conventions and templates)
-│   ├── CONVENTIONS.md                 (source of truth for all patterns)
-│   ├── placeholder-syntax.md          (how {{VARIABLES}} work)
-│   └── templates/                     (blank starting points for new workspaces)
-└── workspaces/
-    ├── script-to-animation/           (content idea -> animated video)
-    ├── course-deck-production/        (unstructured material -> course PowerPoints)
-    └── workspace-builder/             (builds new MWP workspaces)
+full-stack-gtm/
+├── CLAUDE.md                  (you are here)
+├── CONTEXT.md                 (start here for task routing)
+├── setup/                     (onboarding questionnaire)
+├── skills/                    (gstack + operator-kit agents)
+├── vault/                     (shared context: identity, voice, variables)
+├── references/
+│   └── runtime-guide.md       (agent routing, gstack triggers, context loader, gbrain)
+├── shared/                    (cross-stage reference files)
+└── stages/
+    ├── 00-a-curriculum-archaeology/
+    ├── 00-b-gtm-content-mapping/
+    ├── 00-c-agent-setup/
+    ├── 00-d-helix-design/
+    ├── 00-e-seed/
+    ├── 00-e-full/
+    ├── 01-gtm-skeleton/
+    ├── 02-lesson-injection/
+    ├── 03-exercise-design/
+    ├── 04-quiz-recall/
+    ├── 05-helix-build/
+    ├── 06-site-readability/
+    ├── 07-student-state/
+    ├── 08-agent-wiring/
+    ├── 09-quality-pass/
+    └── 10-validation-run/
 ```
-
-## Routing
-
-| You want to... | Go to |
-|-----------------|-------|
-| Create content with script-to-animation | `workspaces/script-to-animation/CLAUDE.md` |
-| Build course slide decks from source material | `workspaces/course-deck-production/CLAUDE.md` |
-| Build a new workspace for any domain | `workspaces/workspace-builder/CLAUDE.md` |
-| Read the full MWP specification | `_core/CONVENTIONS.md` |
-| Understand the placeholder system | `_core/placeholder-syntax.md` |
-| Use a template for a new workspace | `_core/templates/` |
 
 ## Triggers
 
 | Keyword | Action |
 |---------|--------|
-| `setup` | Run onboarding in whatever workspace you are in |
-| `status` | Show pipeline completion for the current workspace |
+| `setup` | Run onboarding questionnaire |
+| `status` | Show pipeline completion for all stages |
 
-## How It Works
+## Routing
 
-Each workspace is self-contained with its own CLAUDE.md. Navigate into a workspace folder and that workspace's CLAUDE.md takes over. You do not need to read this root file once you are inside a workspace.
+| Task | Go To |
+|------|-------|
+| Curriculum archaeology | `stages/00-a-curriculum-archaeology/CONTEXT.md` |
+| GTM content mapping | `stages/00-b-gtm-content-mapping/CONTEXT.md` |
+| Agent setup | `stages/00-c-agent-setup/CONTEXT.md` |
+| Helix design | `stages/00-d-helix-design/CONTEXT.md` |
+| Shared context (seed) | `stages/00-e-seed/CONTEXT.md` |
+| Shared context (complete) | `stages/00-e-full/CONTEXT.md` |
+| GTM curriculum skeleton | `stages/01-gtm-skeleton/CONTEXT.md` |
+| Lesson injection | `stages/02-lesson-injection/CONTEXT.md` |
+| Exercise design | `stages/03-exercise-design/CONTEXT.md` |
+| Quiz and recall design | `stages/04-quiz-recall/CONTEXT.md` |
+| Helix build | `stages/05-helix-build/CONTEXT.md` |
+| Site readability overhaul | `stages/06-site-readability/CONTEXT.md` |
+| Student state | `stages/07-student-state/CONTEXT.md` |
+| Agent wiring | `stages/08-agent-wiring/CONTEXT.md` |
+| Quality pass | `stages/09-quality-pass/CONTEXT.md` |
+| Validation run | `stages/10-validation-run/CONTEXT.md` |
 
-## gstack (REQUIRED — global install)
+## What to Load
 
-**Before doing ANY work, verify gstack is installed:**
+| Task | Load These | Do NOT Load |
+|------|-----------|-------------|
+| Any Phase 0 stage | `references/runtime-guide.md`, that stage's CONTEXT.md | Other stage outputs |
+| Any build pipeline stage | `references/runtime-guide.md`, `vault/`, that stage's CONTEXT.md | Other stage CONTEXT.md files |
+| Helix build (Stage 05) | Add `stages/00-d-helix-design/output/` | Stage 01-04 full output folders |
+| Site work (Stage 06) | Add `stages/00-a-curriculum-archaeology/output/design-system-snapshot.md` | Lesson content |
+| Quality pass (Stage 09) | Add `stages/00-b-gtm-content-mapping/output/source-citations.md` | Code stages output |
 
-```bash
-test -d ~/.claude/skills/gstack/bin && echo "GSTACK_OK" || echo "GSTACK_MISSING"
-```
+## Stage Handoffs
 
-If GSTACK_MISSING: STOP. Do not proceed. Tell the user:
-
-> gstack is required for all AI-assisted work in this repo.
-> Install it:
-> ```bash
-> git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-> cd ~/.claude/skills/gstack && ./setup --team
-> ```
-> Then restart your AI coding tool.
-
-Do not skip skills, ignore gstack errors, or work around missing gstack.
-
-Using gstack skills: After install, skills like /qa, /ship, /review, /investigate,
-and /browse are available. Use /browse for all web browsing.
-Use ~/.claude/skills/gstack/... for gstack file paths (the global path).
-
-## Skill routing
-
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
-
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-- Author a backlog-ready spec/issue → invoke /spec
+Each stage writes to its own `output/` folder. The next stage reads from there. Edit an output file and the next stage picks up your edits.
