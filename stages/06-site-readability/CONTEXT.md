@@ -18,7 +18,8 @@ Implement modular lesson components without breaking the existing render pipelin
 
 1. Run /design-review on current site — 80-item audit
 2. Prioritize: lessons that look thin, unreadable, or not visually significant
-3. Implement modular lesson components per the rendering stack from design-system-snapshot — do not break the existing render pipeline
+3. Confirm Mermaid rendering is wired: the site must parse ` ```mermaid ` fenced blocks and render them as SVG (mermaid.js CDN include or SSG plugin). If not already present, add it before any Mermaid diagrams are written into lesson files. Verify with one test block before proceeding.
+4. Implement modular lesson components per the rendering stack from design-system-snapshot — do not break the existing render pipeline
 4. Generate Tier 1 (GLM-image) and Tier 2 (Excalidraw) illustrations for all lessons that need The Concept visual grounding — per illustration-pipeline.md tier selection logic
 5. Drop illustration outputs into `output/illustrations/{{PHASE}}/{{LESSON}}/`
 6. Validate all illustrations and site components in browser before /review gate

@@ -54,11 +54,13 @@ One tier per lesson. No mixing.
 
 ## Tier 3: Mermaid (Structural)
 
-**Tool:** Mermaid.js — rendered natively by the site's markdown pipeline.
+**Tool:** Mermaid.js — client-side library; parses ` ```mermaid ` fenced blocks and renders SVG in the browser.
 
-**Usage:** Mermaid code blocks written inline in `docs/en.md` during Stage 02 lesson injection. No separate generation step.
+**Integration requirement:** mermaid.js must be loaded on the site before any Mermaid diagrams are written. This is a one-line CDN include or SSG plugin — not a codebase clone. Stage 06 confirms and wires this before Tier 3 diagrams go into lesson files.
 
-**Quality gate:** Site render validation at Stage 10 (Mermaid syntax errors surface as broken renders).
+**Generation:** Claude writes Mermaid syntax directly during Stage 02 lesson injection. No API, no external call, no generation infrastructure. It's text.
+
+**Quality gate:** Stage 06 run-one-test-block check before batch; Stage 10 site render validation catches syntax errors that survived.
 
 **Output location:** inline in lesson file — no separate illustration output.
 
