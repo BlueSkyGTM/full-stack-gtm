@@ -7,10 +7,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Each ent
 ## [Unreleased]
 
 ### Added
+- `COURSEMAKER.md` — methodology doc explaining the Double Helix design principle (logic rule at Layer 1, dual-index representation at Layer 2), the 10-stage build pipeline, the governed-maze Helix tutor, quality mechanisms, and the domain-agnostic application (any practitioner field can be substituted for GTM). Includes the "every reference begets another one" insight and why a 3-month programmer can build this.
+- `vault/helix-architecture.md` — governed-maze spec for Helix: 4-layer system prompt, 7-modality decision tree (EXPLAIN, QUIZ, HINT, FLAG CHECK, CORRECT, ORIENT, REDIRECT), FSRS integration with `review_summary` context, flag parser robustness rules.
+- `vault/helix-test-harness.md` — 3-agent test loop (Helix teacher, Claude student proxy, Hypatia evaluator), 5 pedagogical dimensions, 3 test scenarios, pass gate before Stage 05 ships.
+- `shared/quality-standards.md` — master quality reference: CLEAR reading standard, AI interaction quality (EducationQ-adapted), 3-tier illustration standards, curriculum accuracy thresholds.
+- `shared/quality-evaluator/lesson-judge-prompts.md` — CLARITY_JUDGE, WEAVE_JUDGE, ACCURACY_JUDGE with structured JSON output schemas and pass thresholds.
+- `shared/illustration-pipeline.md` — 3-tier illustration logic: GLM-image (Tier 1, conceptual), Excalidraw (Tier 2, architectural), Mermaid (Tier 3, structural). Tier selection logic, labeled examples, GLM-image API swap spec.
 - `scripts/scaffold-lesson.sh` — scaffolder that creates `phases/NN-phase/NN-lesson/` with the full folder structure and a `docs/en.md` skeleton prefilled from `LESSON_TEMPLATE.md`.
 - `.github/PULL_REQUEST_TEMPLATE.md` — contributor checklist (code runs, no code comments, built-from-scratch-first, atomic per-lesson commit, markdown-link ROADMAP row).
 - `.github/ISSUE_TEMPLATE/bug_report.md` and `new_lesson_proposal.md` — structured intake for bug reports and lesson pitches.
 - This `CHANGELOG.md`.
+
+### Changed
+- `README.md` — rewritten to describe this repo as the Full-Stack GTM course + coursemaker, with pipeline table, Double Helix summary, and link to COURSEMAKER.md.
+- `vault/course-identity-doc.md` — added coursemaker framing and domain-agnostic scope.
+- `vault/variable-registry.md` — added `{{GLM_IMAGE_ENDPOINT}}` runtime secret; removed `{{SYNAPSE_REPO_URL}}`.
+- `LESSON_TEMPLATE.md` — added platform callout (Claude Code Desktop, terminal-only) and tier selection comment.
+- Stage CONTEXT.md files (00-a, 00-d, 01, 02, 04, 05, 06, 09, 10) — updated with manifest pattern, quality gates, Helix spec inputs, illustration pipeline, FSRS format-only note, and onboarding validation step.
+
+### Removed
+- Professor Synapse dependency — Helix is built from scratch against `vault/helix-architecture.md`. No blackbox persona inheritance.
 
 ## 2026-04 — Phase 4: Computer Vision complete
 
