@@ -21,8 +21,9 @@ Draft full hybrid lessons — GTM strand woven into AI engineering lessons as ap
 
 1. Read manifest.json — identify all slots with status: pending, process phase by phase
 2. For each phase slice:
-   a. Draft full GTM-strand content for all six beats per outline
-   b. Weave GTM context into the corresponding AI engineering lesson — GTM as application layer
+   a. Derive the GTM application from the AI concept first — mechanically trace what the technical concept enables in a GTM context before writing any prose. If the derivation doesn't hold, flag the phase before drafting.
+   b. Draft full GTM-strand content for all six beats per outline, grounded in the derivation from step (a)
+   c. Weave GTM context into the corresponding AI engineering lesson — GTM as application layer
    c. Write hybrid lesson to `output/hybrid-lessons/{{PHASE}}/{{LESSON}}/docs/en.md` — include a `## Sources` block at the end with citations for every GTM claim made in the lesson (url + what it supports)
    d. Run all three audit checks (six-beat complete, weave-not-parallel, format match)
    e. If audit passes: mark lesson done in manifest.json and advance

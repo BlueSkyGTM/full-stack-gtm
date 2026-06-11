@@ -22,6 +22,8 @@
 
 **The GTM handbook provenance:** The 80/20 GTM Engineering Playbook was sourced from a six-figure GTM engineer running a community of other six-figure GTM engineers. The enterprise layer (Section 4) represents current advanced market practice, not aspirational content. The techniques and tools in the handbook are what practitioners are billing $8K–$15K/month retainers to deliver.
 
+**Platform (locked):** Claude Code Desktop. The student has one environment — the terminal. No IDE, no browser-dependent exercises, no tool switching. Every exercise is completable inside Claude Code without leaving the shell. This is not a constraint; it is the point. The course teaches the way modern AI engineers actually work.
+
 **What this is not:** Workplace superiority. Credential stacking. Putting eggs in two sexy baskets. It is a compound discipline built to be durable.
 
 **Why the GTM content is accurate by construction:** The AI engineering curriculum is the reasoning chain. Every GTM lesson has to answer "what does this specific technical concept let you do in GTM?" — it cannot drift into vague best practices because the AI concept anchors it. GTM-first curricula are opinions all the way down. This curriculum has a validated technical spine across 502 lessons that forces every GTM claim to be grounded in a specific mechanism. The Double Helix doesn't just organize the content — it enforces accuracy as a structural property.
