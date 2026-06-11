@@ -9,7 +9,7 @@ full-stack-gtm/
 ├── CLAUDE.md                  (you are here)
 ├── CONTEXT.md                 (start here for task routing)
 ├── setup/                     (onboarding questionnaire)
-├── skills/                    (gstack + operator-kit agents)
+├── skills/                    (gstack suite + operator-kit agents — always tracked, never gitignored)
 ├── vault/                     (shared context: identity, voice, variables)
 ├── references/
 │   └── runtime-guide.md       (agent routing, gstack triggers, context loader, gbrain)
@@ -32,6 +32,10 @@ full-stack-gtm/
     ├── 09-quality-pass/
     └── 10-validation-run/
 ```
+
+## Phase 0 Entry Point
+
+**Start here for Phase 0:** `vault/phase0-plan.md` — confirms variable state, lists the 6-stage sequence, and defines human gates. Run stages in order: 00-a → 00-b → 00-e-seed → 00-c → 00-d → 00-e-full. Confirm `vault/variable-registry.md` has no `{{...}}` placeholders before starting.
 
 ## Triggers
 
@@ -77,6 +81,8 @@ Each stage writes to its own `output/` folder. The next stage reads from there. 
 
 ## Skill Routing
 
+gstack skills are slash commands invoked inside Claude Code — there is no terminal `gstack` command. Full skill list and trigger table: `references/runtime-guide.md`.
+
 When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
 
 Key routing rules:
@@ -91,6 +97,10 @@ Key routing rules:
 - Post-deploy monitoring → invoke `/canary`
 - Save progress → invoke `/context-save`
 - Resume context → invoke `/context-restore`
+- Security audit → invoke `/cso`
+- Codebase health check → invoke `/health`
+
+**To rebuild gstack after pulling:** `cd ~/.claude/skills/gstack && ./setup`
 
 ### `/document-generate` — when to use in this project
 

@@ -9,19 +9,21 @@ Write agent tailoring briefs (Echo, Newton, Lyra, Hypatia) and configure the con
 |--------|--------------|---------------|-----|
 | Workflow map | `../../CLAUDE.md` | Routing table | Scope of what each agent will do |
 | Format specs | `../00-a-curriculum-archaeology/output/` | All three specs | Scope for Lyra content brief |
-| GTM topic map | `../00-b-gtm-content-mapping/output/gtm-topic-map.md` | Full file | Scope for Newton brief |
+| GTM topic map | `../00-b-gtm-content-mapping/output/gtm-topic-map.md` | Full file | Scope for Lyra content and Newton briefs |
 | Runtime guide | `../../references/runtime-guide.md` | Agent routing section | Declaration format |
+| Student archetype | `../../vault/student-archetype.md` | Full file | Lyra content brief must be grounded in student identity |
+| Course identity | `../../vault/course-identity-doc.md` | Positioning, design decisions | Lyra voice and constraint source |
 
 ## Process
 
 1. Write Echo brief: read-only scout, BlueSkyGTM repo, 00-a archaeology scope
-3. Write Newton brief: GTM topic clusters, Perplexity as source, cite every claim, stopping criteria
-4. Write Lyra content brief: lesson format spec path, GTM tone, Full-Stack GTM identity, token budget, chunking strategy for 498-lesson scale
-5. Write Lyra code brief: site architecture constraints, render pipeline (ui.js, catalog.js), auth.js constraints, no breaking changes
-6. Write Hypatia brief: curriculum coherence focus, double-helix alignment, GTM accuracy against source-citations, gap detection
-7. Configure `project-keywords.json`: one keyword entry per stage so context loader auto-injects relevant files
-8. Write model-config.md: GLM 5.1 for all operator-kit agents
-9. Run audit checks
+2. Write Newton brief: Newton's role is gap-fill research — when curriculum gaps are detected (by Hypatia at Stage 09 or by any stage discovering missing source material), Newton activates to find citations using the link repo and Perplexity as jumping-off points. Brief must include: GTM topic clusters, Perplexity as source, cite every claim, stopping criteria, and the gap-fill trigger conditions (what signals Newton to activate)
+3. Write Lyra content brief: ground it in vault/student-archetype.md and vault/course-identity-doc.md — the brief must name who the student is and what the course promises before specifying format constraints
+4. Write Lyra code brief: site architecture constraints, render pipeline (ui.js, catalog.js), auth.js constraints, no breaking changes
+5. Write Hypatia brief: curriculum coherence focus, double-helix alignment, GTM accuracy against source-citations, gap detection
+6. Configure `project-keywords.json`: one keyword entry per stage so context loader auto-injects relevant files
+7. Write model-config.md: GLM 5.1 for all operator-kit agents
+8. Run audit checks
 
 ## Audit
 

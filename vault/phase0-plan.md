@@ -1,3 +1,4 @@
+<!-- /autoplan restore point: /Users/raymo/.gstack/projects/BlueSkyGTM-full-stack-gtm/main-autoplan-restore-20260611-142211.md -->
 # Plan: Phase 0 — Build the Ecosystem Before Releasing the Finish
 
 ## Decision
@@ -79,12 +80,7 @@ Outputs (written directly to vault/):
 
 ## Contracts to Patch
 
-The CONTEXT.md files for 00-a and 00-b currently declare GLM agents:
-- 00-a/CONTEXT.md: `<!-- Agent: Echo -->` → remove, run as Claude Code
-- 00-b/CONTEXT.md: `<!-- Agent: Newton -->` → remove, run as Claude Code
-
-The runtime-guide.md Echo/Newton entries remain valid — they describe agent behavior for
-when those agents ARE configured (Stage 01+). The Phase 0 stages just won't use them.
+Both contracts already patched — 00-a and 00-b CONTEXT.md files already declare `<!-- Agent: Claude Code -->`. No action needed.
 
 ## Out of Scope
 - Running any build pipeline stage (01-10) before Phase 0 completes
@@ -97,4 +93,56 @@ Phase 0 is done when:
 2. vault/ and all stage CONTEXT.md files have no unfilled {{VARIABLE}} placeholders — includes {{REPO_URL}}, {{SYNAPSE_REPO_URL}}, {{SITE_URL}}
 3. copy-paste-flag-format.md exists and contains the exact flag string
 4. project-keywords.json covers all 10 build pipeline stages
-5. Stage 01 CONTEXT.md can be opened and run without missing context
+5. Stage 01 dry-run passes: run 00-c's lyra-content-brief through Stage 01 CONTEXT.md against a single Phase 01 lesson slot. If Lyra produces a structurally valid outline, Phase 0 is done. If it fails (missing context, unfilled variables, structural error), Phase 0 is not done.
+
+## Human Gates
+Phase 0 has two mandatory human sign-off points before proceeding:
+
+**Gate 1 — after 00-d:** Review `student-state-options.md` before running 00-e-full. The Helix voice and vault completion depend on this architectural decision. Do not run 00-e-full until the student state mechanism is decided.
+
+**Gate 2 — after 00-e-full:** Review `vault/helix-voice.md` and `vault/course-identity-doc.md` (with student promise) before running Stage 01. These are the editorial foundation for 498 lessons.
+
+## Re-run Safety
+Each stage is safe to re-run IF you delete the output folder contents first (not the .gitkeep).
+
+LOCKED outputs (00-d only): `copy-paste-flag-format.md` and `fsrs-integration-spec.md` are permanent locks. Before overwriting either, confirm explicitly: "I am intentionally relocking — all downstream Stage 05 exercises must be rebuilt." The audit check in 00-d enforces this by name.
+
+00-e-seed and 00-e-full both write to vault/. 00-e-full supersedes 00-e-seed's variable-registry.md. If you re-run 00-e-seed after 00-e-full, you will lose any variables 00-e-full added. Sequence must hold.
+
+---
+
+<!-- AUTONOMOUS DECISION LOG -->
+## Decision Audit Trail
+
+| # | Phase | Decision | Classification | Principle | Rationale | Rejected |
+|---|-------|----------|----------------|-----------|-----------|----------|
+| 1 | CEO | Keep 00-b producing gtm-topic-map + source-citations (not reduce to citations-only) | Mechanical | P3 Pragmatic | Topic map is low-effort and gives Lyra grounding at Stage 01. Not worth cutting. | Collapse to citations-only |
+| 2 | CEO | 00-c runs before 00-d (sequential, not parallel) | Mechanical | P5 Explicit | 00-d explicitly lists lyra-code-brief.md as input — 00-c IS a dependency | Parallelize 00-c and 00-d |
+| 3 | CEO | Keep 00-e-seed as separate stage | Mechanical | P5 Explicit | Isolates vault bootstrap cleanly; agent briefs need resolved variables from vault | Merge into 00-e-full |
+| 4 | CEO/Eng | Add FSRS validation example to 00-d before locking | Mechanical | P1 Completeness | 498 exercises built on unvalidated FSRS params is unacceptable risk; worked example is minimal validation | Lock without validation |
+| 5 | CEO | Add explicit human gate after 00-d | Mechanical | P1 Completeness | student-state-options.md is an architecture decision; 00-e-full cannot proceed without it being resolved | Treat 00-d→00-e-full as automatic |
+| 6 | CEO | Strengthen success criterion #5 to require Stage 01 dry-run | Mechanical | P1 Completeness | File-existence check is not sufficient; Phase 0 is only done when a downstream stage can actually run | Keep SC #5 as file-existence check |
+| 7 | Eng | Add vault/ files to 00-c inputs | Mechanical | P1 Completeness | Lyra content brief needs student archetype and course identity to be grounded | Leave 00-c inputs incomplete |
+| 8 | Eng | Fix 00-b process step 3 to say "Claude Code runs Perplexity directly" | Mechanical | P5 Explicit | Newton is retired; ghost dependency creates confusion | Leave Newton reference |
+| 9 | Eng | Fix 00-c process step numbering gap (2 missing) | Mechanical | P5 Explicit | Numbering gap signals dropped step; clean it up | Leave gap |
+| 10 | DX | Add Phase 0 entry point block to CLAUDE.md | Mechanical | P5 Explicit | Entry point was invisible; 1-line fix unblocks new operators | Leave it undiscoverable |
+| 11 | DX | Add failure modes table to 00-a CONTEXT.md | Mechanical | P1 Completeness | Site-down is a known failure mode with no guidance; operators need recovery path | Leave silent failure |
+| 12 | DX | Add re-run safety section to plan | Mechanical | P5 Explicit | No re-run protocol causes data loss risk (00-e-seed overwriting 00-e-full) | Leave undocumented |
+| 13 | DX | Add student promise scaffold to 00-e-full | Mechanical | P1 Completeness | Cold-writing the hardest editorial decision produces generic output | Write promise without scaffold |
+| 14 | Deferred | 00-a spec refresh mechanism at Stage 06 | Deferred → TODOS.md | P3 Pragmatic | Stage 06 scope, outside Phase 0; low risk before Stage 06 runs | Add to Phase 0 |
+
+## TODOS.md Deferrals
+
+- **00-a spec refresh gate (Stage 06):** Before Stage 06 runs, re-run the 00-a audit checks against the live site to catch rendering stack drift. Stage 06 CONTEXT.md should reference the git hash recorded in design-system-snapshot.md.
+- **Agent wiring smoke test (Stage 08):** Add an integration check to Stage 08 that confirms project-keywords.json correctly injects files for each keyword before wiring agents.
+
+## GSTACK REVIEW REPORT
+
+**Phases run:** CEO, Eng, DX (no UI scope detected)
+**Dual voices:** Claude subagent only (Codex not installed — single-reviewer mode)
+**Auto-decided:** 14 decisions
+**Taste decisions surfaced at gate:** 1
+**User challenges:** 0
+**Critical fixes applied:** FSRS validation gate, Stage 01 dry-run SC, 00-d human gate
+**High fixes applied:** vault inputs to 00-c, 00-a failure modes, student promise scaffold, CLAUDE.md entry point, re-run safety
+**Deferred to TODOS.md:** 00-a spec refresh, Stage 08 wiring smoke test

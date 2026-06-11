@@ -23,7 +23,19 @@ Helix uses FSRS-5 for quiz card recall scheduling. The Phase 19/20 capstone exte
 3. Design copy-paste flag format: exact string Helix parses from student CLI output — **LOCKED after this stage**
 4. Design faculty persona system: trigger conditions, persona types (GTM vs AI engineering topics), voice rules
 5. Evaluate student state options: what data must persist, mechanism candidates, evaluation criteria
-6. Run audit checks
+6. **FSRS validation (required before locking):** Write one worked example quiz card — a real question from the curriculum, with an Again/Hard/Good/Easy response and the resulting FSRS-5 interval output. Confirm the desired retention rate and stability parameters produce a schedule that makes sense for a 3-week learner. If the intervals are clearly wrong (e.g. first review in 40 days), revise the spec before locking.
+7. Run audit checks
+
+## Human Gate — REQUIRED before 00-e-full
+
+After this stage completes, a human must review `student-state-options.md` and make the architecture decision. Do NOT run 00-e-full until this decision is recorded. 00-e-full's helix-voice.md depends on which student state mechanism is selected.
+
+## Re-run / Relock Safety
+
+`copy-paste-flag-format.md` and `fsrs-integration-spec.md` are **LOCKED** after this stage. If you rerun 00-d and produce new versions of these files:
+1. Every Stage 05 Helix exercise that has already been built must be rebuilt against the new spec.
+2. Confirm explicitly before overwriting: "I am intentionally relocking — I understand all downstream Stage 05 exercises must be rebuilt."
+The audit check below enforces this by requiring an explicit confirmation line in the spec files.
 
 ## Audit
 
@@ -31,7 +43,9 @@ Helix uses FSRS-5 for quiz card recall scheduling. The Phase 19/20 capstone exte
 |-------|---------------|
 | Flag format is exact | copy-paste-flag-format.md specifies the exact string, not a description |
 | FSRS params are concrete | fsrs-integration-spec.md has actual parameter values, not ranges |
+| FSRS params validated | A worked example quiz card with computed intervals is present in fsrs-integration-spec.md |
 | Stage 07 criteria are decision-ready | student-state-options.md names criteria beyond "persistent, cheap, reliable" |
+| Human gate acknowledged | Human has reviewed student-state-options.md and recorded the mechanism decision before 00-e-full runs |
 
 ## Outputs
 

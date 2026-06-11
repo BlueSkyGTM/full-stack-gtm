@@ -22,6 +22,14 @@ Map the existing site, codebase, and auth layer before anything is built.
 7. Note placement test mechanism if present
 8. Run audit checks
 
+## Failure Modes
+
+| Condition | Symptom | Recovery |
+|-----------|---------|----------|
+| `{{SITE_URL}}` unreachable | design-system-snapshot.md and auth-audit.md will be incomplete | Explicitly flag each affected output as `[PARTIAL — site unreachable at capture time, git hash: ...]`. Do not produce silent incomplete specs. |
+| LESSON_TEMPLATE.md missing | lesson-format-spec.md cannot be derived from authoritative source | Derive from an existing lesson in `phases/` as proxy. Flag that spec is example-derived, not template-derived. |
+| Rendering pipeline changed since last run | design-system-snapshot.md may be stale by Stage 06 | Record the git commit hash in the snapshot file header. Stage 06 must re-validate against this hash before running. |
+
 ## Audit
 
 | Check | Pass Condition |
