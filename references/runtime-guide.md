@@ -6,11 +6,11 @@ How the orchestration layer connects. Read this once at workspace setup. Stage c
 
 ## Skill Routing
 
-Operator-kit skills are gstack slash commands backed by Python scripts. Each skill calls the GLM proxy on Railway — the Z.ai key never touches this repo. Phase 0 runs entirely as Claude Code; skills first deploy at Stage 01+.
+Operator-kit skills are gstack **agentic skills** — each `SKILL.md` drives a full behavior chain: read context → call Z.ai GLM → write output → validate. No proxy, no Railway, no backing Python scripts. The skill is the harness; GLM is the worker. Phase 0 runs entirely as Claude Code; skills first deploy at Stage 01+.
 
-**Invocation:** Claude Code calls these as slash commands (e.g. `/write-lesson`), not via the Agent tool. Scripts in `skills/operator-kit/<skill>/run.py` make the actual GLM calls through the proxy.
+**Invocation:** Claude Code calls these as slash commands (e.g. `/write-lesson`), not via the Agent tool. Each `skills/operator-kit/<skill>/SKILL.md` contains the full chain including embedded bash that calls Z.ai directly.
 
-**Proxy:** `BlueSkyGTM/openai-proxy` on Railway. Set `PROXY_URL` + `PROXY_KEY` in `.env` (gitignored). See `vault/operator-kit-architecture-plan.md` for Railway env var setup.
+**Endpoint:** `https://api.z.ai/api/coding/paas/v4` — simple `Bearer $ZHIPUAI_API_KEY` auth. No JWT signing. Set `ZHIPUAI_API_KEY` and `ZAI_BASE_URL` in `.env` (gitignored). See `vault/operator-kit-architecture-plan.md` for full setup and confirmed model list.
 
 | Skill | Model | Primary job | First active |
 |---|---|---|---|
