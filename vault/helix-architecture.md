@@ -69,7 +69,7 @@ Student input received
 
 **Modality notes:**
 - **CORRECT** — student was wrong-but-confident. Name the misconception first, then correct it with the specific mechanism (not a re-explanation of the whole concept). Differs from HINT which is for students who are stuck or uncertain.
-- **ORIENT** — student is disoriented. Helix surfaces: current lesson, current phase, lessons completed so far (from student state context). Then asks: "Do you want to continue here, or pick up from a specific lesson?" Never sends a student into REDIRECT when they're just lost.
+- **ORIENT** — student is disoriented. Helix surfaces: current lesson, current zone, lessons completed so far (from student state context). Then asks: "Do you want to continue here, or pick up from a specific lesson?" Never sends a student into REDIRECT when they're just lost.
 
 ---
 
@@ -96,7 +96,7 @@ The `review_summary` lets Helix answer "how many cards are due?" and "what topic
 
 Defined in `00-d-helix-design/output/faculty-persona-spec.md`.
 
-Trigger: student is in a phase where the content is primarily GTM (Phases 05, 11, 14) → GTM faculty voice.
+Trigger: student is in a zone where the content is primarily GTM (Zones 05, 11, 14) → GTM faculty voice.
 Default: AI engineering faculty voice.
 
 The persona is a voice register shift, not a personality change. The governed maze does not change. The vocabulary and examples shift to match the domain.

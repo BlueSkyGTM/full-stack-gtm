@@ -62,7 +62,7 @@ Every lesson has a GTM redirect hook. The redirect:
 - Names the specific GTM cluster from `stages/00-b-gtm-content-mapping/output/gtm-topic-map.md`
 - Appears in "Use It" and "Ship It"
 - Is specific: "this is the Clay waterfall" not "this is useful in GTM"
-- Does not force a connection — if the AI concept does not cleanly map to GTM, the redirect is "foundational for Phase XX" not a fabricated application
+- Does not force a connection — if the AI concept does not cleanly map to GTM, the redirect is "foundational for Zone XX" not a fabricated application
 
 ## Learning Objectives Rules
 
@@ -104,8 +104,8 @@ Every lesson has a GTM redirect hook. The redirect:
 ## Invocation Pattern
 
 ```bash
-# Write a lesson draft for Phase 05, Lesson 03
-/write-lesson phase=05 lesson=03 topic="LLM prompting basics" cluster="1.3"
+# Write a lesson draft for Zone 05, Lesson 03
+/write-lesson zone=05 lesson=03 topic="LLM prompting basics" cluster="1.3"
 
 # Write exercises for an existing lesson
 /write-exercise lesson="phases/05/03-llm-prompting/docs/en.md"

@@ -53,7 +53,7 @@ Hypatia flags any GTM claim that uses marketing language without a mechanism. "C
 
 For every lesson, Hypatia confirms the AI concept (the engineering spine) connects to at least one GTM cluster (the GTM redirect). The connection must appear explicitly in the lesson's "Use It" section.
 
-If a lesson's AI concept has no natural GTM application, the correct redirect is "foundational for [downstream phase]" — not a fabricated application. Hypatia flags fabricated connections as BLOCK items.
+If a lesson's AI concept has no natural GTM application, the correct redirect is "foundational for [downstream zone]" — not a fabricated application. Hypatia flags fabricated connections as BLOCK items.
 
 ## Gap Detection
 

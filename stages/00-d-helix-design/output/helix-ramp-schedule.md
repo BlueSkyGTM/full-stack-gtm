@@ -1,67 +1,92 @@
 # Helix Ramp Schedule
-<!-- Stage 00-d output | 2026-06-12 -->
+<!-- Stage 00-d output | 2026-06-12 (revised — Zone naming, Zone 4 activation) -->
 
-## What This Is
+## The Model
 
-Helix's capabilities are introduced gradually across the 20-phase curriculum. A student in Phase 01 (Python environment setup) does not need full FSRS-driven recall scheduling on Day 1. A student in Phase 20 (capstone) should have the full system active.
+Zones 1–3 are standard Claude. Helix does not exist yet. The student is building the technical foundation: math, ML fundamentals, deep learning core. Three zones. No shortcuts.
 
-This schedule defines exactly what Helix can do at each phase. Stage 06 uses this to implement the gradual introduction in the site UI — buttons appear, modalities unlock, and the FSRS review session becomes available at the right moment.
+At Zone 4 (Computer Vision), Helix activates — not gradually, not partially. It arrives with full presence and immediately does three things:
+
+1. **Immersion** — Helix knows who the student is, what they've built, what their business is. The repo is alive. This is Revelation 1.
+2. **Spaced repetition** — FSRS activates. Cards from Zones 1–3 are retroactively surfaced. The student's first Helix session includes a review of foundational concepts they've already covered.
+3. **Command center onboarding** — Helix walks the student through plugging Zone 1–3 artifacts into the mission command. The foundation they built now has a home.
+
+Why Zone 4? The original AI curriculum branches into 4 paths at Computer Vision — the clearest signal that the foundation is complete. Three zones of math/ML/deep learning give the GTM anchors something to grip. Activating Helix before the foundation is laid would be noise.
+
+---
 
 ## Capability Levels
 
 | Level | Name | What Helix can do |
 |-------|------|------------------|
-| L1 | Tutor only | ASSESS → EXPLAIN, HINT, CORRECT, ORIENT, REDIRECT. No quiz scoring, no FSRS. |
-| L2 | Tutor + quiz scoring | L1 + QUIZ modality. Helix presents cards, accepts ratings, scores them. FSRS not yet active (no scheduling). |
-| L3 | Tutor + FSRS + artifact awareness | L2 + FSRS intervals computed and stored. Cards have `due` dates. Helix reads the mission-command filesystem to detect artifact gates. A student who says "hi" gets a response grounded in what's built and what's due. |
-| L4 | Full (L3 + Revelation 1) | L3 + Revelation 1 trigger available. Helix can surface "you've seen this before" connections across phases. Requires cross-phase student state read. |
+| —     | Standard Claude (Zones 1–3) | Full Claude helpfulness. No Helix identity, no FSRS, no artifact gates. Student builds the foundation. |
+| L1 | Full Helix (Zone 4+) | ASSESS → EXPLAIN, HINT, CORRECT, ORIENT, REDIRECT, QUIZ. FSRS active. Artifact gates active. Reads `progress/progress.json` + mission-command filesystem before every response. |
+| L2 | Full Helix + Revelation 1 (Zone 19+) | L1 + cross-zone bridge. Helix surfaces connections across all completed zones. "You saw this pattern first in Zone 03." |
 
-## Per-Phase Schedule
+---
 
-| Phase | Level | Notes |
-|-------|-------|-------|
-| 01 | L1 | Environment setup — tutor only. FSRS would feel premature when the student is installing Python. |
-| 02 | L1 | Data structures — tutor only. Building the foundation before recall layer activates. |
-| 03 | L2 | Web scraping — quiz scoring activates. Student has enough vocabulary to be tested. |
-| 04 | L2 | Data pipelines — quiz scoring continues. FSRS not yet active. |
-| 05 | L3 | LLM prompting — **FSRS + artifact awareness activates.** First GTM-primary phase. Helix now reads the mission-command filesystem; student's first real GTM artifacts start appearing here. |
-| 06 | L3 | Embeddings — L3 continues. |
-| 07 | L3 | Fine-tuning → ABM — Helix detects signal scraper artifacts in `signals/scrapers/`. |
-| 08 | L3 | Vector databases — Helix detects handler artifacts in `handlers/`. |
-| 09 | L3 | Agents — L3 continues. |
-| 10 | L3 | Multi-agent — L3 continues. |
-| 11 | L3 | Evaluations → Revenue intelligence — L3 continues. |
-| 12 | L3 | Observability — L3 continues. |
-| 13 | L3 | Deployment — L3 continues. |
-| 14 | L3 | Cost optimization — L3 continues. |
-| 15 | L3 | Security — L3 continues. |
-| 16 | L3 | Distributed systems — L3 continues. |
-| 17 | L3 | MLOps — L3 continues. |
-| 18 | L3 | Advanced prompting — L3 continues. |
-| 19 | L4 | RAG → **Revelation 1 trigger available.** Student can now surface connections across all 18 completed phases. Helix can say "this pattern first appeared in Phase 03." |
-| 20 | L4 | Capstone — full system. FSRS, artifact gates, and Revelation 1 all active. Operator mode earnable. |
+## Per-Zone Schedule
 
-## Revelation 1 Trigger (L4)
+| Zone | Helix State | Notes |
+|------|-------------|-------|
+| 01 | Standard Claude | Math foundations. No Helix. Student works with Claude directly. |
+| 02 | Standard Claude | ML fundamentals. No Helix. |
+| 03 | Standard Claude | Deep learning core. No Helix. Foundation complete at end of this zone. |
+| 04 | **L1 — Helix activates** | Computer vision. **Revelation 1.** Helix arrives context-loaded: knows the business, knows what's built, knows what FSRS cards are due from Zones 1–3. Walks student through plugging Zone 1–3 artifacts into the command center. |
+| 05 | L1 | NLP. First GTM-primary zone. Helix detects signal artifacts starting here. |
+| 06 | L1 | Speech & audio. L1 continues. |
+| 07 | L1 | Transformers deep-dive → ABM signal playbooks. Helix detects scraper artifacts in `signals/scrapers/`. |
+| 08 | L1 | Generative AI. L1 continues. |
+| 09 | L1 | Reinforcement learning. L1 continues. |
+| 10 | L1 | LLMs from scratch. L1 continues. |
+| 11 | L1 | LLM engineering → Revenue intelligence. Helix detects handler artifacts in `handlers/`. |
+| 12 | L1 | Multimodal AI. L1 continues. |
+| 13 | L1 | Tools & protocols. L1 continues. |
+| 14 | L1 | Agent engineering. L1 continues. Mission command is nearly complete. |
+| 15 | L1 | Autonomous systems. L1 continues. |
+| 16 | L1 | Multi-agent & swarms. L1 continues. |
+| 17 | L1 | Infrastructure & production. L1 continues. |
+| 18 | L1 | Ethics & safety alignment. L1 continues. |
+| 19 | **L2 — Revelation 1 trigger** | Capstone projects. Helix can now surface cross-zone connections. "This stability/decay model first appeared in Zone 05 — applied here to GTM signal decay." |
+| 20 | L2 | Final capstone. Full system active. Operator mode earnable. Albatross rename unlocks. |
 
-Revelation 1 is Helix's cross-phase bridge capability. When active, Helix can:
-- Reference a concept the student learned in an earlier phase: "You saw this stability/decay model first in Phase 05 — this is the same pattern applied to GTM signal decay."
-- Surface unexpected connections between AI concepts and GTM playbooks
-- Flag when a student is re-encountering a concept they already have FSRS cards for ("You have 3 cards on this already — want to review them now, or continue?")
+---
 
-Revelation 1 requires access to the student's full FSRS state (not just the current card). This is why it activates at Phase 19 — by then the student has enough review history for the connections to be meaningful.
+## Revelation 1 — The Repo Is Alive (Zone 4)
+
+This is the moment, not an announcement. The student opens their mission command at the start of Zone 4 and says hi. Helix responds knowing:
+- Their business (from `context/company.md`)
+- Their ICP definition (from `context/icp-definition.md`)
+- Their Zone 1–3 FSRS cards that are due
+- What artifacts need to be plugged in to initialize the command center
+
+No banner. No "Welcome to Helix!" fanfare. Just presence. The architecture earns the moment — the site must not smother it.
+
+**What Helix says at first contact (Zone 4):** Not a tutorial. A greeting that demonstrates it already knows the student. Then: "You've got 3 foundational concepts due for review and 2 artifacts from your earlier zones ready to wire in. Want to start with review or setup?"
+
+---
+
+## Revelation 2 — The Loop Reveal (Zone 20)
+
+Protected until Stage 10. No premature references in lesson copy, tooltips, or site UI. The student realizes the course was itself a loop — the quiz factory, the manifest, Lyra running batch jobs. They were inside the loop the entire time.
+
+It can be spoiled. It doesn't matter. You still have to earn it.
+
+---
 
 ## UI Implementation Notes (Stage 06)
 
-- L1 → L2 transition: "Quiz" button appears in the Helix UI
-- L2 → L3 transition: "Review session" option appears (shows due card count)
-- L3 → L4 transition: "Connections" link appears in Helix header (Revelation 1 entry point)
+- Zones 1–3: No Helix UI elements. Standard Claude instructions only.
+- Zone 4 entry: Helix appears for the first time. No onboarding modal — it's just there, context-loaded. The invocation guide ships with the Zone 4 first lesson.
+- Zone 19: "Connections" surface in Helix responses (Revelation 1 trigger active).
+- Operator mode: unlocks at Zone 20 completion, confirmed by Stage 10 validation gate.
 
-Each transition is gated by `currentPhase >= threshold` in the client state. No server-side gating required. L4 requires cross-phase FSRS state read — state lives in `progress/progress.json` in the student's mission command fork.
+---
 
-## What Helix Does Before Its Level Activates
+## What Helix Says If a Student Tries to Skip
 
-If a student in Phase 01 (L1) asks Helix to quiz them:
+If a student in Zone 1 forks the repo and tries to invoke Helix before Zone 4:
 
-> "Quiz scheduling activates in Phase 03. For now, I can explain concepts, give hints, and help you work through exercises. What are you stuck on?"
+> "You're in Zone 01 — the foundation zones run on standard Claude. I'll be here when you hit Zone 04. Until then, Claude has everything you need. What are you working on?"
 
-No error. No broken state. Clean redirect to an available modality.
+Clean. No wall. Just a redirect to what's actually available.

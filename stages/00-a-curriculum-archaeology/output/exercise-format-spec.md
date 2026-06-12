@@ -36,13 +36,13 @@ Exercises are a numbered Markdown list at the end of the lesson doc, after Key T
 |------|-------------|---------------|
 | Easy (1-2) | Reinforce the core concept from the lesson. Student has the scaffold, just extends it. | Implement, Add, Verify, Create |
 | Medium (3-4) | Apply concept to a different problem. Requires transferring the idea. | Apply, Compare, Find, Build |
-| Hard (5-6) | Extend or combine with prior lessons. No scaffold. May reference prior phases. | Design, Prove, Combine, Extend |
+| Hard (5-6) | Extend or combine with prior lessons. No scaffold. May reference prior zones. | Design, Prove, Combine, Extend |
 
 ## Rules
 
 1. **No scaffolded code** — exercises are fully open-ended tasks, not fill-in-the-blank
 2. **All exercises are terminal-executable** — they should produce observable output the student can check
-3. **Hard exercises may name a prior lesson** — "Using the technique from Phase 03 Lesson 04..."
+3. **Hard exercises may name a prior lesson** — "Using the technique from Zone 03 Lesson 04..."
 4. **Minimum 3 exercises, maximum 6** — most lessons land at 4-5
 5. **Exercises validate against Learning Objectives** — every objective must have ≥1 exercise covering it
 
@@ -67,7 +67,7 @@ Format for prompt outputs:
 ---
 name: prompt-name
 description: What this prompt does
-phase: [number]
+zone: [number]
 lesson: [number]
 ---
 
@@ -80,7 +80,7 @@ Format for skill outputs:
 name: skill-name
 description: What this skill teaches
 version: 1.0.0
-phase: [number]
+zone: [number]
 lesson: [number]
 tags: [comma, separated]
 ---

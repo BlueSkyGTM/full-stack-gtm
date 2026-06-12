@@ -35,7 +35,7 @@ Every lesson doc follows this sequence. Do not reorder beats. All sections are r
 
 **Type:** Build | Learn
 **Languages:** [list languages used — e.g. Python, Julia]
-**Prerequisites:** [phase or lesson reference]
+**Prerequisites:** [zone or lesson reference]
 **Time:** ~[N] minutes
 ```
 
@@ -186,7 +186,7 @@ Include the artifact here and reference its file in outputs/.]
 **Rules:**
 - Every lesson ships exactly one artifact
 - Artifact goes in `outputs/` and is referenced here
-- Prompt format: YAML front-matter with name, description, phase, lesson fields
+- Prompt format: YAML front-matter with name, description, zone, lesson fields
 
 ---
 
@@ -244,13 +244,13 @@ Include the artifact here and reference its file in outputs/.]
 
 ---
 
-## Phase-level lesson count (from repo)
+## Zone-level lesson count (from repo)
 
-| Phase | Dir | Lesson count |
+| Zone | Dir | Lesson count |
 |-------|-----|-------------|
 | 00 | 00-setup-and-tooling | TBD (no lessons scanned) |
 | 01 | 01-math-foundations | 22 |
 | 02 | 02-ml-fundamentals | TBD |
-| 03-19 | remaining phases | TBD |
+| 03-19 | remaining zones | TBD |
 
-**Total per variable-registry:** 498 lessons across 20 phases.
+**Total per variable-registry:** 498 lessons across 20 zones.

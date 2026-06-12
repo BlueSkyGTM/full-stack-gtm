@@ -84,7 +84,7 @@ See `stages/07-student-state/CONTEXT.md` for the full implementation spec.
 
 - FSRS-integration-spec.md — algorithm and card format unchanged; only storage location moves to mission command repo
 - Copy-paste flag format — unchanged; Helix still parses `BLUESKYGTM_CHECK: OK` from student CLI output
-- Helix ramp schedule — unchanged; capability levels still unlock per phase
+- Helix ramp schedule — unchanged; capability levels still unlock per zone
 
 ## HUMAN GATE: Resolved
 

@@ -20,7 +20,7 @@ This rule, called the Double Helix, does two things simultaneously:
 
 **At the Logic Layer (Layer 1):** it is a curriculum constraint. Stage 02 of the build pipeline requires a chain-of-reason derivation step before any lesson prose is written. The agent must trace the specific mechanism — "because this AI concept works this way, it enables this specific GTM action" — before writing a single sentence. If the derivation doesn't hold, the lesson is flagged before it exists. This is what makes the GTM content accurate by construction rather than accurate by editorial review after the fact.
 
-**At the Representation Layer (Layer 2):** it is an indexing structure. Because every GTM concept is semantically anchored to the AI concept that generates it, the content has dual access paths. You can retrieve by AI concept (what phase is this? what algorithm underlies it?) or by GTM use case (what does fine-tuning let me do in Clay? what does a vector store look like in a CRM?). The Sources block embedded in every lesson file — citations for every GTM claim, written at generation time — is not documentation. It is the index. No central database. No query-time lookup. The content is its own retrieval structure.
+**At the Representation Layer (Layer 2):** it is an indexing structure. Because every GTM concept is semantically anchored to the AI concept that generates it, the content has dual access paths. You can retrieve by AI concept (what zone is this? what algorithm underlies it?) or by GTM use case (what does fine-tuning let me do in Clay? what does a vector store look like in a CRM?). The Sources block embedded in every lesson file — citations for every GTM claim, written at generation time — is not documentation. It is the index. No central database. No query-time lookup. The content is its own retrieval structure.
 
 This is why Helix (the AI tutor) can answer GTM questions without a central knowledge base. The weave was created at write time. Helix inherits it.
 
@@ -107,7 +107,7 @@ The GTM operator kit — TAM segmentation, signal detection, Clay enrichment, Hu
 
 The positioning is not "future-proofing." It is engineering from first principles. The Boris Cherny quote is the opening frame: the leverage point has moved from prompting to loop design. A GTM engineer who cannot design autonomous signal-to-outreach loops will be replaced by one who can. This course closes that gap.
 
-Loop engineering threads through the curriculum as the operating model — introduced early as a frame (the Boris Cherny quote, the five primitives, why the leverage point shifted), deepened in the GTM execution phases as the architecture underlying every system students build, and synthesized in the capstone as the student's own loop design. It does not compete with the AI engineering depth. It explains why the AI engineering depth exists: you need to understand what's under the loop to build one that doesn't break.
+Loop engineering threads through the curriculum as the operating model — introduced early as a frame (the Boris Cherny quote, the five primitives, why the leverage point shifted), deepened in the GTM execution zones as the architecture underlying every system students build, and synthesized in the capstone as the student's own loop design. It does not compete with the AI engineering depth. It explains why the AI engineering depth exists: you need to understand what's under the loop to build one that doesn't break.
 
 **On GLM air replacing Perplexity:**
 

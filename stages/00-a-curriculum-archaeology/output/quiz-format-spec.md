@@ -5,7 +5,7 @@
 ## File location
 
 ```
-phases/[NN]-[phase-name]/[NN]-[lesson-name]/quiz.json
+phases/[NN]-[zone-name]/[NN]-[lesson-name]/quiz.json
 ```
 
 One quiz.json per lesson. No separate exercise files — exercises live in the lesson doc (docs/en.md).

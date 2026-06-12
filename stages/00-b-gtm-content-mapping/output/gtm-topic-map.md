@@ -53,11 +53,11 @@ Core handbook clusters: LinkedIn Automation & ABM (2.1), Cold Calling Infrastruc
 
 ---
 
-## Phase Table
+## Zone Table
 
-Each row shows: which AI engineering phase carries the GTM redirect, which handbook cluster it implements, which practitioner outcome it builds toward, and the redirect hook that bridges the two.
+Each row shows: which AI engineering zone carries the GTM redirect, which handbook cluster it implements, which practitioner outcome it builds toward, and the redirect hook that bridges the two.
 
-| Phase | AI Engineering Core | GTM Cluster(s) | Outcome | GTM Redirect Hook |
+| Zone | AI Engineering Core | GTM Cluster(s) | Outcome | GTM Redirect Hook |
 |-------|---------------------|---------------|---------|-------------------|
 | 01 | Python, CLI, workspaces | TAM Mapping (1.1) | Signal Machine + Score & Qualify | "This Python env is where you'll run Clay webhooks and Apollo API calls" |
 | 02 | Data structures, APIs, JSON | TAM Refinement & ICP Scoring (1.2) | Score & Qualify | "Every lead score is a JSON object — here's what yours will look like" |
@@ -80,9 +80,9 @@ Each row shows: which AI engineering phase carries the GTM redirect, which handb
 | 19 | RAG | Knowledge-augmented outreach: product docs, case studies in copy | Write at Scale + Agent Stack | "RAG = giving your outbound agent memory of your best customer stories" |
 | 20 | AI systems design, capstone | Full GTM system: ICP to closed deal + GTM Analysis (4.8) | All 5 outcomes | "Design the full GTM system from scratch: signal machine → score → write → system → agent" |
 
-## Cluster-to-Phase Coverage Check
+## Cluster-to-Zone Coverage Check
 
-| Handbook Cluster | Primary Phase(s) | Outcome |
+| Handbook Cluster | Primary Zone(s) | Outcome |
 |-----------------|-----------------|---------|
 | 1.1 TAM Mapping | 01 | Signal Machine + Score |
 | 1.2 TAM Refinement & ICP Scoring | 02, 04 | Score & Qualify |
@@ -105,13 +105,13 @@ Each row shows: which AI engineering phase carries the GTM redirect, which handb
 
 **All 18 clusters mapped. ✓**
 
-## Phase overload check
+## Zone overload check
 
-| Phase | GTM concepts | Within limit? |
+| Zone | GTM concepts | Within limit? |
 |-------|-------------|---------------|
 | 07 | ABM, Job Change, Social Signals, Conference, Ex-Champions (5 clusters) | ⚠ Over 3 — split note: all 5 are variations on the same "signal-to-sequence" pattern; treat as one cluster family (Account Signal Playbooks) for lesson design |
 | 05 | Copywriting, AI Personalization, Micro Lists (3 clusters) | ✓ exactly 3 |
 | 08 | CRM, PLG (2 clusters) | ✓ |
 | All others | 1-2 clusters | ✓ |
 
-**Phase 07 split note:** The 5 playbooks in Phase 07 are all expressions of one pattern — detect a signal, enrich the account, fire a contextual sequence. Lyra should teach the pattern once and show the 5 playbooks as variations, not 5 independent concepts.
+**Zone 07 split note:** The 5 playbooks in Zone 07 are all expressions of one pattern — detect a signal, enrich the account, fire a contextual sequence. Lyra should teach the pattern once and show the 5 playbooks as variations, not 5 independent concepts.

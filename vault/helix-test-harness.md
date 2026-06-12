@@ -21,7 +21,7 @@ Three agents. One conversation transcript. One score.
   Output: teaching responses across a 5-turn conversation
 
 [STUDENT] (Claude subagent, prompted to simulate a specific learner profile)
-  Role: A learner 2-3 lessons behind the current phase
+  Role: A learner 2-3 lessons behind the current zone
   Input: Helix's responses
   Output: realistic questions, confusions, and exercise attempts
 
