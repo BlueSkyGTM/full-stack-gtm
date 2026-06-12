@@ -1,0 +1,74 @@
+[
+  {
+    "question": "What does RAG stand for and what problem does it solve?",
+    "options": [
+      "Random Augmented Generation -- generating random outputs",
+      "Retrieval-Augmented Generation -- giving LLMs access to external knowledge they weren't trained on",
+      "Recurrent Attention Generation -- improving attention mechanisms",
+      "Reduced Architecture Generation -- making models smaller"
+    ],
+    "correct": 1,
+    "explanation": "RAG retrieves relevant documents from an external knowledge base and adds them to the prompt. This gives the LLM access to up-to-date, domain-specific information without retraining.",
+    "stage": "pre"
+  },
+  {
+    "question": "Why is RAG preferred over fine-tuning for most knowledge-grounded applications?",
+    "options": [
+      "RAG produces better models",
+      "Fine-tuning doesn't work",
+      "RAG is cheaper, instantly updatable when documents change, and provides source attribution -- fine-tuning is expensive and becomes stale",
+      "RAG uses less memory"
+    ],
+    "correct": 2,
+    "explanation": "Fine-tuning costs thousands of dollars, produces a static model that becomes stale as documents change, and offers no source attribution. RAG updates instantly (just update the document store), costs only embedding + storage, and can cite its sources.",
+    "stage": "check"
+  },
+  {
+    "question": "What is the correct order of steps in a basic RAG pipeline?",
+    "options": [
+      "Chunk documents, embed chunks, store in vector DB, embed query, retrieve similar chunks, generate answer with context",
+      "Generate, retrieve, embed, chunk",
+      "Embed query, generate answer, retrieve documents",
+      "Store documents, query the LLM, add documents to response"
+    ],
+    "correct": 0,
+    "explanation": "Ingestion: chunk documents -> embed chunks -> store in vector DB. Query time: embed the user's query -> retrieve top-K similar chunks -> add chunks to prompt -> generate answer grounded in retrieved context.",
+    "stage": "check"
+  },
+  {
+    "stage": "check",
+    "question": "Which of the following best describes: a complete RAG pipeline: document loading, chunking, embedding,...?",
+    "options": [
+      "semantic search using a vector database (ChromaDB, FAISS, or Pinecone) with prop",
+      "why RAG is preferred over fine-tuning for knowledge-grounded applications (cost,",
+      "RAG quality using retrieval metrics (precision, recall) and generation metrics (",
+      "Build a complete RAG pipeline: document loading, chunking, embedding, vector storage,..."
+    ],
+    "correct": 3,
+    "explanation": "Build a complete RAG pipeline: document loading, chunking, embedding, vector storage, retrieval, and generation"
+  },
+  {
+    "question": "What is a common failure mode in basic RAG systems?",
+    "options": [
+      "The LLM refuses to answer",
+      "The retrieved chunks are semantically similar to the query but don't contain the actual answer (e.g., returning 'revenue strategy' when asked for 'Q3 revenue numbers')",
+      "The vector database crashes",
+      "The embeddings are too large"
+    ],
+    "correct": 1,
+    "explanation": "Semantic search finds text that 'sounds like' the query, not necessarily text that 'answers' it. A query about revenue might retrieve chunks discussing revenue strategy rather than the chunk containing the actual number.",
+    "stage": "post"
+  },
+  {
+    "question": "How do you evaluate RAG quality?",
+    "options": [
+      "By checking if the LLM produces any output",
+      "By measuring response time only",
+      "Using both retrieval metrics (did we find the right chunks?) and generation metrics (is the answer faithful to the retrieved context?)",
+      "By counting the number of retrieved documents"
+    ],
+    "correct": 2,
+    "explanation": "RAG evaluation has two parts: retrieval quality (precision/recall of retrieved chunks against ground truth) and generation quality (faithfulness to context, relevance to query, no hallucination beyond retrieved information).",
+    "stage": "post"
+  }
+]

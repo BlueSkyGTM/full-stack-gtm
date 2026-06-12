@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "setupComplete": false,
+  "savedAt": null,
+  "preferences": {
+    "pace": null,
+    "depth": null,
+    "feedback": null,
+    "sessionLength": null,
+    "bestTimeOfDay": null
+  },
+  "strengths": [],
+  "weaknesses": [],
+  "doubts": [],
+  "avoid": [],
+  "notes": "",
+  "counselorHistory": []
+}

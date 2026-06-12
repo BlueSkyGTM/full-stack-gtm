@@ -1,0 +1,76 @@
+{
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "What advantage does SVD have over eigendecomposition?",
+      "options": [
+        "SVD is always faster to compute",
+        "SVD works on any matrix of any shape, while eigendecomposition requires square matrices with full eigenvector sets",
+        "SVD produces smaller output matrices",
+        "SVD does not require numerical computation"
+      ],
+      "correct": 1,
+      "explanation": "Eigendecomposition only works on square matrices that have n linearly independent eigenvectors. SVD decomposes ANY m x n matrix into U * Sigma * V^T with no restrictions on shape or rank."
+    },
+    {
+      "stage": "check",
+      "question": "What does 'low-rank approximation' mean?",
+      "options": [
+        "Removing rows with low values from a matrix",
+        "Converting a matrix to a lower precision data type",
+        "Approximating a matrix by keeping only its most important components, producing a simpler matrix with fewer independent directions",
+        "Sorting the rows of a matrix by their magnitude"
+      ],
+      "correct": 2,
+      "explanation": "A rank-k approximation keeps only the top k singular values and their vectors, discarding the rest. The Eckart-Young theorem proves this is the BEST possible approximation of that rank."
+    },
+    {
+      "stage": "check",
+      "question": "In SVD A = U * Sigma * V^T, what geometric operation does each factor represent?",
+      "options": [
+        "V^T rotates in input space, Sigma scales along principal axes, U rotates into output space",
+        "U scales, Sigma rotates, V^T translates",
+        "U compresses, Sigma expands, V^T normalizes",
+        "All three factors perform the same operation: rotation"
+      ],
+      "correct": 0,
+      "explanation": "SVD reveals that every matrix performs: (1) V^T rotates inputs to align with principal directions, (2) Sigma stretches/compresses along each axis, (3) U rotates the result into the output space. Rotate, scale, rotate."
+    },
+    {
+      "stage": "check",
+      "question": "Which of the following best describes: SVD via power iteration and explain the geometric meaning of U,...?",
+      "options": [
+        "truncated SVD for image compression and measure the compression ratio vs reconst",
+        "Compute the Moore-Penrose pseudoinverse via SVD to solve overdetermined least-sq",
+        "Connect SVD to PCA, recommendation systems (latent factors), and Latent Semantic",
+        "Implement SVD via power iteration and explain the geometric meaning of U, Sigma, and V^T"
+      ],
+      "correct": 3,
+      "explanation": "Implement SVD via power iteration and explain the geometric meaning of U, Sigma, and V^T"
+    },
+    {
+      "stage": "post",
+      "question": "Why does sklearn implement PCA using SVD instead of eigendecomposition of the covariance matrix?",
+      "options": [
+        "SVD produces different results that are more accurate for ML",
+        "SVD works directly on the data matrix without forming the covariance matrix, avoiding squaring the condition number and improving numerical stability",
+        "SVD is easier to parallelize on GPUs",
+        "SVD does not require centering the data"
+      ],
+      "correct": 1,
+      "explanation": "Forming A^T*A squares the singular values (and condition number). If A has singular values [1000, 0.001], A^T*A has eigenvalues [10^6, 10^-6] -- 6 digits of precision lost. SVD avoids this by working directly on A."
+    },
+    {
+      "stage": "post",
+      "question": "How does truncated SVD enable recommendation systems to predict missing ratings?",
+      "options": [
+        "It fills missing entries with the average rating",
+        "It clusters similar users together and copies their ratings",
+        "It decomposes the ratings matrix into latent user and movie profiles; the dot product of a user profile with a movie profile predicts the missing rating",
+        "It trains a neural network on the observed ratings"
+      ],
+      "correct": 2,
+      "explanation": "SVD decomposes the ratings matrix into user profiles (U), latent factor importance (Sigma), and movie profiles (V^T). The low-rank reconstruction fills in missing entries based on the latent factors (genre, era, style) that explain user preferences."
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "lesson": "15-speculative-decoding-eagle3",
+  "title": "Speculative Decoding and EAGLE-3",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Phase 7 · Lesson 16 proved that speculative sampling produces output identically distributed to the verifier. This lesson covers what Phase 7 · 16 left out. What does it add?",
+      "options": [
+        "The formal proof of the Leviathan theorem — specifically the residual-distribution step that Phase 7 · 16 only stated",
+        "The training stack: how to build and train a draft model that achieves high acceptance rates, culminating in EAGLE-3's 3.5–6.5× production speedup",
+        "The tree-attention mechanism that lets the verifier score multiple draft continuations simultaneously in one forward pass",
+        "The KV rollback bookkeeping — how to commit accepted drafts and truncate rejected ones in production inference servers"
+      ],
+      "correct": 1,
+      "explanation": "Phase 7 · 16 is the algorithm: reject/accept math, residual distribution, bonus token, and KV rollback. This lesson is the training stack: how to design and train the draft model itself. Vanilla spec-decoding reuses an existing small model (α ≈ 0.6); EAGLE-1/2/3 are purpose-built drafts that reached α ≈ 0.9 by training on the verifier's hidden states and later adding training-time test alignment."
+    },
+    {
+      "stage": "check",
+      "question": "EAGLE-1 trained its draft to predict the verifier's hidden states. EAGLE-3 drops that objective and introduces Training-Time Test (TTT). What exposure-bias problem does TTT fix?",
+      "options": [
+        "EAGLE-1 trained on raw text tokens; EAGLE-3 trains on the verifier's BPE tokenisation, closing the tokenisation mismatch",
+        "TTT extends the training context window to match the verifier's maximum KV length, preventing out-of-distribution positions at inference",
+        "EAGLE-1 used teacher-forcing, capping the benefit of more data; TTT trains on verifier-scored distributions drawn from a larger dataset",
+        "Naive draft training feeds ground-truth tokens at each step, but at inference the draft feeds its own previous predictions — TTT aligns them by feeding the draft's own outputs during training, the same way scheduled sampling fixes seq2seq exposure bias"
+      ],
+      "correct": 3,
+      "explanation": "Teacher-forcing during training uses gold tokens as inputs at every step; at inference the draft autoregressively conditions on its own potentially erroneous previous outputs. This train-test distribution mismatch (exposure bias) accumulates errors over the draft sequence. TTT feeds the draft model its own predictions during training, so the training-time input distribution matches inference-time — the same insight as scheduled sampling in seq2seq."
+    },
+    {
+      "stage": "check",
+      "question": "Using E[accepted] = (1 − α^(N+1)) / (1 − α) at N=5, moving from α=0.75 (vanilla draft) to α=0.90 (EAGLE-3) roughly doubles the expected accepted tokens per verifier call. What are the approximate values?",
+      "options": [
+        "α=0.75 → ~3.1 tokens; α=0.90 → ~5.7 tokens — a roughly 1.84× throughput gain from the same N=5 draft budget",
+        "α=0.75 → ~1.8 tokens; α=0.90 → ~3.0 tokens — a modest improvement offset by EAGLE-3's higher training cost",
+        "α=0.75 → ~5.0 tokens; α=0.90 → ~6.0 tokens — near-ceiling gains at N=5 regardless of α",
+        "α=0.75 → ~4.2 tokens; α=0.90 → ~4.8 tokens — diminishing returns because N=5 is already well beyond the sweet spot"
+      ],
+      "correct": 0,
+      "explanation": "At α=0.75: (1 − 0.75^6)/(0.25) ≈ 3.29 tokens. At α=0.90: (1 − 0.90^6)/(0.10) ≈ 4.69 tokens. The ratio is about 1.43×, so 'roughly doubles' slightly overstates it — but at α=0.90 and optimal N≈8 the speedup climbs further. The key point the doc makes: going from α=0.6 to α=0.9 at N=5 moves from ~2.2 to ~4.1 expected tokens — the single biggest lever is α."
+    },
+    {
+      "stage": "check",
+      "question": "The draft-architecture table lists six strategies. Which one requires no separate draft model and no additional training, and what is its measured speedup range?",
+      "options": [
+        "Medusa — it adds output heads with no separate model and achieves 2–3× with no training",
+        "EAGLE-1 — it reuses the verifier's hidden states without a separate training run and achieves 2.5–3×",
+        "Lookahead decoding — Jacobi iteration, no draft and no training needed, achieves 1.3–1.6×",
+        "Vanilla speculative — reuses an existing small model, no retraining required, achieves 1.8–2.3×"
+      ],
+      "correct": 2,
+      "explanation": "Lookahead decoding (Fu et al., 2024) uses Jacobi iteration as a form of self-speculation — no draft model at all, no extra parameters, no training. Speedup is 1.3–1.6×, the lowest in the table but also the cheapest. Vanilla speculative reuses an existing smaller model but still requires that model to exist (trained separately). Medusa and all EAGLE variants require a dedicated training run."
+    },
+    {
+      "stage": "post",
+      "question": "Step 5 of the Build code runs 50,000 speculative steps and performs a chi-square test comparing the speculative token histogram to the verifier's direct-sample histogram. What does passing this test (p > 0.05) prove about the implementation?",
+      "options": [
+        "It proves that the draft model's distribution p is close to the verifier's distribution q — a measure of acceptance-rate quality",
+        "It empirically validates the Leviathan theorem: the output of the speculative loop is statistically indistinguishable from direct sampling from the verifier, regardless of how poor the draft is",
+        "It confirms that the acceptance rate α matches the KL divergence between p and q, which the theorem predicts exactly",
+        "It verifies that KV rollback correctly resets to the accepted prefix — an off-by-one in rollback would bias later tokens toward certain positions"
+      ],
+      "correct": 1,
+      "explanation": "The chi-square test is not measuring draft quality — it is testing whether the speculative loop's output distribution equals the verifier's. Passing means the reject/accept/residual machinery is correctly implemented and the Leviathan equivalence holds in practice. A bug in the residual distribution or the rollback would shift the output histogram away from q, failing the test. This is the lesson's core empirical validation."
+    },
+    {
+      "stage": "post",
+      "question": "Step 6 sweeps N from 1 to 10 at α=0.9 and c=0.04, plotting wall-time per token. The optimal N is finite — increasing N beyond it makes things slower. Why does an optimal N exist rather than 'always use more drafts'?",
+      "options": [
+        "Beyond the optimal N the Leviathan theorem no longer holds, so the output diverges from the verifier's distribution",
+        "The verifier's KV cache overflows at large N, triggering expensive eviction that dominates savings",
+        "The residual distribution becomes unnormalisable when N exceeds the ratio α/(1−α)",
+        "Each additional draft token costs c (a fraction of verifier cost); beyond the sweet spot the marginal accepted token is worth less than the extra draft FLOPs, so the wall-time formula (N·c + 1)/E[accepted] has a minimum"
+      ],
+      "correct": 3,
+      "explanation": "Wall time per accepted token = (N·c + 1) / E[accepted] where E[accepted] = (1 − α^(N+1))/(1 − α). As N → ∞, E[accepted] saturates at 1/(1−α) but N·c grows without bound — the numerator grows faster than the denominator. At α=0.9 and c=0.04 the optimum is around N=8–10. Beyond that, draft FLOPs dominate and you'd be better off with fewer but better-accepted drafts."
+    }
+  ]
+}

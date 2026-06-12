@@ -1,0 +1,78 @@
+{
+  "lesson": "04-positional-encoding",
+  "title": "Positional Encoding — Sinusoidal, RoPE, ALiBi",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Attention is permutation-invariant: softmax(QK^T/√d)V produces the same output for any ordering of input rows (with output rows reordered to match). Why is this a fatal problem for language models, and what must positional encoding provide?",
+      "options": [
+        "It causes gradient explosion because shuffled tokens produce identical scores, producing zero-variance loss gradients",
+        "Order carries meaning — 'the cat sat on the mat' differs from 'mat the on sat cat the' — positional encoding must break permutation symmetry so the model can distinguish which token is where",
+        "It makes the attention matrix symmetric, which causes softmax to output uniform weights and collapse all queries to the mean value",
+        "Permutation invariance doubles KV cache usage because each output position requires two copies of the key vectors"
+      ],
+      "correct": 1,
+      "explanation": "Self-attention with no position signal is a bag-of-words model. Shuffling the input tokens produces a shuffled but otherwise identical output — the model cannot tell that 'mat the on sat cat the' is different from 'the cat sat on the mat.' Positional encoding injects an order-sensitive signal into either the embeddings (sinusoidal, learned) or the attention scores (RoPE, ALiBi) so that same token at different positions produces a different representation."
+    },
+    {
+      "stage": "check",
+      "question": "RoPE rotates Q and K vectors by an angle proportional to their absolute position. The key mathematical property is that q'_m · k'_n is a function of (m − n) only. What practical benefit does this relative-distance property enable?",
+      "options": [
+        "It allows Q and K weight matrices to be shared across all positions, halving the number of attention parameters",
+        "It ensures attention scores are always positive, removing the need for the 1/√d scaling factor",
+        "The attention scores depend only on the relative gap between positions — the model naturally learns relative position without needing to see every absolute position during training — and the RoPE base parameter provides a clean knob for extending context without retraining the position embeddings from scratch",
+        "The dot product becomes invariant to sequence length, so training on short sequences generalises exactly to long ones"
+      ],
+      "correct": 2,
+      "explanation": "q'_m · k'_n = Re(q_m · conj(k_n) · e^{i(m-n)θ}), a function of only (m−n). The model never sees 'position 3 attending to position 1' — it sees 'relative distance 2,' which it can generalise. This is why RoPE extrapolates better than absolute encodings. Scaling the base (NTK-aware, YaRN) stretches the angular frequency scale, letting the model interpret positions it never saw during training as if they are just farther-spaced versions of positions it did see."
+    },
+    {
+      "stage": "check",
+      "question": "ALiBi adds a per-head linear penalty −m_h · |i − j| directly to attention scores, with no modification to embeddings. Why does this approach extrapolate to longer sequences better than absolute sinusoidal encoding?",
+      "options": [
+        "ALiBi's penalty is defined for any |i − j| without a precomputed maximum length — the model sees longer distances as larger penalties, which generalises smoothly; sinusoidal encoding has no defined values for positions beyond max_len and produces garbage at those positions",
+        "ALiBi requires zero parameters while sinusoidal adds 2 × d_model parameters per position, causing overfitting at short training lengths",
+        "ALiBi uses division rather than multiplication, avoiding numerical overflow at large position indices",
+        "ALiBi's bias can be computed in INT8, while sinusoidal must use FP32, making long-context encoding faster"
+      ],
+      "correct": 0,
+      "explanation": "Sinusoidal PE is precomputed up to max_len. A model trained at max_len=2048 has never seen a sinusoidal value for position 4096 — it is out-of-distribution. ALiBi's penalty −m_h · |i − j| is defined for any integer distance; the model at training time learned to interpret linear penalties, and a larger |i − j| is just a stronger penalty, not an unseen value. The paper showed ALiBi matched RoPE on trained lengths and generalised further on held-out lengths."
+    },
+    {
+      "stage": "check",
+      "question": "Llama 3 was trained at 8K context and extended to 128K context using YaRN, a method that rescales the RoPE base parameter. Why does increasing the base extend the usable context without retraining embeddings from scratch?",
+      "options": [
+        "A larger base compresses all positions into a shorter angular range, making distant positions look as close as trained ones",
+        "Increasing base adds more frequency dimensions to the rotation, giving the model more capacity to distinguish positions",
+        "Increasing base slows the angular rotation rate of RoPE's sinusoids — high-frequency dimensions that previously aliased at positions beyond 8K now complete fewer full rotations before 128K, allowing the model to distinguish positions that previously mapped to the same phase",
+        "A larger base shifts the rotation axis, rotating Q and K in the same direction rather than opposite, which removes the relative-distance property but enables longer context"
+      ],
+      "correct": 2,
+      "explanation": "θ_i = base^(-2i/d). Larger base → smaller θ_i → slower angular rotation per position → more positions fit before a frequency dimension wraps around (aliasing). Dimensions that completed a full rotation at position 2048 with base=10000 now complete it at position 128K with a scaled base. YaRN and LongRoPE refine which dimensions to scale (some high-frequency dims don't need scaling; some need more), but the core intuition is: slow down the rotation to make the encoding linear over a longer range."
+    },
+    {
+      "stage": "post",
+      "question": "Step 4 of the Build code tests RoPE's relative-distance property: apply rotations at (pos_a, pos_b) and at (pos_a + k, pos_b + k), then verify the dot products match. What does a passing test prove about the implementation?",
+      "options": [
+        "The rotation matrix is orthogonal — a necessary condition for numerical stability during training",
+        "The implementation correctly encodes only relative position, not absolute position — if there were a bug that encoded absolute positions, shifting both pos_a and pos_b by the same k would change the dot product and break the test",
+        "The RoPE rotation preserves the norm of Q and K vectors, ensuring the 1/√d scaling factor remains calibrated",
+        "The implementation is bit-identical to the reference PyTorch RoPE kernel, validating correctness against the canonical version"
+      ],
+      "correct": 1,
+      "explanation": "The test directly validates the mathematical claim: q'_m · k'_n = f(m−n). If the rotation depends on absolute positions (a common implementation bug where you forget to subtract the base offset), then rotating at (m+k, n+k) gives a different score than at (m, n) for the same relative gap. The test catches this class of bug. It is also the simplest possible verification of the core RoPE property."
+    },
+    {
+      "stage": "post",
+      "question": "Despite ALiBi having excellent length extrapolation and zero training cost, RoPE became the dominant position encoding in every major 2026 frontier model (Llama, Qwen, Mistral, DeepSeek). What does the doc say gives RoPE its practical edge?",
+      "options": [
+        "RoPE is compatible with Flash Attention while ALiBi requires a custom kernel that Flash Attention cannot fuse",
+        "RoPE computes faster than ALiBi because it only touches Q and K, while ALiBi must load the full N×N score matrix to add the bias",
+        "RoPE's base hyperparameter is a single scalar with a clean geometric interpretation — scale it to extend context — while ALiBi needs per-head slopes and its linear structure makes fine-tuned extension harder; RoPE also slots into attention without any architecture change",
+        "ALiBi requires training on variable-length sequences while RoPE works with fixed-length batches"
+      ],
+      "correct": 2,
+      "explanation": "The doc's 'What to pick in 2026' table gives the reason: 'RoPE won because it slots into attention without changing the architecture, encodes relative position, and its base hyperparameter gives a clean knob for long-context fine-tuning.' ALiBi's per-head slopes are hyperparameters fixed at initialisation; its linear penalty structure does not benefit from fine-tuning the way RoPE's base scaling does. When Llama 3 extended from 8K to 128K, a simple base rescaling plus a short fine-tune was sufficient — no architectural change needed."
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "lesson": "16-speculative-decoding",
+  "title": "Speculative Decoding — Draft, Verify, Repeat",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "A 70B LLM is memory-bandwidth limited: each token loads all weights, does minimal arithmetic, then waits for the next token. Speculative decoding exploits this by letting a cheap draft model propose N tokens, then running the expensive model once to verify all N in parallel. What quality guarantee does the Leviathan et al. (2023) theorem provide?",
+      "options": [
+        "The output is approximately distributed like the verifier with a KL divergence that decreases as acceptance rate α increases",
+        "The output is identically distributed to what the verifier would have produced by sampling directly — no quality tradeoff whatsoever",
+        "The output is identically distributed to the draft model when all N tokens are accepted, and to the verifier on rejections",
+        "The output matches the verifier's distribution only when the draft and verifier are from the same model family"
+      ],
+      "correct": 1,
+      "explanation": "Leviathan, Kalman, Matias (ICML 2023) proved that speculative sampling — accepting with probability min(1, q(d)/p(d)) and sampling from the residual (q − p)₊ on rejection — produces output identically distributed to sampling from q directly. This holds regardless of how bad the draft is; the worse the draft, the more frequent the rejections, but the distribution stays exact."
+    },
+    {
+      "stage": "check",
+      "question": "The rejection step accepts a draft token d with probability min(1, q(d)/p(d)). On rejection, you must sample a replacement that preserves the verifier's distribution. Which replacement distribution achieves this?",
+      "options": [
+        "Sample uniformly over the full vocabulary to break the draft's bias",
+        "Sample from q(d) directly, treating the rejection as if the draft step never happened",
+        "Sample from the draft p(d) reweighted by (1 − q(d)/p(d)) to balance over-representation",
+        "Sample from the residual (q − p)₊ normalized — the component of the verifier's distribution not already covered by the draft"
+      ],
+      "correct": 3,
+      "explanation": "When you reject at token d, the mass q(d) was partially 'already correct' via the draft. The residual distribution (q − p)₊ normalized captures exactly the missing probability mass. Sampling from it on rejection, combined with the accept step, makes the marginal distribution of every position equal to q. This is the core insight of speculative sampling — rejection is not a failure, it's a correction."
+    },
+    {
+      "stage": "check",
+      "question": "Let α = 0.75 be the per-token acceptance rate and N = 5 the draft length. Using E[accepted] = (1 − α^(N+1)) / (1 − α), approximately how many tokens does one verifier forward pass produce, and how does this compare to standard generation?",
+      "options": [
+        "About 3.1 accepted tokens — roughly 3× more than standard generation's one token per verifier call",
+        "Exactly 5.0 tokens — at α = 0.75 all drafts are accepted",
+        "About 1.75 tokens — α = 0.75 means roughly 1 in 4 drafts is rejected so only ~1.75 survive",
+        "About 5.75 tokens — N drafts plus the free bonus token at full acceptance"
+      ],
+      "correct": 0,
+      "explanation": "(1 − 0.75^6) / (1 − 0.75) = (1 − 0.178) / 0.25 ≈ 3.29 expected accepted tokens. That is 3× more tokens per expensive verifier forward pass than standard autoregressive generation. The actual wall-clock gain is somewhat lower after accounting for draft model cost, but the throughput improvement is substantial — at α = 0.85 the figure rises to about 4.6."
+    },
+    {
+      "stage": "check",
+      "question": "Medusa replaces the separate draft model with extra output heads bolted directly onto the verifier. What is the primary advantage, and what is the key cost compared to vanilla speculative with an existing small model?",
+      "options": [
+        "Advantage: no second model needed; Cost: acceptance rate is impossibly high (> 0.95) making rollback expensive",
+        "Advantage: no second model needed; Cost: Medusa needs a supervised fine-tuning stage (~1B tokens) to train the extra heads — while vanilla reuses an already-trained smaller model",
+        "Advantage: higher acceptance rate than any draft model; Cost: Medusa requires a completely new verifier architecture",
+        "Advantage: zero memory overhead; Cost: Medusa cannot use tree attention and must evaluate candidates sequentially"
+      ],
+      "correct": 1,
+      "explanation": "Medusa's key advantage is removing the second model entirely — the verifier grows a few prediction heads and serves as its own draft. The cost: those heads are untrained on any real distribution, so a SFT stage of ~1B tokens is needed. Vanilla speculative decoding with a small Llama 3 1B as draft requires zero additional training — the small model already exists. Medusa's acceptance rate (0.65–0.75) is also lower than EAGLE's."
+    },
+    {
+      "stage": "post",
+      "question": "Step 2 of the Build code implements residual_dist(q, p). The function returns [max(0, qi − pi) for qi, pi in zip(q, p)] normalized. When draft model p is a perfect copy of verifier q (p = q for all tokens), what does this function return, and what does that imply about acceptance rate?",
+      "options": [
+        "It returns q unchanged — the residual is q itself when the draft is perfect, meaning nothing is ever accepted",
+        "It returns a uniform distribution — the residual is flat when p = q because all differences are zero",
+        "It returns a zero vector that cannot be normalized, but this case never arises in practice because p ≠ q always",
+        "Every max(0, qi − pi) = max(0, 0) = 0, so the residual has no mass — but this case is irrelevant because when p = q every draft is accepted with probability min(1, q/p) = 1, so residual sampling is never called"
+      ],
+      "correct": 3,
+      "explanation": "When p = q, accept probability min(1, q(d)/p(d)) = min(1, 1) = 1 for every draft token. Rejection never happens, so residual_dist is never called. The residual function returning an empty or zero vector in this edge case is harmless. Conversely, the theorem guarantees that even for very poor drafts (p far from q), the residual distribution still makes the final output equal to q — the worse the draft, the more often you call residual_dist, but the result is always exact."
+    },
+    {
+      "stage": "post",
+      "question": "Production inference servers (vLLM, TensorRT-LLM) use a scratch KV buffer: draft tokens are written tentatively and committed only on acceptance. If a speculative step drafts N=5 tokens and the verifier rejects at position j=2, what logical KV cache length should the system set for the next step?",
+      "options": [
+        "prefix_length + j + 1 = prefix + 3: the accepted prefix, the 2 accepted drafts, and the 1 correction token sampled from the residual at position j",
+        "prefix_length + N = prefix + 5: all draft slots are reserved and committed even on partial acceptance",
+        "prefix_length only: any rejection discards all draft work including accepted positions",
+        "prefix_length + j = prefix + 2: accepted drafts committed but the correction token is excluded from the cache"
+      ],
+      "correct": 0,
+      "explanation": "When rejection occurs at position j=2, positions 0 and 1 were accepted (two draft tokens appended to prefix), and position 2 is corrected by sampling from the residual distribution. That correction token is also emitted and must be in the cache for the next step. So the logical KV length advances by j+1 = 3 total tokens (j=2 accepted drafts + 1 correction). Positions 3 and 4 in the scratch buffer are discarded."
+    }
+  ]
+}

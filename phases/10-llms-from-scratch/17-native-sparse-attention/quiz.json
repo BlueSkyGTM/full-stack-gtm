@@ -1,0 +1,78 @@
+{
+  "lesson": "17-native-sparse-attention",
+  "title": "Native Sparse Attention (DeepSeek NSA)",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Prior sparse attention methods such as H2O and StreamingLLM apply KV cache pruning to models that were pre-trained with full dense attention. The doc says these methods 'recover only a fraction of the potential speedup because the model was never asked to route information through the sparse pattern.' What makes NSA fundamentally different from these inference-time-only approaches?",
+      "options": [
+        "NSA uses a fixed hand-designed sparse pattern determined before training, so the model can encode information at exactly the positions the sparse kernel will access",
+        "NSA runs three branches in parallel; the additional branches compensate for any tokens dropped by sparsity, recovering quality that single-branch methods lose",
+        "NSA's sparsity pattern is learned and active during pre-training — the model's internal representations are shaped by gradient flow through the three differentiable branches so that at inference the sparse pattern accesses exactly the information the model has learned to place there",
+        "NSA uses full dense attention during training and switches to sparse attention only at inference, avoiding gradient-flow problems while still achieving speedups because the attention maps are globally low-rank"
+      ],
+      "correct": 2,
+      "explanation": "Inference-time sparse methods retrofit sparsity onto a model optimized for all-pairs access. That model learned to route important information to positions the sparse kernel may not read — so inference speedup is partial and recall degrades. NSA trains with its sparse kernel active: the compressed branch is differentiable (standard softmax attention), the gate is differentiable (sigmoid MLP), and the selected branch is differentiable over its loaded keys. Gradients propagate end-to-end and shape the model's representations to route information through blocks the three branches will actually read. The doc states this is 'a sparsity pattern the model learns during pre-training, implemented as a kernel-aligned algorithm that actually delivers the compute savings at inference.'"
+    },
+    {
+      "stage": "check",
+      "question": "The doc gives NSA's per-query key count as N/l (compressed) + k*b (selected) + w (sliding window). Using the paper's example of N=64k, l=64, k=16, b=64, w=512, what is the total key count per query and the reduction factor versus full attention?",
+      "options": [
+        "Compressed: N/l = 64,000/64 = 1,000 keys. Selected: k*b = 16×64 = 1,024 keys. Sliding window: w = 512 keys. Total = 2,536 keys. Full attention = 64,000 keys. Reduction: 64,000 / 2,536 ≈ 25x — the figure the doc explicitly reports",
+        "Compressed: N/l = 1,024 keys. Selected: k*b = 512 keys. Sliding window: w = 512 keys. Total = 2,048 keys — 31x reduction. The selected branch dominates at this block size",
+        "Compressed: N/l = 1,000 keys. Selected: k*b = 1,024 keys. Sliding window: w = 512 keys. Total = 2,536 keys — 25x reduction. The sliding-window branch dominates because it is contiguous memory and accessed most frequently",
+        "Compressed: N/l = 64 keys (one per 1,024-token macro-block). Selected: k*b = 1,024 keys. Sliding window: w = 512 keys. Total = 1,600 keys — 40x reduction. The compressed branch is negligible at l=64"
+      ],
+      "correct": 0,
+      "explanation": "N/l = 64,000 / 64 = 1,000 compressed keys. k*b = 16 × 64 = 1,024 selected keys. w = 512 sliding-window keys. Total = 1,000 + 1,024 + 512 = 2,536 per-query keys versus 64,000 for full attention — exactly the 25x reduction the doc reports. The `count_nsa(65_536, 64, 16, 512)` call in code/main.py Step 2 computes this formula directly. At N=128k the doc shows the reduction grows to 36x because N/l doubles (more compressed keys) while k*b and w remain fixed, confirming that the savings scale with sequence length."
+    },
+    {
+      "stage": "check",
+      "question": "NSA's top-k block selection step is discrete — it picks the k highest-scoring compressed blocks via `top_k_blocks()`. Discrete operations normally break backpropagation. The doc says NSA avoids continuous relaxations entirely. What is the actual gradient path that makes end-to-end pre-training work?",
+      "options": [
+        "NSA uses straight-through estimators (STE): the forward pass applies top-k discretely but the backward pass treats it as an identity function, passing gradients through unchanged",
+        "NSA applies Gumbel-softmax to the top-k scores to produce a differentiable soft selection during training that sharpens to discrete at inference via temperature annealing",
+        "NSA uses a continuous relaxation where the block selection weights are a softmax over all block scores, and at inference the softmax is replaced by argmax for real sparsity",
+        "Gradients flow through the compressed-branch softmax attention scores, which are fully differentiable; the top-k operation only controls which blocks get loaded from memory and does not appear in the computational graph — no gradient through the discrete step is needed because the routing signal itself is continuously differentiable"
+      ],
+      "correct": 3,
+      "explanation": "The doc states: 'The non-differentiable top_k operation is a no-op on the forward computational graph — it only controls which blocks get loaded from memory.' The compressed-branch attention runs as standard softmax over N/l compressed keys — a fully differentiable operation. Its output scores drive top-k block selection (memory routing only), and the selected blocks' tokens are then attended over by the selected branch (also differentiable). Gradients from the loss flow backward through the compressed-branch Q/K/V projections and through the selected-branch attention. The discrete argmax that routes memory reads sits off the differentiable path entirely."
+    },
+    {
+      "stage": "check",
+      "question": "NSA's `gate()` function in code/main.py applies sigmoid to each of 3 logits independently, producing branch weights g_cmp, g_sel, g_win. The doc notes these 'do not have to sum to 1 — they can weight branches independently.' What would be lost by replacing sigmoid with a 3-way softmax?",
+      "options": [
+        "Softmax would force the gate weights to sum to 1, making the combined output a convex combination of branch outputs and preventing the model from amplifying the total attention magnitude above 1",
+        "Softmax creates a zero-sum competition between branches — increasing g_sel necessarily decreases g_cmp and g_win — while sigmoid lets each branch's weight be set independently, allowing a query to activate all three strongly, suppress all three, or any asymmetric combination without forcing tradeoffs among branches",
+        "Sigmoid ensures gate weights are always positive, while softmax can produce near-zero values for branches the model has not learned to use, causing vanishing gradients in the gate MLP during early training",
+        "Softmax produces sharper gates than sigmoid because its exponential normalization is steeper in the relevant operating range, which would cause the selected branch to dominate too aggressively at inference"
+      ],
+      "correct": 1,
+      "explanation": "Softmax over 3 outputs sums to 1: Σg_i = 1, so raising g_sel forces g_cmp + g_win down. This creates a competition where branches fight for weight budget. Sigmoid maps each logit to (0,1) independently — g_cmp, g_sel, and g_win are uncoupled. The doc justifies this with 'they can weight branches independently': a query that retrieves relevant information from both a far-back high-relevance block (selected branch) AND the recent tokens (sliding window) should be able to heavily weight both. With softmax, increasing one branch's weight would suppress the other. The independent sigmoid formulation is what allows the gate to learn non-zero-sum routing behavior."
+    },
+    {
+      "stage": "post",
+      "question": "In `nsa_step()` in code/main.py, `top_k_blocks()` receives `cmp_w` (compressed-branch attention weights) and returns block indices. `fine_grained_keys()` then loads the raw K and V tokens from those blocks. When `attention(q, K_sel, V_sel)` runs on the loaded tokens, what is it computing, and how does it differ from a second pass of the compressed branch over just the selected blocks?",
+      "options": [
+        "It averages the fine-grained keys within each selected block and runs attention over those per-block averages — producing a higher-resolution version of the compressed branch over only the top-k blocks",
+        "It re-runs the compressed-branch attention scores on the selected blocks and directly reuses those scores to weight the corresponding V averages, avoiding a second softmax computation",
+        "It runs full softmax attention between the query and all individual uncompressed tokens from the selected blocks — accessing each token in full resolution, not block averages — to extract fine-grained information from the blocks the compressed branch identified as most relevant",
+        "It applies the compressed-branch weights (cmp_w) directly to the uncompressed V tokens in the selected blocks without recomputing attention scores, treating compressed scores as a proxy for fine-grained relevance"
+      ],
+      "correct": 2,
+      "explanation": "`fine_grained_keys()` returns the raw (uncompressed) K and V tokens from the top-k selected blocks. For k=4 blocks of l=32 tokens each, `K_sel` has 128 individual key vectors. `attention(q, K_sel, V_sel)` then runs standard softmax attention — computing dot products between q and all 128 raw keys, applying softmax, and taking the weighted sum of 128 raw V rows. This is full-resolution attention over just those blocks. The compressed branch served as a cheap routing signal to identify which blocks are worth reading at full resolution. The two-level structure — coarse scores route, fine-grained attention extracts — is the core 'coarse-to-fine' design of NSA."
+    },
+    {
+      "stage": "post",
+      "question": "The doc explains NSA's kernel amortizes KV loads across GQA groups: 'selection is per-query-group, not per-query-head, [so] KV loads are amortized across the group.' For a model with 8 KV heads and 32 Q heads (4 Q heads per KV group), what is the KV load reduction from per-group selection versus per-head selection, and what happens to the arithmetic intensity?",
+      "options": [
+        "Per-head selection needs 32 independent top-k calls each loading k*l tokens — up to 32×k×l KV token reads per layer. Per-group selection needs only 8 top-k calls; all 4 Q heads in a group share the same k blocks, cutting KV reads by 4× and keeping arithmetic intensity high because more compute (4 Q heads' attention) runs against the same loaded KV data",
+        "Per-group selection forces all 4 Q heads in a group to attend to identical blocks, so effective recall drops; the hardware benefit is purely a latency optimization with no effect on total bytes read from HBM",
+        "The 8 KV groups each load 2k blocks instead of k to compensate for forced sharing among Q heads, keeping total KV reads constant while reducing kernel-launch overhead",
+        "Per-group selection applies only to the sliding-window branch; compressed and selected branches always run per-head to maximize each head's recall of relevant blocks"
+      ],
+      "correct": 0,
+      "explanation": "In per-head selection, each of the 32 Q heads picks its own top-k blocks: 32 × k × l tokens loaded from HBM for the selected branch. With 8 KV groups (4 Q heads each sharing KV heads), per-group selection means 8 top-k calls and 8 × k × l tokens loaded — a 4× reduction in KV reads for the selected branch. The 4 Q heads in a group run their attention computations against the same loaded KV tile in SRAM: more FLOPs per byte of HBM traffic, which is the definition of higher arithmetic intensity. The doc states this as 'arithmetic intensity stays high' — exactly this amortization across the GQA group is what makes the hardware-aligned kernel perform near the theoretical compute limit."
+    }
+  ]
+}

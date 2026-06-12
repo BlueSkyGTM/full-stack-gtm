@@ -1,0 +1,94 @@
+/* ============================================================
+   AI SCHOOL · design tokens + reset
+   Change a value here, the whole app reskins. Nothing hard-coded
+   downstream — components reference these variables only.
+   ============================================================ */
+
+:root {
+  /* — surfaces (warm charcoal terminal) — */
+  --bg:        #14110f;
+  --panel:     #1d1916;
+  --panel-2:   #241f1b;
+  --well:      #0d0b0a;
+
+  /* — ink — */
+  --cream:     #e9e1d2;
+  --cream-dim: #9a9184;
+  --cream-mute:#6c655b;
+
+  /* — accents (Claude Code terracotta + retro gold/green) — */
+  --terra:     #d97757;
+  --terra-deep:#b45c40;
+  --terra-tint:rgba(217,119,87,0.14);
+  --gold:      #d2a85c;
+  --green:     #8fae6b;
+
+  /* — lines — */
+  --line:      rgba(233,225,210,0.14);
+  --line-soft: rgba(233,225,210,0.07);
+
+  /* — type — */
+  --pix:  'VT323', ui-monospace, monospace;
+  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* — scale (8px base) — */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  --maxw: 1120px;
+  --shadow-pix: 4px 4px 0 rgba(0,0,0,0.45);
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--cream);
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* faint terminal grid */
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+a { color: var(--terra); text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+::selection { background: var(--terra); color: var(--bg); }
+
+/* — primitives shared across pages — */
+.pix      { font-family: var(--pix); line-height: 0.82; letter-spacing: 0.02em; }
+.eyebrow  { font-size: 0.64rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--terra); }
+.muted    { color: var(--cream-dim); }
+.wrap     { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--s5); }
+
+/* placeholder slot — flags where real pixel art drops in later */
+.slot {
+  display: grid; place-content: center; text-align: center;
+  background: repeating-linear-gradient(45deg, var(--terra-tint) 0 6px, transparent 6px 12px);
+  border: 1px dashed var(--terra-deep);
+  color: var(--terra);
+  font-size: 0.55rem; letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+/* pixel button */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  padding: 9px 14px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--cream);
+  font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.btn:hover { border-color: var(--terra); color: var(--terra); }
+.btn--primary { border-color: var(--terra); color: var(--terra); }
+.btn--primary:hover { background: var(--terra); color: var(--bg); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,78 @@
+{
+  "lesson": "31-dvc-data-versioning",
+  "title": "DVC: Data Version Control",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "A model accuracy drops 4% between releases. The code and hyperparameters are unchanged. Which missing infrastructure would let the team immediately identify that the training dataset changed between the two runs?",
+      "options": [
+        "MLflow experiment tracking, which logs parameters and metrics per run",
+        "DVC data versioning, which hashes and tracks dataset files so the exact bytes used for each model are auditable",
+        "Docker containerization, which pins the Python runtime version between runs",
+        "Prefect pipeline orchestration, which schedules training jobs on a fixed cadence"
+      ],
+      "correct": 1,
+      "explanation": "MLflow tracks what came out of training; DVC tracks what went in. Without DVC, there is no record of which dataset version produced which model. With DVC, the dvc.lock file pins the MD5 hash of every input dataset to a specific Git commit."
+    },
+    {
+      "stage": "check",
+      "question": "After `dvc add data/train.csv`, what three things does DVC do to the file?",
+      "options": [
+        "Uploads it to S3, deletes the local copy, and creates a symlink",
+        "Encrypts it with AES-256, registers it in the model registry, and commits the hash to Git automatically",
+        "Computes its MD5 hash, copies it to the content-addressed cache, writes a .dvc pointer file, and adds the original path to .gitignore",
+        "Converts it to Parquet, compresses it with zstd, and stores it in the DVC remote"
+      ],
+      "correct": 2,
+      "explanation": "dvc add performs three operations: hash the file (MD5), copy it to .dvc/cache/ under a content-addressed path, write a small .dvc pointer file containing the hash and size, and add the original file to .gitignore. You then commit the .dvc file to Git."
+    },
+    {
+      "stage": "check",
+      "question": "The lesson's `dvc.yaml` pipeline has a preprocess stage that lists `data/raw/dataset.csv` as a dependency. If only `train.py` changes, what does `dvc repro` do?",
+      "options": [
+        "Skips the preprocess stage (its deps are unchanged) and reruns only the train stage",
+        "Reruns all stages from scratch because any change invalidates the full pipeline",
+        "Skips all stages and reports the pipeline as up to date",
+        "Reruns the preprocess stage but skips the train stage to preserve existing models"
+      ],
+      "correct": 0,
+      "explanation": "DVC checks the MD5 hashes of each stage's deps against the cached values in dvc.lock. If preprocess deps (dataset.csv, preprocess.py) are unchanged, the preprocess stage is a cache hit. Only the train stage, whose dep (train.py) changed, reruns."
+    },
+    {
+      "stage": "check",
+      "question": "The lesson states that `dvc.lock` should be committed to Git alongside code. A colleague runs `git checkout <old-commit> && dvc repro` on a different machine. What does this guarantee?",
+      "options": [
+        "That the model will achieve the same accuracy as the original run on any hardware",
+        "That the pipeline will run faster than the original because DVC uses the remote cache",
+        "That no new data will be generated; DVC will only validate existing files",
+        "That the exact dataset bytes and pipeline outputs from the original run will be reproduced, because dvc.lock pins the MD5 hash of every dependency and output"
+      ],
+      "correct": 3,
+      "explanation": "dvc.lock contains the MD5 hashes of every dependency and output for every stage. Combined with dvc pull (to fetch the content-addressed cache from the remote), this pins the exact bytes consumed and produced â€” making the run reproducible on any machine with access to the remote."
+    },
+    {
+      "stage": "post",
+      "question": "The lesson describes DVC and MLflow as complementary. A team uses both. After a training run, which file pair provides a complete audit trail linking the exact dataset to the exact model performance?",
+      "options": [
+        "requirements.txt (pinned library versions) and the Docker image digest",
+        "dvc.lock committed at the training Git SHA (exact data hashes) and the MLflow run_id (parameters, metrics, model artifact)",
+        "The .dvc pointer file for the dataset and the model's confusion matrix PNG",
+        "The dvc.yaml stage definition and the MLflow experiment name"
+      ],
+      "correct": 1,
+      "explanation": "dvc.lock at the Git commit pins what went in (exact dataset hashes, pipeline output hashes). The MLflow run_id records what came out (parameters, val_accuracy, model artifact location). Together they answer: which data + which code + which config produced which accuracy."
+    },
+    {
+      "stage": "post",
+      "question": "The lesson's `main.py` uses a temporary directory for the DVC project. In a real project, a team would add `dvc remote add -d s3remote s3://bucket/cache`. What does `dvc push` do, and why can a new team member reproduce the pipeline without a copy of the raw data file locally?",
+      "options": [
+        "dvc push replicates the entire Git history to S3; the new member clones both repositories simultaneously",
+        "dvc push encrypts and emails the dataset to registered team members automatically",
+        "dvc push uploads the content-addressed cache entries to S3; after `git clone` and `dvc pull`, the new member fetches the exact bytes by hash from the remote without needing a pre-existing local copy",
+        "dvc push creates a read-only snapshot of the data in the DVC remote, accessible only from the original machine"
+      ],
+      "correct": 2,
+      "explanation": "dvc push uploads the .dvc/cache/ entries (content-addressed by MD5) to the remote storage. A new team member runs git clone (gets code + .dvc pointer files + dvc.lock) then dvc pull (fetches the exact cached bytes from S3 by hash). They never need a copy of the raw file delivered separately."
+    }
+  ]
+}

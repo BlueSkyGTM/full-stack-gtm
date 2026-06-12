@@ -1,0 +1,78 @@
+{
+  "lesson": "01-why-transformers",
+  "title": "Why Transformers — The Problems with RNNs",
+  "questions": [
+    {
+      "stage": "pre",
+      "question": "Before 2017, every state-of-the-art sequence model was a recurrent neural network. The 'Attention Is All You Need' paper proposed dropping recurrence entirely. What three fatal weaknesses of RNNs motivated this?",
+      "options": [
+        "Fixed vocabulary, no positional encoding, and quadratic training complexity",
+        "Limited to a single GPU, incompatible with batch normalisation, and poor gradient flow",
+        "Sequential computation preventing parallelism, vanishing gradients limiting long-range dependencies, and a fixed-width hidden-state bottleneck that compressed any sequence into one vector",
+        "Softmax instability, missing attention mechanism, and inability to handle variable-length input"
+      ],
+      "correct": 2,
+      "explanation": "RNNs had three structural problems: (1) h_t depends on h_{t-1}, so you cannot parallelise across the time axis — 1,024 tokens = 1,024 serial steps on hardware built for parallelism; (2) information 50 tokens back passes through 50 non-linearities, crushing gradients even with LSTM gating; (3) the encoder squeezes the full source sequence into a single hidden vector before the decoder reads anything, creating a bottleneck that is the same size for 5-token inputs and 500-token ones."
+    },
+    {
+      "stage": "check",
+      "question": "Both rnn_style and attention_style in the Build code do exactly N additions. Why is attention_style dramatically faster in wall-clock time even on a single CPU?",
+      "options": [
+        "Serial depth is the binding constraint, not operation count. Attention's parallel reduction has depth O(1), while the RNN chain has depth O(N) — on hardware with many parallel execution units, depth determines wall-clock time.",
+        "attention_style uses float16 arithmetic internally while the RNN loop uses float64",
+        "The transformer avoids multiplication and uses only addition, while the RNN uses both",
+        "Python's JIT compiler optimises list-comprehension expressions but not for-loops"
+      ],
+      "correct": 0,
+      "explanation": "Both algorithms do N adds, but the RNN's operations form a chain — each step depends on the result of the previous one, forcing serial execution. The parallel reduction (sum of all elements) has no such dependency chain; in principle all N elements can be summed simultaneously. On a modern CPU with vector units, Python's built-in sum() runs in C without per-iteration interpreter overhead, making this visible even without a GPU. The same principle, amplified by 10,000+ parallel cores, makes transformers 5–10× faster per training epoch on matched hardware."
+    },
+    {
+      "stage": "check",
+      "question": "Attention memory scales as O(N²) in sequence length. The doc lists several approaches for contexts above 128K. Which strategies does it specifically name?",
+      "options": [
+        "LSTMs and GRUs, which maintain O(N) memory and time",
+        "Learned absolute position embeddings that compress context into a fixed-width space",
+        "Data-parallel training distributed across many GPUs, spreading the N×N matrix",
+        "Sliding-window attention, RoPE extrapolation, Flash Attention tiling, and linear attention variants — each attacking a different aspect of the quadratic memory cost"
+      ],
+      "correct": 3,
+      "explanation": "Flash Attention hides the O(N²) activation memory by recomputing attention tiles on-chip (it does not remove the quadratic arithmetic). Sliding-window and linear attention reduce which pairs are computed. RoPE scaling extends the context a model can handle without retraining. The doc's point: attention's O(N²) is addressable but must be explicitly tackled — it does not disappear on its own."
+    },
+    {
+      "stage": "check",
+      "question": "The doc's 'Use It' table lists specific situations where recurrent models or state-space models still win over transformers in 2026. What distinguishes these situations?",
+      "options": [
+        "Recurrence wins for any training dataset under 10B tokens, where transformers overfit",
+        "Streaming inference (one token at a time, constant memory) and very long sequences (>1M tokens) where attention memory explodes — these are contexts where recurrence's O(N) memory and per-step constant cost make it superior",
+        "Recurrence wins on edge devices with no GPU, because matrix multiplications are expensive without acceleration",
+        "Recurrence wins whenever the task has no long-range dependencies, such as character-level language modelling"
+      ],
+      "correct": 1,
+      "explanation": "Transformer attention requires the full KV cache for every step at inference — O(N) KV entries. For truly streaming inference (constant memory regardless of context) or for contexts exceeding 1M tokens, that cost is prohibitive. State-space models like Mamba use a fixed-size hidden state updated at each step (O(1) per step memory) while supporting parallel training via selective scan. The doc says hybrid SSM+transformer models (Jamba, Samba) represent the 2026 frontier for this tradeoff."
+    },
+    {
+      "stage": "post",
+      "question": "Step 2 of the Build code counts the 'serial depth' of each algorithm. For rnn_style on N=1024 elements, serial depth = 1024. For attention_style using a tree reduction, serial depth = log2(1024) = 10. Why is serial depth — not total operation count — the right metric for predicting wall-clock time on parallel hardware?",
+      "options": [
+        "Serial depth measures how many instructions must be fetched by the CPU instruction pipeline, directly determining clock cycles needed",
+        "On parallel hardware you can execute all independent operations simultaneously; the wall-clock minimum is bounded by the longest chain of sequential dependencies, not by total work. Serial depth is exactly this chain length.",
+        "Serial depth correlates with memory access patterns — shallow graphs produce sequential memory access, which is faster than random access",
+        "Serial depth measures the number of distinct functions called, which determines stack depth and therefore recursion overhead"
+      ],
+      "correct": 1,
+      "explanation": "Wall-clock time on parallel hardware is min(actual_time) ≥ depth × (time per op) if you have unlimited parallelism. Serial depth is the longest path in the computation graph — no amount of additional hardware can reduce execution below this bound. A depth-1024 RNN on a 10,000-core GPU still takes 1,024 sequential steps; a depth-10 tree reduction on the same GPU takes 10 steps for the same N elements. This is why the transition from RNNs to transformers unlocked the hardware scaling era of 2017–2026."
+    },
+    {
+      "stage": "post",
+      "question": "Mamba (Gu & Dao 2023) is described as recovering '90% of transformer quality with better long-context scaling.' The doc calls it 'RNNs with structured parameterization.' What specific training-time property do SSMs like Mamba share with transformers that classic RNNs lack?",
+      "options": [
+        "Mamba uses Flash Attention for its recurrence computation, enabling the same SRAM tiling speedup",
+        "Mamba and transformers both use full self-attention during training, then Mamba converts to RNN form at inference only",
+        "Mamba supports parallel training via selective scan despite being recurrent at inference — the 'structured' state-space matrices enable a convolutional formulation that runs in parallel on GPUs, unlike naive RNN recurrence",
+        "Mamba pre-trains with teacher forcing but switches to autoregressive mode at inference, matching transformers' training stability"
+      ],
+      "correct": 2,
+      "explanation": "Classic RNNs (LSTM, GRU) are recurrent both at training and inference — no parallelisation. Mamba's state-space formulation can be expressed as a 1D convolution over the sequence for training, which runs in parallel on GPU. At inference it reverts to the recurrent form (constant memory, one step at a time). This is the 'structured parameterisation' the doc refers to. Selective state spaces add input-dependent gating that gives Mamba the content-dependent routing that attention provides."
+    }
+  ]
+}

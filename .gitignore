@@ -1,0 +1,71 @@
+# Stage outputs (per-run artifacts, not part of the workspace definition)
+**/stages/*/output/*
+!**/stages/*/output/.gitkeep
+
+# Workspace-builder stage outputs (intermediate build artifacts)
+workspaces/workspace-builder/stages/*/output/*
+!workspaces/workspace-builder/stages/*/output/.gitkeep
+
+# Claude Code local settings (exclude local state, allow committed team config)
+.claude/
+!.claude/hooks/
+!.claude/hooks/**
+!.claude/settings.json
+!.claude/skills/
+!.claude/skills/**
+!.claude/rules/
+!.claude/rules/**
+
+# IDE project files
+.idea/
+
+# Node dependencies
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/settings.json
+
+# Environment files
+.env
+.env.local
+.env.*
+*.env
+
+# API keys and secrets
+.secrets
+secrets.*
+*.secrets
+secrets-*
+*.key
+*.pem
+api-keys.*
+credentials.*
+
+# GBrain (config lives in ~/.gbrain, not the repo, but belt-and-suspenders)
+.gbrain/
+gbrain.config.*
+.gbrain-source
+
+# Graphify output (gitignored per workspace too, belt-and-suspenders)
+graphify-out/
+
+# Cloned reference repos (local only)
+*-ref/
+.gstack/
+
+# Always track gstack and graphify source (never gitignore these)
+!skills/gstack/
+!skills/gstack/**
+!scripts/refresh_graph.py
+!scripts/query_graph.py
+!scripts/verify_graph.py
+
+.vercel
