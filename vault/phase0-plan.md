@@ -102,6 +102,7 @@ Phase 0 has two mandatory human sign-off points before proceeding:
 **Gate 1 — after 00-d:** Review `student-state-options.md` before running 00-e-full. The Helix voice and vault completion depend on this architectural decision. Do not run 00-e-full until the student state mechanism is decided.
 
 **Gate 2 — after 00-e-full:** Review `vault/helix-voice.md` and `vault/course-identity-doc.md` (with student promise) before running Stage 01. These are the editorial foundation for 498 lessons.
+✅ CLOSED 2026-06-12 — helix-voice.md: 8 hard constraints, two registers, zone-specific behavior, tone spectrum. Student promise: 3 falsifiable capabilities demonstrable in <30 min to a technical hiring manager.
 
 ## Re-run Safety
 Each stage is safe to re-run IF you delete the output folder contents first (not the .gitkeep).
