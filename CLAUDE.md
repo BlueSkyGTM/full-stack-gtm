@@ -1,6 +1,6 @@
-# Full-Stack GTM
+# BlueSkyGTM Engineering
 
-Build the Full-Stack GTM course — a curriculum proving the convergence of AI engineering and GTM engineering, built using the same agentic methodology it teaches.
+Build the BlueSkyGTM Engineering curriculum — GTM engineering with a technical foundation, built using the same agentic methodology it teaches.
 
 ## Folder Map
 

@@ -4,7 +4,7 @@ Populated by 00-e-seed. Updated by 00-e-full.
 
 | Variable | Value |
 |----------|-------|
-| `{{COURSE_NAME}}` | Full-Stack GTM |
+| `{{COURSE_NAME}}` | BlueSkyGTM Engineering |
 | `{{AI_NAME}}` | Helix |
 | `{{SITE_URL}}` | https://learn.blueskygtm.engineer |
 | `{{REPO_URL}}` | https://github.com/BlueSkyGTM/full-stack-gtm.git |

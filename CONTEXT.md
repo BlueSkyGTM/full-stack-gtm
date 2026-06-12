@@ -1,6 +1,6 @@
-# Full-Stack GTM
+# BlueSkyGTM Engineering
 
-Build the Full-Stack GTM course pipeline from archaeology through validation.
+Build the BlueSkyGTM Engineering curriculum pipeline from archaeology through validation.
 
 ## Task Routing
 

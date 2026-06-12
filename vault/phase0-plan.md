@@ -1,5 +1,5 @@
 <!-- /autoplan restore point: /Users/raymo/.gstack/projects/BlueSkyGTM-full-stack-gtm/main-autoplan-restore-20260611-215530.md -->
-# Plan: Phase 0 — Build the Ecosystem Before Releasing the Finish
+# BlueSkyGTM Engineering — Phase 0 Plan: Build the Ecosystem Before Releasing the Finish
 
 ## Decision
 
