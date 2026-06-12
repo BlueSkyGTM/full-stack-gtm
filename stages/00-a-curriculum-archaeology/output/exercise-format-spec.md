@@ -46,11 +46,11 @@ Exercises are a numbered Markdown list at the end of the lesson doc, after Key T
 4. **Minimum 3 exercises, maximum 6** — most lessons land at 4-5
 5. **Exercises validate against Learning Objectives** — every objective must have ≥1 exercise covering it
 
-## Copy-paste flag (placeholder)
+## Exercise verification
 
-The copy-paste trigger pattern that Claude Code uses to detect exercise submission is **locked in 00-d**. Stage 03 exercise design and Stage 05 Helix build depend on this lock. Do not define the flag string here.
+There is no copy-paste flag. Exercises produce **artifacts** — files in the student's mission command repo (`signals/examples/`, `handlers/`, `outputs/`, etc.). Helix reads the filesystem on next interaction and detects artifact existence. The artifact is the save point.
 
-Reference: `stages/00-d-helix-design/output/copy-paste-flag-format.md` (written by 00-d).
+Exercises must specify what artifact they produce and where it lands. If an exercise doesn't produce a persistent artifact, it is purely conceptual — Helix cannot gate on it and should not try to.
 
 ## Exercise outputs folder
 

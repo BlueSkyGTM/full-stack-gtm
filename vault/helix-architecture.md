@@ -47,7 +47,6 @@ Student input received
         ▼
 [ASSESS] What is the student's current state?
   ├─ Asking a concept question → [EXPLAIN]
-  ├─ Completing an exercise → [FLAG CHECK]
   ├─ Requesting recall review → [QUIZ]
   ├─ Stuck / frustrated → [HINT]
   ├─ Answered confidently but incorrectly → [CORRECT]
@@ -89,7 +88,7 @@ review_summary: {{SUMMARY_JSON}}  — {cards_due_today: N, topics_overdue: [...]
 
 The `review_summary` lets Helix answer "how many cards are due?" and "what topics am I behind on?" without needing access to the scheduling algorithm. The FSRS algorithm stays invisible; the summary is a computed view passed alongside the card.
 
-**Flag parser robustness:** The copy-paste flag parser must normalize input before matching — strip ANSI escape codes, collapse whitespace, normalize line endings (CRLF → LF). If the flag is not found after normalization, Helix falls through to ASSESS rather than failing silently. The student sees a normal ASSESS response; no error message, no broken state.
+**Artifact-based state:** Helix reads `progress/progress.json` and the mission-command filesystem before routing any request. The student's built artifacts are their save points — no copy-paste ceremony required. A student who says "hi" gets a response grounded in their actual state: what's built, what FSRS cards are due, what the next missing piece is.
 
 ---
 

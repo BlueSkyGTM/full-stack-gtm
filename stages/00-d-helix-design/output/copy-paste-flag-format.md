@@ -1,7 +1,7 @@
 # Copy-Paste Flag Format
 <!-- Stage 00-d output | 2026-06-12 -->
-<!-- STATUS: LOCKED — exact string format. No changes without rebuilding all Stage 05 exercises. -->
-<!-- Lock confirmation: Reviewed and locked on 2026-06-12 during Stage 00-d. -->
+<!-- STATUS: DEPRECATED 2026-06-12 — artifact-based verification replaces the flag entirely. -->
+<!-- Kept for git history. Do not implement. See exercise-format-spec.md and helix-architecture.md. -->
 
 ## The Flag
 

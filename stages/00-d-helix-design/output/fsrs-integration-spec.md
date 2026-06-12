@@ -125,6 +125,6 @@ FSRS state lives in `progress/progress.json` inside the student's **mission comm
 
 ## What FSRS Does NOT Apply To
 
-- Copy-paste exercises (evaluated by Helix's flag parser, not scheduled for recall)
+- Artifact-gated exercises (verified by Helix reading the filesystem, not by recall scheduling)
 - Project submissions (Stage 05 capstone layer — separate evaluation rubric)
 - Pre-quiz questions taken before reading a lesson (these are diagnostic, not recall)
