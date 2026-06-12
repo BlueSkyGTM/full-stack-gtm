@@ -4,7 +4,9 @@ Deferred scope from autoplan and stage reviews. Items here are not blocking curr
 
 ## Loop Engineering
 
-- [ ] **Evaluate cobusgreyling/loop-engineering npm tooling** — `loop-audit`, `loop-init`, `loop-cost` are the operational layer of the loop-engineering framework. We extracted the docs/mental models but not the tooling. Decide: adopt these packages, replace with gstack equivalents, or skip. Belongs in 00-f (tooling stage). Not blocking 00-a through 00-e.
+- [x] **Loop-engineering tooling decision — RESOLVED** — Skip npm packages. Instead: `/scrape` the cobusgreyling substack article + `/skillify` it as a browser skill. This embeds loop engineering language + frameworks into autoplan chains with a conditional check (skip if not in scope). Handlers = Claude sub-agents that deploy other Claude sub-agents. Established language for the build pipeline and curriculum.
+- [ ] **Skillify loop-engineering substack** — Run `/scrape https://cobusgreyling.substack.com/p/loop-engineering` then `/skillify`. Add conditional check: if loop engineering isn't in the discussion, skill skips. Wire into autoplan as a named reference available on demand.
+- [ ] **Excalidraw + smart-illustrator** — Keep as Claude skills. Wire into task routing in CLAUDE.md and Lyra's content brief. No extraction or separate skill file needed.
 
 ## Operator Kit First Deployment
 
