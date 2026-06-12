@@ -36,3 +36,8 @@ Deferred scope from autoplan and stage reviews. Items here are not blocking curr
 ## Phase 0 / Tooling
 
 - [ ] **Write 00-f tooling stage CONTEXT.md** — Stage for gbrain, graphify, context loader, Helix open brain setup. Deferred until operator-kit agents exist (Stage 01+). Now also needs loop engineering standards setup (LOOP.md is written; 00-f should wire it into the build pipeline operationally).
+
+## Operator-Kit Deferrals (from autoplan 2026-06-12)
+- **Lyra parallel dispatch (Stage 01 batch):** Sequential 498-lesson run ~2.5-8 hrs. Add async/thread pool to dispatch.py before full Stage 01 run.
+- **Lazy context loading (Stage 09):** Full-curriculum context injection will be slow if eager. Add lazy loading to context_loader.py before Stage 09.
+- **MCP server (pre-Stage 08):** Replace standalone scripts with MCP server for proper Claude Code tool routing. See Stage 08 CONTEXT.md.

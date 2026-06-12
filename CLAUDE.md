@@ -112,3 +112,34 @@ This skill fills two gaps the build pipeline doesn't cover automatically:
 2. **Missing technical reference for live site features** — auth flow, render pipeline, catalog schema, Helix integration — any undocumented surface area in `site-new/` or `phases/` that a build agent (Lyra-code, Stage 05-08) needs but can't infer from CONTEXT.md alone.
 
 Run it before Stage 01 if 00-a archaeology surfaces undocumented patterns. Run it after Stage 05 if Helix behavior needs a worked reference before Stage 08 wires it.
+
+## GBrain Configuration (configured by /setup-gbrain)
+- Mode: local-stdio
+- Engine: pglite (`~/.gbrain/brain.pglite`)
+- Config file: `~/.gbrain/config.json` (mode 0600)
+- Setup date: 2026-06-12
+- MCP registered: yes (user scope, via `gbrain serve`)
+- Chat model: `zhipu:GLM-4.7` (Z.ai — requires `ZHIPUAI_API_KEY` in env)
+- Expansion model: `zhipu:GLM-4.7-Flash`
+- Embedding model: `openai:embedding-3` (1536d) — **pending Z.ai embedding activation**
+  - Z.ai chat models require `ZHIPUAI_API_KEY`; embedding models (`embedding-3`) return 400 until activated in Z.ai console under resource packages
+  - Once activated: run `gbrain config set embedding_model zhipu:embedding-3 && gbrain config set embedding_dimensions 2048`
+- Artifacts sync: off (run `/sync-gbrain` to configure after Phase 0 stages produce content)
+- RESOLVER.md: `skills/RESOLVER.md` (skill routing for gbrain resolver)
+- Health: 65/100 (warnings only: takes_count=0, pack upgrade available)
+- Restart Claude Code to pick up `mcp__gbrain__*` tools
+
+**Note on Helix open-brain:** Not an infrastructure item. It is a STUDENT-FACING product feature (gbrain + FSRS student memory layer) built in Stage 05. Do not conflate with gstack's gbrain above.
+
+## GBrain Search Guidance (configured by /setup-gbrain)
+<!-- gstack-gbrain-search-guidance:start -->
+
+GBrain is set up on this machine. The brain is empty until Phase 0 stages run and `/sync-gbrain` imports content. Once synced, prefer gbrain over Grep for semantic questions.
+
+Prefer gbrain when:
+- "Where is X handled?" / semantic intent: `gbrain search "<terms>"` or `gbrain query "<question>"`
+- "What did we decide?" / past plans, decisions: `gbrain search "<terms>"`
+
+Run `/sync-gbrain` after each Phase 0 stage completes to import that stage's output into the brain.
+
+<!-- gstack-gbrain-search-guidance:end -->

@@ -22,7 +22,7 @@ Write agent tailoring briefs (Echo, Newton, Lyra, Hypatia) and configure the con
 4. Write Lyra code brief: site architecture constraints, render pipeline (ui.js, catalog.js), auth.js constraints, no breaking changes
 5. Write Hypatia brief: curriculum coherence focus, double-helix alignment, GTM accuracy against source-citations, gap detection
 6. Configure `project-keywords.json`: one keyword entry per stage so context loader auto-injects relevant files
-7. Write model-config.md: GLM 5.1 for all operator-kit agents
+7. Write model-config.md: GLM-5.1 (Lyra content), GLM-5 (Lyra code), GLM-4.7-Flash (Echo), GLM-4.7 (Hypatia), GLM-4.5-Air (Newton)
 8. Run audit checks
 
 ## Audit
@@ -43,4 +43,4 @@ Write agent tailoring briefs (Echo, Newton, Lyra, Hypatia) and configure the con
 | `agent-briefs/lyra-code-brief.md` | `output/` | Lyra code tailoring brief |
 | `agent-briefs/hypatia-brief.md` | `output/` | Hypatia tailoring brief |
 | `project-keywords.json` | `output/` | Context loader stage keyword config |
-| `model-config.md` | `output/` | GLM 5.1 assignment for all agents |
+| `model-config.md` | `output/` | Per-agent GLM model assignments (5.1 / 5 / 4.7 / 4.7-Flash / 4.5-Air) |

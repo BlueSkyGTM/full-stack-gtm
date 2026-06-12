@@ -13,12 +13,13 @@ Claude Code reads the `<!-- Agent: -->` declaration at the top of each stage CON
 | Declaration | Agent | Model | Primary job | First active |
 |---|---|---|---|---|
 | `<!-- Agent: Claude Code -->` | Claude Code directly | — | All Phase 0 stages | Stages 00-a through 00-f |
-| `<!-- Agent: Lyra -->` | Lyra (content) | Sonnet 4.6 | Lesson drafts, exercise specs, quiz banks, outlines | Stage 01 |
-| `<!-- Agent: Lyra-code -->` | Lyra (code) | Sonnet 4.6 | Site components, Helix implementation, student state | Stage 05 |
-| `<!-- Agent: Echo -->` | Echo | Sonnet 4.6 | Codebase archaeology, read-only file traversal | Stage 01+ |
-| `<!-- Agent: Hypatia -->` | Hypatia | Sonnet 4.6 | Curriculum audit, gap detection, quality challenge | Stage 09 |
+| `<!-- Agent: Lyra -->` | Lyra (content) | GLM-5.1 | Lesson drafts, exercise specs, quiz banks, outlines | Stage 01 |
+| `<!-- Agent: Lyra-code -->` | Lyra (code) | GLM-5 | Site components, Helix implementation, student state | Stage 05 |
+| `<!-- Agent: Echo -->` | Echo | GLM-4.7-Flash | Codebase archaeology, read-only file traversal | Stage 01+ |
+| `<!-- Agent: Hypatia -->` | Hypatia | GLM-4.7 | Curriculum audit, gap detection, quality challenge | Stage 09 |
+| `<!-- Agent: Newton -->` | Newton | GLM-4.5-Air | Gap-fill research, citation finding | Stage 01+ |
 
-**Newton:** Newton's primary job is gap-fill research — when Hypatia or any stage detects curriculum gaps (missing source material, undercited concepts, or topics the existing handbook doesn't cover), Newton activates to find citations. He uses the link repo (gtm-integration-citations.md) and GLM air as his research tool (replaces Perplexity — faster, tooling-native, better fit for the maker/checker loop pattern). Fills blanks without stopping the main build batch. His brief is written in 00-c for immediate deployment at Stage 01+.
+**Newton:** Newton's primary job is gap-fill research — when Hypatia or any stage detects curriculum gaps (missing source material, undercited concepts, or topics the existing handbook doesn't cover), Newton activates to find citations. He uses the link repo (gtm-integration-citations.md) and GLM-4.5-Air as his research tool (replaces Perplexity — faster, tooling-native, better fit for the maker/checker loop pattern). Fills blanks without stopping the main build batch. His brief is written in 00-c for immediate deployment at Stage 01+.
 
 Agent brief files (written by 00-c): `stages/00-c-agent-setup/output/agent-briefs/`
 Model config: `stages/00-c-agent-setup/output/model-config.md`
