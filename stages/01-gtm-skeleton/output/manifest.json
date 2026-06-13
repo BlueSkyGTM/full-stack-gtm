@@ -1,113 +1,113 @@
 [
   {
     "id": "00-setup-and-tooling/01-dev-environment",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "01-dev-environment",
     "topic": "Dev Environment",
     "output_file": "",
-    "updated_at": "2026-06-13T06:13:15Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/02-git-and-collaboration",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "02-git-and-collaboration",
     "topic": "Git & Collaboration",
     "output_file": "",
-    "updated_at": "2026-06-13T06:13:46Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/03-gpu-setup-and-cloud",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "03-gpu-setup-and-cloud",
     "topic": "GPU Setup & Cloud",
     "output_file": "",
-    "updated_at": "2026-06-13T06:13:46Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/04-apis-and-keys",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "04-apis-and-keys",
     "topic": "APIs & Keys",
     "output_file": "",
-    "updated_at": "2026-06-13T06:13:46Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/05-jupyter-notebooks",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "05-jupyter-notebooks",
     "topic": "Jupyter Notebooks",
     "output_file": "",
-    "updated_at": "2026-06-13T06:13:46Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/06-python-environments",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "06-python-environments",
     "topic": "Python Environments",
     "output_file": "",
-    "updated_at": "2026-06-13T06:13:46Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/07-docker-for-ai",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "07-docker-for-ai",
     "topic": "Docker for AI",
     "output_file": "",
-    "updated_at": "2026-06-13T06:14:09Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/08-editor-setup",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "08-editor-setup",
     "topic": "Editor Setup",
     "output_file": "",
-    "updated_at": "2026-06-13T06:14:09Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/09-data-management",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "09-data-management",
     "topic": "Data Management",
     "output_file": "",
-    "updated_at": "2026-06-13T06:14:09Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/10-terminal-and-shell",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "10-terminal-and-shell",
     "topic": "Terminal & Shell",
     "output_file": "",
-    "updated_at": "2026-06-13T06:14:09Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/11-linux-for-ai",
-    "status": "skipped",
+    "status": "pending",
     "stage": "01",
     "phase": "00-setup-and-tooling",
     "lesson": "11-linux-for-ai",
     "topic": "Linux for AI",
     "output_file": "",
-    "updated_at": "2026-06-13T06:14:09Z"
+    "updated_at": ""
   },
   {
     "id": "00-setup-and-tooling/12-debugging-and-profiling",
@@ -655,7 +655,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "01-image-fundamentals",
-    "topic": "Image Fundamentals — Pixels, Channels, Color Spaces",
+    "topic": "Image Fundamentals â€” Pixels, Channels, Color Spaces",
     "output_file": "",
     "updated_at": ""
   },
@@ -675,7 +675,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "03-cnns-lenet-to-resnet",
-    "topic": "CNNs — LeNet to ResNet",
+    "topic": "CNNs â€” LeNet to ResNet",
     "output_file": "",
     "updated_at": ""
   },
@@ -705,7 +705,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "06-object-detection-yolo",
-    "topic": "Object Detection — YOLO from Scratch",
+    "topic": "Object Detection â€” YOLO from Scratch",
     "output_file": "",
     "updated_at": ""
   },
@@ -715,7 +715,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "07-semantic-segmentation-unet",
-    "topic": "Semantic Segmentation — U-Net",
+    "topic": "Semantic Segmentation â€” U-Net",
     "output_file": "",
     "updated_at": ""
   },
@@ -725,7 +725,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "08-instance-segmentation-mask-rcnn",
-    "topic": "Instance Segmentation — Mask R-CNN",
+    "topic": "Instance Segmentation â€” Mask R-CNN",
     "output_file": "",
     "updated_at": ""
   },
@@ -735,7 +735,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "09-image-generation-gans",
-    "topic": "Image Generation — GANs",
+    "topic": "Image Generation â€” GANs",
     "output_file": "",
     "updated_at": ""
   },
@@ -745,7 +745,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "10-image-generation-diffusion",
-    "topic": "Image Generation — Diffusion Models",
+    "topic": "Image Generation â€” Diffusion Models",
     "output_file": "",
     "updated_at": ""
   },
@@ -755,7 +755,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "11-stable-diffusion",
-    "topic": "Stable Diffusion — Architecture & Fine-Tuning",
+    "topic": "Stable Diffusion â€” Architecture & Fine-Tuning",
     "output_file": "",
     "updated_at": ""
   },
@@ -765,7 +765,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "12-video-understanding",
-    "topic": "Video Understanding — Temporal Modeling",
+    "topic": "Video Understanding â€” Temporal Modeling",
     "output_file": "",
     "updated_at": ""
   },
@@ -775,7 +775,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "13-3d-vision-nerf",
-    "topic": "3D Vision — Point Clouds & NeRFs",
+    "topic": "3D Vision â€” Point Clouds & NeRFs",
     "output_file": "",
     "updated_at": ""
   },
@@ -795,7 +795,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "15-real-time-edge",
-    "topic": "Real-Time Vision — Edge Deployment",
+    "topic": "Real-Time Vision â€” Edge Deployment",
     "output_file": "",
     "updated_at": ""
   },
@@ -805,7 +805,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "16-vision-pipeline-capstone",
-    "topic": "Build a Complete Vision Pipeline — Capstone",
+    "topic": "Build a Complete Vision Pipeline â€” Capstone",
     "output_file": "",
     "updated_at": ""
   },
@@ -815,7 +815,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "17-self-supervised-vision",
-    "topic": "Self-Supervised Vision — SimCLR, DINO, MAE",
+    "topic": "Self-Supervised Vision â€” SimCLR, DINO, MAE",
     "output_file": "",
     "updated_at": ""
   },
@@ -825,7 +825,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "18-open-vocab-clip",
-    "topic": "Open-Vocabulary Vision — CLIP",
+    "topic": "Open-Vocabulary Vision â€” CLIP",
     "output_file": "",
     "updated_at": ""
   },
@@ -895,7 +895,7 @@
     "stage": "01",
     "phase": "04-computer-vision",
     "lesson": "25-vision-language-models",
-    "topic": "Vision-Language Models — The ViT-MLP-LLM Pattern",
+    "topic": "Vision-Language Models â€” The ViT-MLP-LLM Pattern",
     "output_file": "",
     "updated_at": ""
   },
@@ -935,7 +935,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "01-text-processing",
-    "topic": "Text Processing — Tokenization, Stemming, Lemmatization",
+    "topic": "Text Processing â€” Tokenization, Stemming, Lemmatization",
     "output_file": "",
     "updated_at": ""
   },
@@ -955,7 +955,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "03-word-embeddings-word2vec",
-    "topic": "Word Embeddings — Word2Vec from Scratch",
+    "topic": "Word Embeddings â€” Word2Vec from Scratch",
     "output_file": "",
     "updated_at": ""
   },
@@ -1025,7 +1025,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "10-attention-mechanism",
-    "topic": "Attention Mechanism — The Breakthrough",
+    "topic": "Attention Mechanism â€” The Breakthrough",
     "output_file": "",
     "updated_at": ""
   },
@@ -1075,7 +1075,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "15-topic-modeling",
-    "topic": "Topic Modeling — LDA and BERTopic",
+    "topic": "Topic Modeling â€” LDA and BERTopic",
     "output_file": "",
     "updated_at": ""
   },
@@ -1085,7 +1085,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "16-text-generation-pre-transformer",
-    "topic": "Text Generation Before Transformers — N-gram Language Models",
+    "topic": "Text Generation Before Transformers â€” N-gram Language Models",
     "output_file": "",
     "updated_at": ""
   },
@@ -1095,7 +1095,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "17-chatbots-rule-to-neural",
-    "topic": "Chatbots — Rule-Based to Neural to LLM Agents",
+    "topic": "Chatbots â€” Rule-Based to Neural to LLM Agents",
     "output_file": "",
     "updated_at": ""
   },
@@ -1115,7 +1115,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "19-subword-tokenization",
-    "topic": "Subword Tokenization — BPE, WordPiece, Unigram, SentencePiece",
+    "topic": "Subword Tokenization â€” BPE, WordPiece, Unigram, SentencePiece",
     "output_file": "",
     "updated_at": ""
   },
@@ -1135,7 +1135,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "21-nli-textual-entailment",
-    "topic": "Natural Language Inference — Textual Entailment",
+    "topic": "Natural Language Inference â€” Textual Entailment",
     "output_file": "",
     "updated_at": ""
   },
@@ -1145,7 +1145,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "22-embedding-models-deep-dive",
-    "topic": "Embedding Models — The 2026 Deep Dive",
+    "topic": "Embedding Models â€” The 2026 Deep Dive",
     "output_file": "",
     "updated_at": ""
   },
@@ -1195,7 +1195,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "27-llm-evaluation-frameworks",
-    "topic": "LLM Evaluation — RAGAS, DeepEval, G-Eval",
+    "topic": "LLM Evaluation â€” RAGAS, DeepEval, G-Eval",
     "output_file": "",
     "updated_at": ""
   },
@@ -1205,7 +1205,7 @@
     "stage": "01",
     "phase": "05-nlp-foundations-to-advanced",
     "lesson": "28-long-context-evaluation",
-    "topic": "Long-Context Evaluation — NIAH, RULER, LongBench, MRCR",
+    "topic": "Long-Context Evaluation â€” NIAH, RULER, LongBench, MRCR",
     "output_file": "",
     "updated_at": ""
   },
@@ -1225,7 +1225,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "01-audio-fundamentals",
-    "topic": "Audio Fundamentals — Waveforms, Sampling, Fourier Transform",
+    "topic": "Audio Fundamentals â€” Waveforms, Sampling, Fourier Transform",
     "output_file": "",
     "updated_at": ""
   },
@@ -1245,7 +1245,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "03-audio-classification",
-    "topic": "Audio Classification — From k-NN on MFCCs to AST and BEATs",
+    "topic": "Audio Classification â€” From k-NN on MFCCs to AST and BEATs",
     "output_file": "",
     "updated_at": ""
   },
@@ -1255,7 +1255,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "04-speech-recognition-asr",
-    "topic": "Speech Recognition (ASR) — CTC, RNN-T, Attention",
+    "topic": "Speech Recognition (ASR) â€” CTC, RNN-T, Attention",
     "output_file": "",
     "updated_at": ""
   },
@@ -1265,7 +1265,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "05-whisper-architecture-finetuning",
-    "topic": "Whisper — Architecture & Fine-Tuning",
+    "topic": "Whisper â€” Architecture & Fine-Tuning",
     "output_file": "",
     "updated_at": ""
   },
@@ -1285,7 +1285,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "07-text-to-speech",
-    "topic": "Text-to-Speech (TTS) — From Tacotron to F5 and Kokoro",
+    "topic": "Text-to-Speech (TTS) â€” From Tacotron to F5 and Kokoro",
     "output_file": "",
     "updated_at": ""
   },
@@ -1305,7 +1305,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "09-music-generation",
-    "topic": "Music Generation — MusicGen, Stable Audio, Suno, and the Licensing Earthquake",
+    "topic": "Music Generation â€” MusicGen, Stable Audio, Suno, and the Licensing Earthquake",
     "output_file": "",
     "updated_at": ""
   },
@@ -1315,7 +1315,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "10-audio-language-models",
-    "topic": "Audio-Language Models — Qwen2.5-Omni, Audio Flamingo, GPT-4o Audio",
+    "topic": "Audio-Language Models â€” Qwen2.5-Omni, Audio Flamingo, GPT-4o Audio",
     "output_file": "",
     "updated_at": ""
   },
@@ -1335,7 +1335,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "12-voice-assistant-pipeline",
-    "topic": "Build a Voice Assistant Pipeline — The Phase 6 Capstone",
+    "topic": "Build a Voice Assistant Pipeline â€” The Phase 6 Capstone",
     "output_file": "",
     "updated_at": ""
   },
@@ -1345,7 +1345,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "13-neural-audio-codecs",
-    "topic": "Neural Audio Codecs — EnCodec, SNAC, Mimi, DAC and the Semantic-Acoustic Split",
+    "topic": "Neural Audio Codecs â€” EnCodec, SNAC, Mimi, DAC and the Semantic-Acoustic Split",
     "output_file": "",
     "updated_at": ""
   },
@@ -1355,7 +1355,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "14-voice-activity-detection-turn-taking",
-    "topic": "Voice Activity Detection & Turn-Taking — Silero, Cobra, and the Flush Trick",
+    "topic": "Voice Activity Detection & Turn-Taking â€” Silero, Cobra, and the Flush Trick",
     "output_file": "",
     "updated_at": ""
   },
@@ -1365,7 +1365,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "15-streaming-speech-to-speech-moshi-hibiki",
-    "topic": "Streaming Speech-to-Speech — Moshi, Hibiki, and Full-Duplex Dialogue",
+    "topic": "Streaming Speech-to-Speech â€” Moshi, Hibiki, and Full-Duplex Dialogue",
     "output_file": "",
     "updated_at": ""
   },
@@ -1375,7 +1375,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "16-anti-spoofing-audio-watermarking",
-    "topic": "Voice Anti-Spoofing & Audio Watermarking — ASVspoof 5, AudioSeal, WaveVerify",
+    "topic": "Voice Anti-Spoofing & Audio Watermarking â€” ASVspoof 5, AudioSeal, WaveVerify",
     "output_file": "",
     "updated_at": ""
   },
@@ -1385,7 +1385,7 @@
     "stage": "01",
     "phase": "06-speech-and-audio",
     "lesson": "17-audio-evaluation-metrics",
-    "topic": "Audio Evaluation — WER, MOS, UTMOS, MMAU, FAD, and the Open Leaderboards",
+    "topic": "Audio Evaluation â€” WER, MOS, UTMOS, MMAU, FAD, and the Open Leaderboards",
     "output_file": "",
     "updated_at": ""
   },
@@ -1395,7 +1395,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "01-why-transformers",
-    "topic": "Why Transformers — The Problems with RNNs",
+    "topic": "Why Transformers â€” The Problems with RNNs",
     "output_file": "",
     "updated_at": ""
   },
@@ -1425,7 +1425,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "04-positional-encoding",
-    "topic": "Positional Encoding — Sinusoidal, RoPE, ALiBi",
+    "topic": "Positional Encoding â€” Sinusoidal, RoPE, ALiBi",
     "output_file": "",
     "updated_at": ""
   },
@@ -1435,7 +1435,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "05-full-transformer",
-    "topic": "The Full Transformer — Encoder + Decoder",
+    "topic": "The Full Transformer â€” Encoder + Decoder",
     "output_file": "",
     "updated_at": ""
   },
@@ -1445,7 +1445,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "06-bert-masked-language-modeling",
-    "topic": "BERT — Masked Language Modeling",
+    "topic": "BERT â€” Masked Language Modeling",
     "output_file": "",
     "updated_at": ""
   },
@@ -1455,7 +1455,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "07-gpt-causal-language-modeling",
-    "topic": "GPT — Causal Language Modeling",
+    "topic": "GPT â€” Causal Language Modeling",
     "output_file": "",
     "updated_at": ""
   },
@@ -1465,7 +1465,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "08-t5-bart-encoder-decoder",
-    "topic": "T5, BART — Encoder-Decoder Models",
+    "topic": "T5, BART â€” Encoder-Decoder Models",
     "output_file": "",
     "updated_at": ""
   },
@@ -1485,7 +1485,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "10-audio-transformers-whisper",
-    "topic": "Audio Transformers — Whisper Architecture",
+    "topic": "Audio Transformers â€” Whisper Architecture",
     "output_file": "",
     "updated_at": ""
   },
@@ -1525,7 +1525,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "14-build-a-transformer-capstone",
-    "topic": "Build a Transformer from Scratch — The Capstone",
+    "topic": "Build a Transformer from Scratch â€” The Capstone",
     "output_file": "",
     "updated_at": ""
   },
@@ -1535,7 +1535,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "15-attention-variants",
-    "topic": "Attention Variants — Sliding Window, Sparse, Differential",
+    "topic": "Attention Variants â€” Sliding Window, Sparse, Differential",
     "output_file": "",
     "updated_at": ""
   },
@@ -1545,7 +1545,7 @@
     "stage": "01",
     "phase": "07-transformers-deep-dive",
     "lesson": "16-speculative-decoding",
-    "topic": "Speculative Decoding — Draft, Verify, Repeat",
+    "topic": "Speculative Decoding â€” Draft, Verify, Repeat",
     "output_file": "",
     "updated_at": ""
   },
@@ -1555,7 +1555,7 @@
     "stage": "01",
     "phase": "08-generative-ai",
     "lesson": "01-generative-models-taxonomy-history",
-    "topic": "Generative Models — Taxonomy & History",
+    "topic": "Generative Models â€” Taxonomy & History",
     "output_file": "",
     "updated_at": ""
   },
@@ -1575,7 +1575,7 @@
     "stage": "01",
     "phase": "08-generative-ai",
     "lesson": "03-gans-generator-discriminator",
-    "topic": "GANs — Generator vs Discriminator",
+    "topic": "GANs â€” Generator vs Discriminator",
     "output_file": "",
     "updated_at": ""
   },
@@ -1605,7 +1605,7 @@
     "stage": "01",
     "phase": "08-generative-ai",
     "lesson": "06-diffusion-ddpm-from-scratch",
-    "topic": "Diffusion Models — DDPM from Scratch",
+    "topic": "Diffusion Models â€” DDPM from Scratch",
     "output_file": "",
     "updated_at": ""
   },
@@ -1685,7 +1685,7 @@
     "stage": "01",
     "phase": "08-generative-ai",
     "lesson": "14-evaluation-fid-clip-score",
-    "topic": "Evaluation — FID, CLIP Score, Human Preference",
+    "topic": "Evaluation â€” FID, CLIP Score, Human Preference",
     "output_file": "",
     "updated_at": ""
   },
@@ -1715,7 +1715,7 @@
     "stage": "01",
     "phase": "09-reinforcement-learning",
     "lesson": "02-dynamic-programming",
-    "topic": "Dynamic Programming — Policy Iteration & Value Iteration",
+    "topic": "Dynamic Programming â€” Policy Iteration & Value Iteration",
     "output_file": "",
     "updated_at": ""
   },
@@ -1725,7 +1725,7 @@
     "stage": "01",
     "phase": "09-reinforcement-learning",
     "lesson": "03-monte-carlo-methods",
-    "topic": "Monte Carlo Methods — Learning from Complete Episodes",
+    "topic": "Monte Carlo Methods â€” Learning from Complete Episodes",
     "output_file": "",
     "updated_at": ""
   },
@@ -1735,7 +1735,7 @@
     "stage": "01",
     "phase": "09-reinforcement-learning",
     "lesson": "04-q-learning-sarsa",
-    "topic": "Temporal Difference — Q-Learning & SARSA",
+    "topic": "Temporal Difference â€” Q-Learning & SARSA",
     "output_file": "",
     "updated_at": ""
   },
@@ -1755,7 +1755,7 @@
     "stage": "01",
     "phase": "09-reinforcement-learning",
     "lesson": "06-policy-gradients-reinforce",
-    "topic": "Policy Gradient — REINFORCE from Scratch",
+    "topic": "Policy Gradient â€” REINFORCE from Scratch",
     "output_file": "",
     "updated_at": ""
   },
@@ -1765,7 +1765,7 @@
     "stage": "01",
     "phase": "09-reinforcement-learning",
     "lesson": "07-actor-critic-a2c-a3c",
-    "topic": "Actor-Critic — A2C and A3C",
+    "topic": "Actor-Critic â€” A2C and A3C",
     "output_file": "",
     "updated_at": ""
   },
@@ -1815,7 +1815,7 @@
     "stage": "01",
     "phase": "09-reinforcement-learning",
     "lesson": "12-rl-for-games",
-    "topic": "RL for Games — AlphaZero, MuZero, and the LLM-Reasoning Era",
+    "topic": "RL for Games â€” AlphaZero, MuZero, and the LLM-Reasoning Era",
     "output_file": "",
     "updated_at": ""
   },
@@ -2025,7 +2025,7 @@
     "stage": "01",
     "phase": "10-llms-from-scratch",
     "lesson": "21-jamba-hybrid-ssm-transformer",
-    "topic": "Jamba — Hybrid SSM-Transformer",
+    "topic": "Jamba â€” Hybrid SSM-Transformer",
     "output_file": "",
     "updated_at": ""
   },
@@ -2215,7 +2215,7 @@
     "stage": "01",
     "phase": "11-llm-engineering",
     "lesson": "16-langgraph-state-machines",
-    "topic": "LangGraph — State Machines for Agents",
+    "topic": "LangGraph â€” State Machines for Agents",
     "output_file": "",
     "updated_at": ""
   },
@@ -2225,7 +2225,7 @@
     "stage": "01",
     "phase": "11-llm-engineering",
     "lesson": "17-agent-framework-tradeoffs",
-    "topic": "Agent Framework Tradeoffs — LangGraph vs CrewAI vs AutoGen vs Agno",
+    "topic": "Agent Framework Tradeoffs â€” LangGraph vs CrewAI vs AutoGen vs Agno",
     "output_file": "",
     "updated_at": ""
   },
@@ -2255,7 +2255,7 @@
     "stage": "01",
     "phase": "12-multimodal-ai",
     "lesson": "03-blip2-qformer-bridge",
-    "topic": "From CLIP to BLIP-2 — Q-Former as Modality Bridge",
+    "topic": "From CLIP to BLIP-2 â€” Q-Former as Modality Bridge",
     "output_file": "",
     "updated_at": ""
   },
@@ -2435,7 +2435,7 @@
     "stage": "01",
     "phase": "12-multimodal-ai",
     "lesson": "21-embodied-vlas-openvla-pi0-groot",
-    "topic": "Embodied VLAs: RT-2, OpenVLA, π0, GR00T",
+    "topic": "Embodied VLAs: RT-2, OpenVLA, Ï€0, GR00T",
     "output_file": "",
     "updated_at": ""
   },
@@ -2485,7 +2485,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "01-the-tool-interface",
-    "topic": "The Tool Interface — Why Agents Need Structured I/O",
+    "topic": "The Tool Interface â€” Why Agents Need Structured I/O",
     "output_file": "",
     "updated_at": ""
   },
@@ -2495,7 +2495,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "02-function-calling-deep-dive",
-    "topic": "Function Calling Deep Dive — OpenAI, Anthropic, Gemini",
+    "topic": "Function Calling Deep Dive â€” OpenAI, Anthropic, Gemini",
     "output_file": "",
     "updated_at": ""
   },
@@ -2515,7 +2515,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "04-structured-output",
-    "topic": "Structured Output — JSON Schema, Pydantic, Zod, Constrained Decoding",
+    "topic": "Structured Output â€” JSON Schema, Pydantic, Zod, Constrained Decoding",
     "output_file": "",
     "updated_at": ""
   },
@@ -2525,7 +2525,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "05-tool-schema-design",
-    "topic": "Tool Schema Design — Naming, Descriptions, Parameter Constraints",
+    "topic": "Tool Schema Design â€” Naming, Descriptions, Parameter Constraints",
     "output_file": "",
     "updated_at": ""
   },
@@ -2535,7 +2535,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "06-mcp-fundamentals",
-    "topic": "MCP Fundamentals — Primitives, Lifecycle, JSON-RPC Base",
+    "topic": "MCP Fundamentals â€” Primitives, Lifecycle, JSON-RPC Base",
     "output_file": "",
     "updated_at": ""
   },
@@ -2545,7 +2545,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "07-building-an-mcp-server",
-    "topic": "Building an MCP Server — Python + TypeScript SDKs",
+    "topic": "Building an MCP Server â€” Python + TypeScript SDKs",
     "output_file": "",
     "updated_at": ""
   },
@@ -2555,7 +2555,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "08-building-an-mcp-client",
-    "topic": "Building an MCP Client — Discovery, Invocation, Session Management",
+    "topic": "Building an MCP Client â€” Discovery, Invocation, Session Management",
     "output_file": "",
     "updated_at": ""
   },
@@ -2565,7 +2565,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "09-mcp-transports",
-    "topic": "MCP Transports — stdio vs Streamable HTTP vs SSE Migration",
+    "topic": "MCP Transports â€” stdio vs Streamable HTTP vs SSE Migration",
     "output_file": "",
     "updated_at": ""
   },
@@ -2575,7 +2575,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "10-mcp-resources-and-prompts",
-    "topic": "MCP Resources and Prompts — Context Exposure Beyond Tools",
+    "topic": "MCP Resources and Prompts â€” Context Exposure Beyond Tools",
     "output_file": "",
     "updated_at": ""
   },
@@ -2585,7 +2585,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "11-mcp-sampling",
-    "topic": "MCP Sampling — Server-Requested LLM Completions and Agent Loops",
+    "topic": "MCP Sampling â€” Server-Requested LLM Completions and Agent Loops",
     "output_file": "",
     "updated_at": ""
   },
@@ -2595,7 +2595,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "12-mcp-roots-and-elicitation",
-    "topic": "Roots and Elicitation — Scoping and Mid-Flight User Input",
+    "topic": "Roots and Elicitation â€” Scoping and Mid-Flight User Input",
     "output_file": "",
     "updated_at": ""
   },
@@ -2605,7 +2605,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "13-mcp-async-tasks",
-    "topic": "Async Tasks (SEP-1686) — Call-Now, Fetch-Later for Long-Running Work",
+    "topic": "Async Tasks (SEP-1686) â€” Call-Now, Fetch-Later for Long-Running Work",
     "output_file": "",
     "updated_at": ""
   },
@@ -2615,7 +2615,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "14-mcp-apps",
-    "topic": "MCP Apps — Interactive UI Resources via `ui://`",
+    "topic": "MCP Apps â€” Interactive UI Resources via `ui://`",
     "output_file": "",
     "updated_at": ""
   },
@@ -2625,7 +2625,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "15-mcp-security-tool-poisoning",
-    "topic": "MCP Security I — Tool Poisoning, Rug Pulls, Cross-Server Shadowing",
+    "topic": "MCP Security I â€” Tool Poisoning, Rug Pulls, Cross-Server Shadowing",
     "output_file": "",
     "updated_at": ""
   },
@@ -2635,7 +2635,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "16-mcp-security-oauth-2-1",
-    "topic": "MCP Security II — OAuth 2.1, Resource Indicators, Incremental Scopes",
+    "topic": "MCP Security II â€” OAuth 2.1, Resource Indicators, Incremental Scopes",
     "output_file": "",
     "updated_at": ""
   },
@@ -2645,7 +2645,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "17-mcp-gateways-and-registries",
-    "topic": "MCP Gateways and Registries — Enterprise Control Planes",
+    "topic": "MCP Gateways and Registries â€” Enterprise Control Planes",
     "output_file": "",
     "updated_at": ""
   },
@@ -2655,7 +2655,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "18-mcp-auth-production",
-    "topic": "MCP Auth in Production — Enrollment, JWKS Refresh, Audience-Pinned Tokens",
+    "topic": "MCP Auth in Production â€” Enrollment, JWKS Refresh, Audience-Pinned Tokens",
     "output_file": "",
     "updated_at": ""
   },
@@ -2665,7 +2665,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "19-a2a-protocol",
-    "topic": "A2A — Agent-to-Agent Protocol",
+    "topic": "A2A â€” Agent-to-Agent Protocol",
     "output_file": "",
     "updated_at": ""
   },
@@ -2675,7 +2675,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "20-opentelemetry-genai",
-    "topic": "OpenTelemetry GenAI — Tracing Tool Calls End-to-End",
+    "topic": "OpenTelemetry GenAI â€” Tracing Tool Calls End-to-End",
     "output_file": "",
     "updated_at": ""
   },
@@ -2685,7 +2685,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "21-llm-routing-layer",
-    "topic": "LLM Routing Layer — LiteLLM, OpenRouter, Portkey",
+    "topic": "LLM Routing Layer â€” LiteLLM, OpenRouter, Portkey",
     "output_file": "",
     "updated_at": ""
   },
@@ -2695,7 +2695,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "22-skills-and-agent-sdks",
-    "topic": "Skills and Agent SDKs — Anthropic Skills, AGENTS.md, OpenAI Apps SDK",
+    "topic": "Skills and Agent SDKs â€” Anthropic Skills, AGENTS.md, OpenAI Apps SDK",
     "output_file": "",
     "updated_at": ""
   },
@@ -2705,7 +2705,7 @@
     "stage": "01",
     "phase": "13-tools-and-protocols",
     "lesson": "23-capstone-tool-ecosystem",
-    "topic": "Capstone — Build a Complete Tool Ecosystem",
+    "topic": "Capstone â€” Build a Complete Tool Ecosystem",
     "output_file": "",
     "updated_at": ""
   },
@@ -3145,7 +3145,7 @@
     "stage": "01",
     "phase": "15-autonomous-systems",
     "lesson": "02-star-family-reasoning",
-    "topic": "STaR, V-STaR, Quiet-STaR — Self-Taught Reasoning",
+    "topic": "STaR, V-STaR, Quiet-STaR â€” Self-Taught Reasoning",
     "output_file": "",
     "updated_at": ""
   },
@@ -3155,7 +3155,7 @@
     "stage": "01",
     "phase": "15-autonomous-systems",
     "lesson": "03-alphaevolve-evolutionary-coding",
-    "topic": "AlphaEvolve — Evolutionary Coding Agents",
+    "topic": "AlphaEvolve â€” Evolutionary Coding Agents",
     "output_file": "",
     "updated_at": ""
   },
@@ -3165,7 +3165,7 @@
     "stage": "01",
     "phase": "15-autonomous-systems",
     "lesson": "04-darwin-godel-machine",
-    "topic": "Darwin Godel Machine — Open-Ended Self-Modifying Agents",
+    "topic": "Darwin Godel Machine â€” Open-Ended Self-Modifying Agents",
     "output_file": "",
     "updated_at": ""
   },
@@ -3175,7 +3175,7 @@
     "stage": "01",
     "phase": "15-autonomous-systems",
     "lesson": "05-ai-scientist-v2",
-    "topic": "AI Scientist v2 — Workshop-Level Autonomous Research",
+    "topic": "AI Scientist v2 â€” Workshop-Level Autonomous Research",
     "output_file": "",
     "updated_at": ""
   },
@@ -3195,7 +3195,7 @@
     "stage": "01",
     "phase": "15-autonomous-systems",
     "lesson": "07-recursive-self-improvement",
-    "topic": "Recursive Self-Improvement — Capability vs Alignment",
+    "topic": "Recursive Self-Improvement â€” Capability vs Alignment",
     "output_file": "",
     "updated_at": ""
   },
@@ -3425,7 +3425,7 @@
     "stage": "01",
     "phase": "16-multi-agent-and-swarms",
     "lesson": "08-role-specialization",
-    "topic": "Role Specialization — Planner, Critic, Executor, Verifier",
+    "topic": "Role Specialization â€” Planner, Critic, Executor, Verifier",
     "output_file": "",
     "updated_at": ""
   },
@@ -3455,7 +3455,7 @@
     "stage": "01",
     "phase": "16-multi-agent-and-swarms",
     "lesson": "11-handoffs-and-routines",
-    "topic": "Handoffs and Routines — Stateless Orchestration",
+    "topic": "Handoffs and Routines â€” Stateless Orchestration",
     "output_file": "",
     "updated_at": ""
   },
@@ -3465,7 +3465,7 @@
     "stage": "01",
     "phase": "16-multi-agent-and-swarms",
     "lesson": "12-a2a-protocol",
-    "topic": "A2A — The Agent-to-Agent Protocol",
+    "topic": "A2A â€” The Agent-to-Agent Protocol",
     "output_file": "",
     "updated_at": ""
   },
@@ -3545,7 +3545,7 @@
     "stage": "01",
     "phase": "16-multi-agent-and-swarms",
     "lesson": "20-marl-maddpg-qmix-mappo",
-    "topic": "MARL — MADDPG, QMIX, MAPPO",
+    "topic": "MARL â€” MADDPG, QMIX, MAPPO",
     "output_file": "",
     "updated_at": ""
   },
@@ -3565,7 +3565,7 @@
     "stage": "01",
     "phase": "16-multi-agent-and-swarms",
     "lesson": "22-production-scaling-queues-checkpoints",
-    "topic": "Production Scaling — Queues, Checkpoints, Durability",
+    "topic": "Production Scaling â€” Queues, Checkpoints, Durability",
     "output_file": "",
     "updated_at": ""
   },
@@ -3575,7 +3575,7 @@
     "stage": "01",
     "phase": "16-multi-agent-and-swarms",
     "lesson": "23-failure-modes-mast-groupthink",
-    "topic": "Failure Modes — MAST, Groupthink, Monoculture, Cascading Errors",
+    "topic": "Failure Modes â€” MAST, Groupthink, Monoculture, Cascading Errors",
     "output_file": "",
     "updated_at": ""
   },
@@ -3605,7 +3605,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "01-managed-llm-platforms",
-    "topic": "Managed LLM Platforms — Bedrock, Vertex AI, Azure OpenAI",
+    "topic": "Managed LLM Platforms â€” Bedrock, Vertex AI, Azure OpenAI",
     "output_file": "",
     "updated_at": ""
   },
@@ -3615,7 +3615,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "02-inference-platform-economics",
-    "topic": "Inference Platform Economics — Fireworks, Together, Baseten, Modal, Replicate, Anyscale",
+    "topic": "Inference Platform Economics â€” Fireworks, Together, Baseten, Modal, Replicate, Anyscale",
     "output_file": "",
     "updated_at": ""
   },
@@ -3625,7 +3625,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "03-gpu-autoscaling-kubernetes",
-    "topic": "GPU Autoscaling on Kubernetes — Karpenter, KAI Scheduler, Gang Scheduling",
+    "topic": "GPU Autoscaling on Kubernetes â€” Karpenter, KAI Scheduler, Gang Scheduling",
     "output_file": "",
     "updated_at": ""
   },
@@ -3675,7 +3675,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "08-inference-metrics-goodput",
-    "topic": "Inference Metrics — TTFT, TPOT, ITL, Goodput, P99",
+    "topic": "Inference Metrics â€” TTFT, TPOT, ITL, Goodput, P99",
     "output_file": "",
     "updated_at": ""
   },
@@ -3685,7 +3685,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "09-production-quantization",
-    "topic": "Production Quantization — AWQ, GPTQ, GGUF K-quants, FP8, MXFP4/NVFP4",
+    "topic": "Production Quantization â€” AWQ, GPTQ, GGUF K-quants, FP8, MXFP4/NVFP4",
     "output_file": "",
     "updated_at": ""
   },
@@ -3715,7 +3715,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "12-edge-inference",
-    "topic": "Edge Inference — Apple Neural Engine, Qualcomm Hexagon, WebGPU/WebLLM, Jetson",
+    "topic": "Edge Inference â€” Apple Neural Engine, Qualcomm Hexagon, WebGPU/WebLLM, Jetson",
     "output_file": "",
     "updated_at": ""
   },
@@ -3745,7 +3745,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "15-batch-apis",
-    "topic": "Batch APIs — the 50% Discount as Industry Standard",
+    "topic": "Batch APIs â€” the 50% Discount as Industry Standard",
     "output_file": "",
     "updated_at": ""
   },
@@ -3765,7 +3765,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "17-disaggregated-prefill-decode",
-    "topic": "Disaggregated Prefill/Decode — NVIDIA Dynamo and llm-d",
+    "topic": "Disaggregated Prefill/Decode â€” NVIDIA Dynamo and llm-d",
     "output_file": "",
     "updated_at": ""
   },
@@ -3785,7 +3785,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "19-ai-gateways",
-    "topic": "AI Gateways — LiteLLM, Portkey, Kong AI Gateway, Bifrost",
+    "topic": "AI Gateways â€” LiteLLM, Portkey, Kong AI Gateway, Bifrost",
     "output_file": "",
     "updated_at": ""
   },
@@ -3805,7 +3805,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "21-ab-testing-llm-features",
-    "topic": "A/B Testing LLM Features — GrowthBook, Statsig, and the Vibes Problem",
+    "topic": "A/B Testing LLM Features â€” GrowthBook, Statsig, and the Vibes Problem",
     "output_file": "",
     "updated_at": ""
   },
@@ -3815,7 +3815,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "22-load-testing-llm-apis",
-    "topic": "Load Testing LLM APIs — Why k6 and Locust Lie",
+    "topic": "Load Testing LLM APIs â€” Why k6 and Locust Lie",
     "output_file": "",
     "updated_at": ""
   },
@@ -3825,7 +3825,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "23-sre-for-ai",
-    "topic": "SRE for AI — Multi-Agent Incident Response, Runbooks, Predictive Detection",
+    "topic": "SRE for AI â€” Multi-Agent Incident Response, Runbooks, Predictive Detection",
     "output_file": "",
     "updated_at": ""
   },
@@ -3845,7 +3845,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "25-security-secrets-audit",
-    "topic": "Security — Secrets, API Key Rotation, Audit Logs, Guardrails",
+    "topic": "Security â€” Secrets, API Key Rotation, Audit Logs, Guardrails",
     "output_file": "",
     "updated_at": ""
   },
@@ -3855,7 +3855,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "26-compliance-frameworks",
-    "topic": "Compliance — SOC 2, HIPAA, GDPR, PCI-DSS, EU AI Act, ISO 42001",
+    "topic": "Compliance â€” SOC 2, HIPAA, GDPR, PCI-DSS, EU AI Act, ISO 42001",
     "output_file": "",
     "updated_at": ""
   },
@@ -3865,7 +3865,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "27-finops-llms",
-    "topic": "FinOps for LLMs — Unit Economics and Multi-Tenant Attribution",
+    "topic": "FinOps for LLMs â€” Unit Economics and Multi-Tenant Attribution",
     "output_file": "",
     "updated_at": ""
   },
@@ -3875,7 +3875,7 @@
     "stage": "01",
     "phase": "17-infrastructure-and-production",
     "lesson": "28-self-hosted-serving-selection",
-    "topic": "Self-Hosted Serving Selection — llama.cpp, Ollama, TGI, vLLM, SGLang",
+    "topic": "Self-Hosted Serving Selection â€” llama.cpp, Ollama, TGI, vLLM, SGLang",
     "output_file": "",
     "updated_at": ""
   },
@@ -3975,7 +3975,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "07-sleeper-agents-persistent-deception",
-    "topic": "Sleeper Agents — Persistent Deception",
+    "topic": "Sleeper Agents â€” Persistent Deception",
     "output_file": "",
     "updated_at": ""
   },
@@ -4005,7 +4005,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "10-ai-control-subversion",
-    "topic": "AI Control — Safety Despite Subversion",
+    "topic": "AI Control â€” Safety Despite Subversion",
     "output_file": "",
     "updated_at": ""
   },
@@ -4055,7 +4055,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "15-indirect-prompt-injection",
-    "topic": "Indirect Prompt Injection — Production Attack Surface",
+    "topic": "Indirect Prompt Injection â€” Production Attack Surface",
     "output_file": "",
     "updated_at": ""
   },
@@ -4065,7 +4065,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "16-red-team-tooling-garak-llamaguard-pyrit",
-    "topic": "Red-Team Tooling — Garak, Llama Guard, PyRIT",
+    "topic": "Red-Team Tooling â€” Garak, Llama Guard, PyRIT",
     "output_file": "",
     "updated_at": ""
   },
@@ -4085,7 +4085,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "18-frontier-safety-frameworks-rsp-pf-fsf",
-    "topic": "Frontier Safety Frameworks — RSP, PF, FSF",
+    "topic": "Frontier Safety Frameworks â€” RSP, PF, FSF",
     "output_file": "",
     "updated_at": ""
   },
@@ -4115,7 +4115,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "21-fairness-criteria-group-individual-counterfactual",
-    "topic": "Fairness Criteria — Group, Individual, Counterfactual",
+    "topic": "Fairness Criteria â€” Group, Individual, Counterfactual",
     "output_file": "",
     "updated_at": ""
   },
@@ -4135,7 +4135,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "23-watermarking-synthid-stable-signature-c2pa",
-    "topic": "Watermarking — SynthID, Stable Signature, C2PA",
+    "topic": "Watermarking â€” SynthID, Stable Signature, C2PA",
     "output_file": "",
     "updated_at": ""
   },
@@ -4145,7 +4145,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "24-regulatory-frameworks-eu-us-uk-korea",
-    "topic": "Regulatory Frameworks — EU, US, UK, Korea",
+    "topic": "Regulatory Frameworks â€” EU, US, UK, Korea",
     "output_file": "",
     "updated_at": ""
   },
@@ -4185,7 +4185,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "28-alignment-research-ecosystem",
-    "topic": "Alignment Research Ecosystem — MATS, Redwood, Apollo, METR",
+    "topic": "Alignment Research Ecosystem â€” MATS, Redwood, Apollo, METR",
     "output_file": "",
     "updated_at": ""
   },
@@ -4195,7 +4195,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "29-moderation-systems-openai-perspective-llamaguard",
-    "topic": "Moderation Systems — OpenAI, Perspective, Llama Guard",
+    "topic": "Moderation Systems â€” OpenAI, Perspective, Llama Guard",
     "output_file": "",
     "updated_at": ""
   },
@@ -4205,7 +4205,7 @@
     "stage": "01",
     "phase": "18-ethics-safety-alignment",
     "lesson": "30-dual-use-risk-cyber-bio-chem-nuclear",
-    "topic": "Dual-Use Risk — Cyber, Bio, Chem, Nuclear Uplift",
+    "topic": "Dual-Use Risk â€” Cyber, Bio, Chem, Nuclear Uplift",
     "output_file": "",
     "updated_at": ""
   },
@@ -4215,7 +4215,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "01-terminal-native-coding-agent",
-    "topic": "Capstone 01 — Terminal-Native Coding Agent",
+    "topic": "Capstone 01 â€” Terminal-Native Coding Agent",
     "output_file": "",
     "updated_at": ""
   },
@@ -4225,7 +4225,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "02-rag-over-codebase",
-    "topic": "Capstone 02 — RAG over Codebase (Cross-Repo Semantic Search)",
+    "topic": "Capstone 02 â€” RAG over Codebase (Cross-Repo Semantic Search)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4235,7 +4235,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "03-realtime-voice-assistant",
-    "topic": "Capstone 03 — Real-Time Voice Assistant (ASR to LLM to TTS)",
+    "topic": "Capstone 03 â€” Real-Time Voice Assistant (ASR to LLM to TTS)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4245,7 +4245,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "04-multimodal-document-qa",
-    "topic": "Capstone 04 — Multimodal Document QA (Vision-First PDF, Tables, Charts)",
+    "topic": "Capstone 04 â€” Multimodal Document QA (Vision-First PDF, Tables, Charts)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4255,7 +4255,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "05-autonomous-research-agent",
-    "topic": "Capstone 05 — Autonomous Research Agent (AI-Scientist Class)",
+    "topic": "Capstone 05 â€” Autonomous Research Agent (AI-Scientist Class)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4265,7 +4265,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "06-devops-troubleshooting-agent",
-    "topic": "Capstone 06 — DevOps Troubleshooting Agent for Kubernetes",
+    "topic": "Capstone 06 â€” DevOps Troubleshooting Agent for Kubernetes",
     "output_file": "",
     "updated_at": ""
   },
@@ -4275,7 +4275,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "07-end-to-end-fine-tuning-pipeline",
-    "topic": "Capstone 07 — End-to-End Fine-Tuning Pipeline (Data to SFT to DPO to Serve)",
+    "topic": "Capstone 07 â€” End-to-End Fine-Tuning Pipeline (Data to SFT to DPO to Serve)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4285,7 +4285,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "08-production-rag-chatbot",
-    "topic": "Capstone 08 — Production RAG Chatbot for a Regulated Vertical",
+    "topic": "Capstone 08 â€” Production RAG Chatbot for a Regulated Vertical",
     "output_file": "",
     "updated_at": ""
   },
@@ -4295,7 +4295,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "09-code-migration-agent",
-    "topic": "Capstone 09 — Code Migration Agent (Repo-Level Language / Runtime Upgrade)",
+    "topic": "Capstone 09 â€” Code Migration Agent (Repo-Level Language / Runtime Upgrade)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4305,7 +4305,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "10-multi-agent-software-team",
-    "topic": "Capstone 10 — Multi-Agent Software Engineering Team",
+    "topic": "Capstone 10 â€” Multi-Agent Software Engineering Team",
     "output_file": "",
     "updated_at": ""
   },
@@ -4315,7 +4315,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "11-llm-observability-dashboard",
-    "topic": "Capstone 11 — LLM Observability & Eval Dashboard",
+    "topic": "Capstone 11 â€” LLM Observability & Eval Dashboard",
     "output_file": "",
     "updated_at": ""
   },
@@ -4325,7 +4325,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "12-video-understanding-pipeline",
-    "topic": "Capstone 12 — Video Understanding Pipeline (Scene, QA, Search)",
+    "topic": "Capstone 12 â€” Video Understanding Pipeline (Scene, QA, Search)",
     "output_file": "",
     "updated_at": ""
   },
@@ -4335,7 +4335,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "13-mcp-server-with-registry",
-    "topic": "Capstone 13 — MCP Server with Registry and Governance",
+    "topic": "Capstone 13 â€” MCP Server with Registry and Governance",
     "output_file": "",
     "updated_at": ""
   },
@@ -4345,7 +4345,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "14-speculative-decoding-server",
-    "topic": "Capstone 14 — Speculative-Decoding Inference Server",
+    "topic": "Capstone 14 â€” Speculative-Decoding Inference Server",
     "output_file": "",
     "updated_at": ""
   },
@@ -4355,7 +4355,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "15-constitutional-safety-harness",
-    "topic": "Capstone 15 — Constitutional Safety Harness + Red-Team Range",
+    "topic": "Capstone 15 â€” Constitutional Safety Harness + Red-Team Range",
     "output_file": "",
     "updated_at": ""
   },
@@ -4365,7 +4365,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "16-github-issue-to-pr-agent",
-    "topic": "Capstone 16 — GitHub Issue-to-PR Autonomous Agent",
+    "topic": "Capstone 16 â€” GitHub Issue-to-PR Autonomous Agent",
     "output_file": "",
     "updated_at": ""
   },
@@ -4375,7 +4375,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "17-personal-ai-tutor",
-    "topic": "Capstone 17 — Personal AI Tutor (Adaptive, Multimodal, with Memory)",
+    "topic": "Capstone 17 â€” Personal AI Tutor (Adaptive, Multimodal, with Memory)",
     "output_file": "",
     "updated_at": ""
   },
@@ -5005,7 +5005,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "82-jailbreak-taxonomy",
-    "topic": "Capstone 82 — Jailbreak Taxonomy",
+    "topic": "Capstone 82 â€” Jailbreak Taxonomy",
     "output_file": "",
     "updated_at": ""
   },
@@ -5015,7 +5015,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "83-prompt-injection-detector",
-    "topic": "Capstone 83 — Prompt Injection Detector",
+    "topic": "Capstone 83 â€” Prompt Injection Detector",
     "output_file": "",
     "updated_at": ""
   },
@@ -5025,7 +5025,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "84-refusal-evaluation",
-    "topic": "Capstone 84 — Refusal Evaluation",
+    "topic": "Capstone 84 â€” Refusal Evaluation",
     "output_file": "",
     "updated_at": ""
   },
@@ -5035,7 +5035,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "85-content-classifier-integration",
-    "topic": "Capstone 85 — Content Classifier Integration",
+    "topic": "Capstone 85 â€” Content Classifier Integration",
     "output_file": "",
     "updated_at": ""
   },
@@ -5045,7 +5045,7 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "86-constitutional-rules-engine",
-    "topic": "Capstone 86 — Constitutional Rules Engine",
+    "topic": "Capstone 86 â€” Constitutional Rules Engine",
     "output_file": "",
     "updated_at": ""
   },
@@ -5055,13 +5055,13 @@
     "stage": "01",
     "phase": "19-capstone-projects",
     "lesson": "87-end-to-end-safety-gate",
-    "topic": "Capstone 87 — End-to-End Safety Gate",
+    "topic": "Capstone 87 â€” End-to-End Safety Gate",
     "output_file": "",
     "updated_at": ""
   },
   {
     "id": "mlops/01-experiment-tracking",
-    "topic": "MLOps 01 — Experiment Tracking",
+    "topic": "MLOps 01 â€” Experiment Tracking",
     "status": "pending",
     "stage": "01",
     "phase": "mlops",
@@ -5071,7 +5071,7 @@
   },
   {
     "id": "mlops/02-data-versioning",
-    "topic": "MLOps 02 — Data Versioning",
+    "topic": "MLOps 02 â€” Data Versioning",
     "status": "pending",
     "stage": "01",
     "phase": "mlops",
@@ -5081,7 +5081,7 @@
   },
   {
     "id": "mlops/03-drift-monitoring",
-    "topic": "MLOps 03 — Drift Monitoring",
+    "topic": "MLOps 03 â€” Drift Monitoring",
     "status": "pending",
     "stage": "01",
     "phase": "mlops",
@@ -5091,7 +5091,7 @@
   },
   {
     "id": "mlops/04-retraining-pipelines",
-    "topic": "MLOps 04 — Retraining Pipelines",
+    "topic": "MLOps 04 â€” Retraining Pipelines",
     "status": "pending",
     "stage": "01",
     "phase": "mlops",

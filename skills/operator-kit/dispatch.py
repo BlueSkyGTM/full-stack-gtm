@@ -163,14 +163,17 @@ Output: beat headings + 1-2 sentence description per beat. No full prose. Exerci
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": user_prompt},
                 ],
-                max_tokens=2000,
+                # GLM-5.1 is a reasoning model: output flows through reasoning_content
+                # first, then content. Budget tokens for both phases.
+                max_tokens=6000,
                 stream=True,
             )
             chunks = []
             for chunk in response:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    chunks.append(delta)
+                delta = chunk.choices[0].delta
+                # reasoning_content = thinking phase (discard); content = final answer
+                if delta.content:
+                    chunks.append(delta.content)
             result = "".join(chunks).strip()
 
             if len(result) < 200:
@@ -257,7 +260,8 @@ def main():
                 status = "failed"
                 print(f"  [ERROR] {lesson_id}: {e}")
 
-            update_row(rows, lesson_id, status)
+            if not args.dry_run:
+                update_row(rows, lesson_id, status)
             if status == "done":
                 done_count += 1
             elif status == "failed":
