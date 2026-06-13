@@ -1,0 +1,28 @@
+# Structured Outputs & Constrained Decoding
+
+## Hook It
+When you parse LLM output with `JSON.parse()` and it throws because the model wrapped the response in markdown fences or added a "Sure, here's the JSON:" preamble, the problem isn't the model — it's that you gave it no structural constraints. Constrained decoding solves this by making syntactically invalid outputs literally impossible to generate.
+
+## Ground It
+Explain the mechanism: at each token generation step, the decoder receives a logit vector over the full vocabulary. Constrained decoding computes a binary mask over that vocabulary — tokens that would violate the target grammar get logits set to negative infinity before sampling. The grammar can be a JSON schema, a regex, or a full context-free grammar. Cover three constraint levels: (1) JSON mode (structural only — guarantees valid JSON, not schema compliance), (2) JSON schema enforcement (structural + semantic — output conforms to a specific schema), (3) CFG/regex constraints (arbitrary formal grammar). Name the implementations: Outlines (open-source, uses finite-state machines compiled from schemas), Guidance (token-by-token control with interleaved generation and templating), OpenAI's `response_format: { type: "json_schema" }` (closed-source, mechanism unpublished). Note the tradeoff: constrained decoding adds latency per token due to mask computation and reduces effective vocabulary, which can degrade creative tasks.
+
+## Show It
+Live code demonstrations. (1) Generate structured data with no constraints using the Anthropic API, show failure modes on parse. (2) Re-run with JSON mode enabled via tool use / forced tool-calling pattern, confirm valid JSON. (3) Use Outlines library with a Pydantic schema to generate records that are guaranteed schema-valid — print the parsed object and a validation check. (4) Generate text matching a regex pattern (e.g., phone numbers, SKU formats) using Outlines' regex-constrained generation — print outputs and confirm regex match. Each example prints observable confirmation output.
+
+## Use It
+GTM redirect: enrichment pipelines in Zone 02 (data enrichment and qualification). When Clay runs a waterfall over prospects, each step extracts structured firmographic data — employee count, revenue band, tech stack — from unstructured sources. Without constrained outputs, the extraction step returns freeform text that breaks downstream branching logic. With JSON schema enforcement, every enrichment step returns a predictably-shaped object. This is the mechanism behind structured extraction actions in Clay tables: define the schema once, run it across thousands of rows, and the output columns are guaranteed to exist. [CITATION NEEDED — concept: Clay's internal structured extraction implementation details]. Exercise hook (medium): define a Pydantic schema for a firmographic enrichment payload (company name, employee_range enum, tech_stack list), generate 5 synthetic examples using constrained decoding, validate all 5 parse without error.
+
+## Ship It
+Production considerations. Constrained decoding latency overhead: benchmark JSON mode vs. unconstrained generation on your target model and log p50/p95 token latency. Schema versioning: when your downstream consumer expects schema v2 but cached outputs were generated under schema v1, you need a migration path — version your schemas explicitly. Failure modes: over-constraining causes the model to loop (repeated tokens) or produce empty strings when no valid token has sufficient probability; detect and handle these with retry logic that loosens constraints. Batch processing: when running structured extraction across thousands of records, use async concurrency with rate limiting — the constraint mask computation is per-request and does not batch. Exercise hook (hard): build a batch enrichment script that processes a CSV of company domains, extracts structured data via constrained decoding, handles failures with a fallback schema (required fields only), and writes results to a new CSV — include timing logs and error rate reporting.
+
+## Prove It
+Assessment hooks mapped to learning objectives. (1) Given a description of a token-masked generation step, predict which tokens are masked for a specific partial JSON string — tests mechanism comprehension. (2) Compare outputs from JSON mode vs. JSON schema enforcement on a prompt designed to trigger schema violations (e.g., asking for a number but schema expects a string) — explain the observed difference. (3) Write a regex constraint that generates only valid ISO-8601 dates, run it 20 times, confirm 100% match rate — tests implementation ability. (4) Diagnose a constrained generation loop (model repeats the same token) given logprobs output — identify whether the constraint is too tight or the prompt is misaligned. Exercise hook (easy): configure JSON mode on an existing API call and parse the response; confirm no try/catch is needed.
+
+---
+
+**Learning Objectives (for `docs/en.md`):**
+1. Explain how constrained decoding computes a token mask at each generation step to enforce structural guarantees.
+2. Compare JSON mode, JSON schema enforcement, and CFG-based constraints in terms of guarantee strength and latency cost.
+3. Implement schema-constrained generation using Outlines with a Pydantic model.
+4. Diagnose common failure modes (token looping, empty outputs) in constrained generation and adjust constraints or prompts accordingly.
+5. Configure structured output extraction for a GTM enrichment pipeline that processes batch records with predictable output shapes.

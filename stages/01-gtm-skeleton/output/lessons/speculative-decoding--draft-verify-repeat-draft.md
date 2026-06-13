@@ -1,0 +1,19 @@
+# Speculative Decoding — Draft, Verify, Repeat
+
+## Hook
+Latency kills conversion. When your enrichment pipeline calls an LLM per account and you have 5,000 accounts, wall-clock time per token directly determines whether your reps get insights this morning or next Tuesday. Speculative decoding attacks the latency problem without sacrificing output quality by exploiting the gap between what a small model *can* guess and what a large model *must* verify.
+
+## Concept
+The core pattern: a cheap draft model proposes K tokens autoregressively (fast but less accurate), then the target model scores all K tokens in a single forward pass (slow but accurate). Tokens accepted by the target's distribution are kept; the first rejection triggers resampling from the target. The output distribution is *identical* to running the target model alone — this is not approximation, it's exact sampling with speculative acceleration.
+
+## Mechanism
+Break down the verification step. The target model computes logits for positions 1 through K simultaneously (the "tree" of draft tokens becomes a batch dimension). At each position, the target's probability for the drafted token is compared against the draft model's probability — if `p_target(token) >= p_draft(token)`, accept. If not, reject and sample from the target's adjusted distribution (`p_target - p_draft`, clamped and renormalized). Explain why this preserves the target distribution exactly: the acceptance criterion is the same rejection sampling used in Metropolis-Hastings. Address the practical constraint: this requires the target model's KV-cache to support non-sequential positions, which limits which inference backends can implement it. Mention the bandwidth-vs-compute tradeoff — speculative decoding trades compute (running the draft model) for reduced wall-clock latency (fewer target model forward passes), and it only wins when the target model is memory-bandwidth-bound, not compute-bound.
+
+## Code
+Implement a minimal speculative decoding loop against two instances of a small model (e.g., two sizes of GPT-2 from `transformers`). The draft model generates K=4 candidate tokens. The target model scores them in one forward pass. Print: tokens accepted, tokens rejected, wall-clock time vs. target-only autoregressive baseline, and verify output distribution equivalence by sampling the same prompt 50 times both ways and comparing top-5 token frequencies. All code runs in a terminal, no browser, with printed timing and frequency tables as observable output.
+
+## Use It
+GTM redirect: **Zone 3 — Enrichment pipelines**. [CITATION NEEDED — concept: speculative decoding deployment in high-throughput enrichment]. When your enrichment step calls a large model per account (summarizing 10-K filings, scoring intent signals, generating account briefs), speculative decoding reduces per-account latency without changing output quality. If you self-host your inference (vLLM, TensorRT-LLM), enabling speculative decoding is a config change that directly speeds up batch enrichment runs. The connection is latency reduction at constant quality — not a new GTM capability, but a faster version of an existing one.
+
+## Ship It
+**Easy**: Write a script that benchmarks autoregressive vs. speculative decoding on a GPT-2 pair, printing tokens/sec and acceptance rate for 20 prompts from a provided list. **Medium**: Extend the script to sweep K (draft token count from 2 to 8) and plot acceptance rate vs. K, printing the optimal K for this model pair. **Hard**: Implement speculative decoding with an early-exit draft strategy (use intermediate layer outputs from the *same* target model as drafts, verify with the full model), print speedup factor and distribution divergence (KL divergence between speculative and vanilla sampling over 100 runs).
