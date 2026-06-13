@@ -1,7 +1,7 @@
 # /build-site-component
 
 Generate site components, Helix implementation code, and student-facing UI logic.
-Uses GLM-5 (strong coding + multi-step reasoning). Active from Stage 05.
+Uses GLM-5 (Lyra-code). Active from Stage 05.
 
 ## When to invoke
 - Stage 05 Helix build is running
@@ -15,21 +15,45 @@ Uses GLM-5 (strong coding + multi-step reasoning). Active from Stage 05.
 ```bash
 python3 -c "import openai" 2>/dev/null || { echo "ERROR: pip install openai"; exit 1; }
 [ -n "$ZHIPUAI_API_KEY" ] || { echo "ERROR: ZHIPUAI_API_KEY not set — check .env"; exit 1; }
-```
-
-### Step 1 — Read component spec + existing site patterns
-```bash
+[ -f "stages/00-c-agent-setup/output/agent-briefs/lyra-code-brief.md" ] || { echo "ERROR: lyra-code-brief.md missing — run Stage 00-c first"; exit 1; }
 SPEC="${1:-}"
 [ -f "$SPEC" ] || { echo "ERROR: spec file not found: $SPEC"; exit 1; }
+```
+
+### Step 1 — Read context (governed maze: extract only what GLM needs)
+```bash
 COMPONENT_NAME=$(basename "$SPEC" .md)
 
-# Write context to temp files to avoid shell arg escaping issues
+# Extract Lyra-code identity + architecture invariants + component writing rules + what NOT to do
+LYRA_CODE_BRIEF=$(python3 -c "
+import re
+text = open('stages/00-c-agent-setup/output/agent-briefs/lyra-code-brief.md').read()
+sections = ['## Identity', '## Architecture Invariants', '## Component Writing Rules', '## What NOT To Do']
+out = []
+for s in sections:
+    m = re.search(re.escape(s) + r'(.*?)(?=\n## |\Z)', text, re.DOTALL)
+    if m:
+        out.append(s + m.group(1).rstrip())
+print('\n\n'.join(out))
+" 2>/dev/null | head -130)  # cap at ~480 tokens
+
+# Helix integration rules (if this is a Helix component)
+HELIX_RULES=$(python3 -c "
+import re
+text = open('stages/00-c-agent-setup/output/agent-briefs/lyra-code-brief.md').read()
+m = re.search(r'## Helix Integration Rules.*?(.*?)(?=\n## |\Z)', text, re.DOTALL)
+print('## Helix Integration Rules' + (m.group(1).rstrip() if m else ''))
+" 2>/dev/null | head -30)
+
+# Component spec (full — it's the task definition)
 cp "$SPEC" /tmp/zai_comp_spec.txt
 
-find site-new/ phases/ -name "*.js" -o -name "*.ts" -o -name "*.jsx" 2>/dev/null \
-  | head -5 | xargs head -30 2>/dev/null > /tmp/zai_comp_existing.txt
+# Existing site patterns — capped snippet for style reference only
+find site-new/ phases/ -name "*.tsx" -o -name "*.ts" 2>/dev/null \
+  | head -3 | xargs head -25 2>/dev/null > /tmp/zai_comp_patterns.txt
 
-cat stages/00-d-helix-design/output/*.md 2>/dev/null | head -100 > /tmp/zai_comp_helix.txt
+echo "$LYRA_CODE_BRIEF" > /tmp/zai_lyracode_brief.txt
+echo "$HELIX_RULES" > /tmp/zai_helix_rules.txt
 ```
 
 ### Step 2 — Call GLM-5 + write output
@@ -38,48 +62,46 @@ OUTPUT_DIR="stages/05-helix-build/output/components"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_FILE="$OUTPUT_DIR/${COMPONENT_NAME}.tsx"
 
-python3 - /tmp/zai_comp_spec.txt /tmp/zai_comp_existing.txt /tmp/zai_comp_helix.txt <<'PYEOF' > "$OUTPUT_FILE"
+python3 - /tmp/zai_lyracode_brief.txt /tmp/zai_helix_rules.txt /tmp/zai_comp_spec.txt /tmp/zai_comp_patterns.txt <<'PYEOF' > "$OUTPUT_FILE"
 import os, sys
-
 sys.stdout.reconfigure(encoding='utf-8')
-
-try:
-    from openai import OpenAI
-except ImportError:
-    print("ERROR: openai package not installed. Run: pip install openai")
-    sys.exit(1)
+from openai import OpenAI
 
 client = OpenAI(
     api_key=os.environ["ZHIPUAI_API_KEY"],
     base_url=os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/coding/paas/v4"),
 )
 
-spec          = open(sys.argv[1]).read() if len(sys.argv) > 1 else ""
-existing      = open(sys.argv[2]).read() if len(sys.argv) > 2 else ""
-helix_design  = open(sys.argv[3]).read() if len(sys.argv) > 3 else ""
+brief        = open(sys.argv[1]).read() if len(sys.argv) > 1 else ""
+helix_rules  = open(sys.argv[2]).read() if len(sys.argv) > 2 else ""
+spec         = open(sys.argv[3]).read() if len(sys.argv) > 3 else ""
+patterns     = open(sys.argv[4]).read() if len(sys.argv) > 4 else ""
 
-SYSTEM = """You are a frontend engineer building a GTM engineering curriculum site.
-You write clean, minimal, well-typed code. Follow the patterns in the existing codebase.
-No unnecessary abstractions. When building Helix (student memory/FSRS) components:
-keep state simple, surface review prompts clearly, handle empty/loading/error states explicitly."""
+# System: Lyra-code identity + architecture invariants from brief (governed maze)
+SYSTEM = f"""You are Lyra (code mode), a frontend engineer for a GTM engineering curriculum site.
+{brief}"""
 
-USER = f"""Build this component:
+USER = f"""Build this component.
 
-Spec:
-{spec[:2000]}
+Spec (implement exactly as specified):
+{spec[:2500]}
 
-Existing site patterns (for style reference):
-{existing[:2000]}
+Helix integration rules (apply if this component touches student state or quiz flow):
+{helix_rules[:600]}
 
-Helix design context:
-{helix_design[:1000]}
+Existing site patterns (match the style, do not copy):
+{patterns[:800]}
 
-Output the complete implementation. Include: component file, any required types/interfaces,
-brief inline comments for non-obvious logic only."""
+Output the complete implementation. Types/interfaces inline. Comments only for
+non-obvious invariants. No placeholder code — if something is unclear, write a
+// TODO: [specific question] comment and implement the best-guess stub."""
 
 response = client.chat.completions.create(
     model="GLM-5",
-    messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": USER}],
+    messages=[
+        {"role": "system", "content": SYSTEM},
+        {"role": "user",   "content": USER},
+    ],
     max_tokens=4000,
     stream=True,
 )
@@ -96,13 +118,22 @@ PYEOF
 BYTES=$(wc -c < "$OUTPUT_FILE" 2>/dev/null || echo 0)
 if [ "$BYTES" -lt 100 ]; then
   echo "ERROR: output too small ($BYTES bytes) — likely API failure. Check $OUTPUT_FILE"
-  rm -f /tmp/zai_comp_spec.txt /tmp/zai_comp_existing.txt /tmp/zai_comp_helix.txt
+  rm -f /tmp/zai_lyracode_brief.txt /tmp/zai_helix_rules.txt /tmp/zai_comp_spec.txt /tmp/zai_comp_patterns.txt
   exit 1
 fi
 echo "Written: $OUTPUT_FILE ($BYTES bytes)"
-rm -f /tmp/zai_comp_spec.txt /tmp/zai_comp_existing.txt /tmp/zai_comp_helix.txt
+rm -f /tmp/zai_lyracode_brief.txt /tmp/zai_helix_rules.txt /tmp/zai_comp_spec.txt /tmp/zai_comp_patterns.txt
 ```
 
 ### Step 4 — Review gate
-Before merging any component to `site-new/`, invoke `/review` on the output file.
-GLM-5 code output is good but always needs a review pass before it touches the live site.
+```bash
+echo "REQUIRED: invoke /review on $OUTPUT_FILE before merging to site-new/"
+echo "GLM-5 code output is good but always needs a review pass before touching the live site."
+```
+
+## Notes
+- Lyra-code brief loaded at runtime (~480 tokens): identity, architecture invariants, component rules, what NOT to do
+- Helix integration rules loaded separately (only relevant for Stage 05 components)
+- Governed maze: GLM receives brief extract + spec + thin style snippet. Not the full codebase.
+- Output goes to stages/05-helix-build/output/components/ — Claude Code reviews before moving to site-new/
+- /review is mandatory before any component touches the live site
