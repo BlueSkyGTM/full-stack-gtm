@@ -119,8 +119,8 @@ Run it before Stage 01 if 00-a archaeology surfaces undocumented patterns. Run i
 - Config file: `~/.gbrain/config.json` (mode 0600)
 - Setup date: 2026-06-12
 - MCP registered: yes (user scope, via `gbrain serve`)
-- Chat model: `zhipu:GLM-4.7` (Z.ai — requires `ZHIPUAI_API_KEY` in env)
-- Expansion model: `zhipu:GLM-4.7-Flash`
+- Chat model: `zhipu:GLM-5.1` (Z.ai — requires `ZHIPUAI_API_KEY` in env)
+- Expansion model: `zhipu:GLM-5-Turbo`
 - Embedding model: `ollama:nomic-embed-text` (768d) — local, free, no API key required
   - Ollama installed 2026-06-12 via winget. Service starts automatically on login.
   - Z.ai embedding-3 was not activated in BigModel console — blocked on Z.ai side

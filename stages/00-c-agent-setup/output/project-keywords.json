@@ -93,7 +93,7 @@
     {
       "trigger": ["quality-pass", "stage-09"],
       "neural_engine": "hypatia",
-      "model": "GLM-4.7",
+      "model": "GLM-5-Turbo",
       "skill": "/quality-check",
       "inject": [
         "stages/00-b-gtm-content-mapping/output/source-citations.md",
@@ -104,7 +104,7 @@
     {
       "trigger": ["validation-run", "stage-10"],
       "neural_engine": "hypatia",
-      "model": "GLM-4.7",
+      "model": "GLM-5-Turbo",
       "skill": "/quality-check",
       "inject": [
         "vault/variable-registry.md",
@@ -125,7 +125,7 @@
     {
       "trigger": ["citation", "find-citations", "newton"],
       "neural_engine": "newton",
-      "model": "GLM-4.5-Air",
+      "model": "GLM-5-Turbo",
       "skill": "/find-citations",
       "inject": [
         "stages/00-b-gtm-content-mapping/output/source-citations.md",
@@ -135,7 +135,7 @@
     {
       "trigger": ["quality-check", "hypatia", "audit"],
       "neural_engine": "hypatia",
-      "model": "GLM-4.7",
+      "model": "GLM-5-Turbo",
       "skill": "/quality-check",
       "inject": [
         "stages/00-b-gtm-content-mapping/output/source-citations.md",
@@ -145,7 +145,7 @@
     {
       "trigger": ["scan-repo", "echo", "inventory"],
       "neural_engine": "echo",
-      "model": "GLM-4.7-Flash",
+      "model": "GLM-5-Turbo",
       "skill": "/scan-repo",
       "inject": []
     }

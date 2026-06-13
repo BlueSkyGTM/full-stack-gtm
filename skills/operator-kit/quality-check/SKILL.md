@@ -1,7 +1,7 @@
 # /quality-check
 
 Curriculum audit: accuracy, gaps, source alignment, coverage.
-Uses GLM-4.7 (Hypatia). Active at Stage 09, callable earlier for spot checks.
+Uses GLM-5.1 (Hypatia). Active at Stage 09, callable earlier for spot checks.
 
 ## When to invoke
 - Stage 09 quality pass is running
@@ -51,7 +51,7 @@ echo "$HYPATIA_BRIEF" > /tmp/zai_hypatia_brief.txt
 echo "$FORMAT_RULES" > /tmp/zai_format_rules.txt
 ```
 
-### Step 2 — Call GLM-4.7 + write audit report
+### Step 2 — Call GLM-5.1 + write audit report
 ```bash
 OUTPUT_DIR="stages/09-quality-pass/output"
 mkdir -p "$OUTPUT_DIR"
@@ -92,7 +92,7 @@ Use the Verdict Format from your brief exactly. Every criterion gets PASS/WARN/F
 End with Overall Verdict: SHIP / REVISE / BLOCK."""
 
 response = client.chat.completions.create(
-    model="GLM-4.7",
+    model="GLM-5.1",
     messages=[
         {"role": "system", "content": SYSTEM},
         {"role": "user",   "content": USER},

@@ -9,9 +9,9 @@
 |---------------|-------|--------|
 | Lyra content (`/write-lesson`, `/write-exercise`, `/write-quiz`) | `GLM-5.1` | Highest capability — reasoning-class, required for multi-section lesson generation with citations and GTM redirect hooks |
 | Lyra code (`/build-site-component`) | `GLM-5` | High capability code generation with architecture reasoning — site constraint compliance requires strong model |
-| Hypatia (`/quality-check`) | `GLM-4.7` | Strong structured evaluation — audit tasks require reasoning but not generation capability |
-| Echo (`/scan-repo`) | `GLM-4.7-Flash` | Fast, low-token read-only tasks — codebase traversal and inventory extraction |
-| Newton (`/find-citations`) | `GLM-4.5-Air` | High-throughput citation retrieval — volume tasks where speed matters more than depth |
+| Hypatia (`/quality-check`) | `GLM-5-Turbo` | Strong structured evaluation — audit tasks require reasoning but not generation capability |
+| Echo (`/scan-repo`) | `GLM-5-Turbo` | Fast, low-token read-only tasks — codebase traversal and inventory extraction |
+| Newton (`/find-citations`) | `GLM-5-Turbo` | High-throughput citation retrieval — volume tasks where speed matters more than depth |
 
 ## Model Properties (Z.ai confirmed)
 
@@ -19,11 +19,11 @@
 |-------|-----------|---------|---------|
 | GLM-5.1 | 32768 | 128K | Multi-section lesson writing, complex prompt chains |
 | GLM-5 | 32768 | 128K | Code generation, site architecture tasks |
-| GLM-4.7 | 16384 | 64K | Structured evaluation, audit tasks |
-| GLM-4.7-Flash | 16384 | 64K | Fast read-only extraction and summarization |
-| GLM-4.5-Air | 8192 | 32K | High-throughput batch tasks, citation retrieval |
+| GLM-5-Turbo | 16384 | 64K | Structured evaluation, audit tasks |
+| GLM-5-Turbo | 16384 | 64K | Fast read-only extraction and summarization |
+| GLM-5-Turbo | 8192 | 32K | High-throughput batch tasks, citation retrieval |
 
-**Important:** GLM reasoning models (GLM-5.1, GLM-5, GLM-4.5) require `max_tokens >= 500` or the call fails silently. All skills set `max_tokens=8192` as minimum. GLM-4.5-Air and GLM-4.7-Flash are non-reasoning models; they accept lower `max_tokens` values.
+**Important:** GLM reasoning models (GLM-5.1, GLM-5, GLM-5.1) require `max_tokens >= 500` or the call fails silently. All skills set `max_tokens=8192` as minimum. GLM-5-Turbo and GLM-5-Turbo are non-reasoning models; they accept lower `max_tokens` values.
 
 ## Unsupported Parameters (Z.ai)
 

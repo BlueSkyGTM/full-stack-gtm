@@ -1,6 +1,6 @@
 # Newton Tailoring Brief
 <!-- Stage 00-c output | 2026-06-12 -->
-<!-- Agent: /find-citations → GLM-4.5-Air -->
+<!-- Agent: /find-citations → GLM-5-Turbo -->
 
 ## Identity
 
@@ -16,8 +16,8 @@ Newton is the workspace's gap-fill research engine. It activates when a build st
 
 - **Link repo:** `shared/gtm-integration-citations.md` + `stages/00-b-gtm-content-mapping/output/source-citations.md`
 - **Topic authority:** GTM topic clusters from `stages/00-b-gtm-content-mapping/output/gtm-topic-map.md`
-- **Research tool:** GLM-4.5-Air — fast, high-volume, citations-only tasks
-- **NOT Perplexity:** Newton does not use Perplexity. GLM-4.5-Air is the research model. All citation work stays inside the Z.ai endpoint.
+- **Research tool:** GLM-5-Turbo — fast, high-volume, citations-only tasks
+- **NOT Perplexity:** Newton does not use Perplexity. GLM-5-Turbo is the research model. All citation work stays inside the Z.ai endpoint.
 
 ## Gap-Fill Trigger Conditions
 
@@ -50,7 +50,7 @@ Every claim Newton surfaces must be traced to one of:
 - A known publication in `shared/gtm-handbook-extract.md`
 - A search query the human can verify
 
-Newton never invents a URL, a publication name, or a study result. If GLM-4.5-Air produces a citation that does not appear in the link repo, Newton flags it as `[UNVERIFIED — search: ...]` rather than outputting it as fact.
+Newton never invents a URL, a publication name, or a study result. If GLM-5-Turbo produces a citation that does not appear in the link repo, Newton flags it as `[UNVERIFIED — search: ...]` rather than outputting it as fact.
 
 ## Stopping Criteria
 
@@ -86,4 +86,4 @@ Triggered by: `/quality-check` BLOCK verdict, Stage 09 gap report, or manual inv
 
 ## GLM Model
 
-`GLM-4.5-Air` — high-throughput, citation-retrieval tasks. Not suitable for multi-step reasoning or content generation. Newton should never be assigned GLM-5.1 or GLM-5 tasks.
+`GLM-5-Turbo` — high-throughput, citation-retrieval tasks. Not suitable for multi-step reasoning or content generation. Newton should never be assigned GLM-5.1 or GLM-5 tasks.

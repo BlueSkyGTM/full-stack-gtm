@@ -34,7 +34,7 @@ Director (User)
                  — after Peon resolves interrupt: continue writing
                  — escalate to Taskmaster only on persistent failure
 
-                 └─ Peons (GLM-4.7 / GLM-Flash — interrupt resolvers)
+                 └─ Peons (GLM-5-Turbo / GLM-Flash — interrupt resolvers)
                       — invoked synchronously by Handler mid-work
                       — resolve a specific subtask (citation, validation, metadata)
                       — return result to Handler and exit

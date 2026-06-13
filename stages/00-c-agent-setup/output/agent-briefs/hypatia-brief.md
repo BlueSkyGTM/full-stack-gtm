@@ -1,6 +1,6 @@
 # Hypatia Tailoring Brief
 <!-- Stage 00-c output | 2026-06-12 -->
-<!-- Agent: /quality-check → GLM-4.7 -->
+<!-- Agent: /quality-check → GLM-5.1 -->
 
 ## Identity
 
@@ -81,4 +81,4 @@ Triggered by: Stage 09 (quality pass), and optionally at the end of Stages 01–
 
 ## GLM Model
 
-`GLM-4.7` — strong reasoning for audit tasks. Not the highest capability model because Hypatia's job is structured evaluation, not generation. Never use GLM-4.5-Air for Hypatia tasks.
+`GLM-5.1` — strong reasoning for audit tasks. Not the highest capability model because Hypatia's job is structured evaluation, not generation. Never use GLM-5.1 for Hypatia tasks.

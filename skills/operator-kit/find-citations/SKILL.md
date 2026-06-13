@@ -1,7 +1,7 @@
 # /find-citations
 
 Gap-fill research: surfaces citation pointers and search queries for undercited claims.
-Uses GLM-4.5-Air (Newton — lightweight, fast). Active from Stage 01+.
+Uses GLM-5-Turbo (Newton — lightweight, fast). Active from Stage 01+.
 
 Output is citation pointers and search queries, NOT verified URLs. GLM cannot
 browse; URLs from GLM are hallucinations. Use output to guide manual lookup.
@@ -47,7 +47,7 @@ grep -A2 "Coverage Gaps\|WARN\|missing" stages/09-quality-pass/output/*.md 2>/de
 echo "$NEWTON_BRIEF" > /tmp/zai_newton_brief.txt
 ```
 
-### Step 2 — Call GLM-4.5-Air + append to citations file
+### Step 2 — Call GLM-5-Turbo + append to citations file
 ```bash
 CITATIONS_FILE="stages/00-b-gtm-content-mapping/output/source-citations.md"
 
@@ -85,7 +85,7 @@ Do NOT invent URLs. Surface where to look and what exact claim to search for.
 Mark with datestamp: <!-- newton {topic} -->"""
 
 response = client.chat.completions.create(
-    model="GLM-4.5-Air",
+    model="GLM-5-Turbo",
     messages=[
         {"role": "system", "content": SYSTEM},
         {"role": "user",   "content": USER},

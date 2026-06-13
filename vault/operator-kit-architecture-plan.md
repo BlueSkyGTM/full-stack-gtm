@@ -25,9 +25,9 @@ Claude Code (host)
                         Authorization: Bearer $ZHIPUAI_API_KEY
                                   │
                           ┌───────┴────────┐
-                        GLM-5.1        GLM-4.7-Flash
-                        GLM-5          GLM-4.5-Air
-                        GLM-4.7        (per skill)
+                        GLM-5.1        GLM-5-Turbo
+                        GLM-5          GLM-5-Turbo
+                        GLM-5-Turbo        (per skill)
 ```
 
 ## Environment Variables
@@ -45,13 +45,13 @@ No proxy vars. No Railway. Auth is simple `Bearer $ZHIPUAI_API_KEY` — no JWT s
 |-------|-------------|---------------|
 | GLM-5.1 | 10 | `/write-lesson`, `/write-exercise`, `/write-quiz` |
 | GLM-5 | 2 | `/build-site-component` |
-| GLM-4.7 | 2 | `/quality-check` |
-| GLM-4.6 | 3 | `/write-lesson` overflow |
-| GLM-4.5 | 10 | general content |
-| GLM-4.5-Air | 5 | `/find-citations` |
-| GLM-4.7-Flash | 1 | `/scan-repo` (fast traversal) |
+| GLM-5-Turbo | 2 | `/quality-check` |
+| GLM-5.1 | 3 | `/write-lesson` overflow |
+| GLM-5.1 | 10 | general content |
+| GLM-5-Turbo | 5 | `/find-citations` |
+| GLM-5-Turbo | 1 | `/scan-repo` (fast traversal) |
 
-Note: GLM-5.1, GLM-5, GLM-4.5 are reasoning models — use `max_tokens` ≥ 500.
+Note: GLM-5.1, GLM-5, GLM-5.1 are reasoning models — use `max_tokens` ≥ 500.
 
 ## Agentic Skill Pattern
 
@@ -111,9 +111,9 @@ PYEOF
 | `/write-quiz` | Quiz banks (FSRS-ready) | GLM-5.1 | Stage 04 |
 | `/write-exercise` | Exercise specs | GLM-5.1 | Stage 03 |
 | `/build-site-component` | Site components, Helix impl | GLM-5 | Stage 05 |
-| `/scan-repo` | Read-only codebase traversal | GLM-4.7-Flash | Stage 01+ |
-| `/quality-check` | Curriculum audit, gap detection | GLM-4.7 | Stage 09 |
-| `/find-citations` | Gap-fill research, citation finding | GLM-4.5-Air | Stage 01+ |
+| `/scan-repo` | Read-only codebase traversal | GLM-5-Turbo | Stage 01+ |
+| `/quality-check` | Curriculum audit, gap detection | GLM-5-Turbo | Stage 09 |
+| `/find-citations` | Gap-fill research, citation finding | GLM-5-Turbo | Stage 01+ |
 
 ## What Was Scrapped
 

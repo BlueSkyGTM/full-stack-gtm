@@ -19,9 +19,9 @@ Operator-kit skills are gstack **agentic skills** — each `SKILL.md` drives a f
 | `/write-exercise` | GLM-5.1 | Exercise specs | Stage 03 |
 | `/write-quiz` | GLM-5.1 | Quiz banks (FSRS-ready) | Stage 04 |
 | `/build-site-component` | GLM-5 | Site components, Helix implementation, student state | Stage 05 |
-| `/scan-repo` | GLM-4.7-Flash | Read-only codebase traversal, archaeology | Stage 01+ |
-| `/quality-check` | GLM-4.7 | Curriculum audit, gap detection, accuracy challenge | Stage 09 |
-| `/find-citations` | GLM-4.5-Air | Gap-fill research, citation finding | Stage 01+ |
+| `/scan-repo` | GLM-5-Turbo | Read-only codebase traversal, archaeology | Stage 01+ |
+| `/quality-check` | GLM-5-Turbo | Curriculum audit, gap detection, accuracy challenge | Stage 09 |
+| `/find-citations` | GLM-5-Turbo | Gap-fill research, citation finding | Stage 01+ |
 
 **`/find-citations`:** activates when `/quality-check` or any stage flags curriculum gaps (missing source material, undercited concepts, topics the handbook doesn't cover). Uses `gtm-integration-citations.md` as the link repo. Fills blanks without stopping the main build batch. Brief written in 00-c for immediate deployment at Stage 01+.
 

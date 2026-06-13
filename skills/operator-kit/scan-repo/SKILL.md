@@ -1,7 +1,7 @@
 # /scan-repo
 
 Fast read-only codebase traversal. Maps structure, finds patterns, surfaces gaps.
-Uses GLM-4.7-Flash (Echo — fast, low cost). Active from Stage 01+.
+Uses GLM-5-Turbo (Echo — fast, low cost). Active from Stage 01+.
 
 Read-only: this skill never writes files. Output goes directly to Claude Code
 as context for next steps.
@@ -57,7 +57,7 @@ printf '%s' "$TREE" > /tmp/zai_scan_tree.txt
 printf '%b' "$CONTENT" > /tmp/zai_scan_content.txt
 ```
 
-### Step 2 — Call GLM-4.7-Flash (output to Claude Code, not a file)
+### Step 2 — Call GLM-5-Turbo (output to Claude Code, not a file)
 ```bash
 python3 - "$QUERY" /tmp/zai_echo_brief.txt /tmp/zai_scan_tree.txt /tmp/zai_scan_content.txt <<'PYEOF'
 import os, sys
@@ -90,7 +90,7 @@ Answer the query. Be specific — include exact file paths. Flag any gaps or
 missing files that are relevant to the query. Keep output concise."""
 
 response = client.chat.completions.create(
-    model="GLM-4.7-Flash",
+    model="GLM-5-Turbo",
     messages=[
         {"role": "system", "content": SYSTEM},
         {"role": "user",   "content": USER},

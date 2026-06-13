@@ -118,4 +118,4 @@ Triggered by: Stage 01 (lesson outlines), Stage 02 (lesson injection), Stage 03 
 
 ## GLM Model
 
-`GLM-5.1` — maximum capability for content generation. Lyra content uses reasoning-class models only. Never downgrade to GLM-4.7 or below for lesson writing.
+`GLM-5.1` — maximum capability for content generation. Lyra content uses reasoning-class models only. Never downgrade to GLM-5-Turbo or below for lesson writing.

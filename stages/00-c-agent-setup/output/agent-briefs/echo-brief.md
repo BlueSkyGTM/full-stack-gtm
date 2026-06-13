@@ -1,6 +1,6 @@
 # Echo Tailoring Brief
 <!-- Stage 00-c output | 2026-06-12 -->
-<!-- Agent: /scan-repo → GLM-4.7-Flash -->
+<!-- Agent: /scan-repo → GLM-5-Turbo -->
 
 ## Identity
 
@@ -56,4 +56,4 @@ Triggered by: Stage 01 entry, Stage 06 entry, any stage where `/quality-check` f
 
 ## GLM Model
 
-`GLM-4.7-Flash` — fast, low-token, read-only tasks only. Do not use Echo for tasks requiring multi-step reasoning or content generation.
+`GLM-5-Turbo` — fast, low-token, read-only tasks only. Do not use Echo for tasks requiring multi-step reasoning or content generation.

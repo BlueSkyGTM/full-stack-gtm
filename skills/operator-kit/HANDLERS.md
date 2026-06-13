@@ -28,7 +28,7 @@ Director (User)
                  — continue writing after Peon resolves the interrupt
                  — escalate to Taskmaster: output rejected 3x, ambiguous instructions
 
-                 └─ Peons (GLM-4.7 / GLM-Flash — interrupt resolvers)
+                 └─ Peons (GLM-5-Turbo / GLM-Flash — interrupt resolvers)
                       — resolve a specific blocking subtask and return
                       — called synchronously by Handlers mid-work
                       — exit immediately after returning result
@@ -95,10 +95,10 @@ Director (User)
 ### Peon Dispatcher
 **File:** `skills/operator-kit/dispatch-peon.py`  
 **Invoked by:** GLM-5.1 Handlers mid-generation (synchronous call)  
-**Task types:** citation lookup, format validation, metadata generation, text extraction  
-**Model:** GLM-4.7-Flash (configurable via MODEL_REGISTRY)  
-**Returns:** Validated result dict or raises PeonError after 2 retries  
-**Escalation:** PeonError returned to Handler → Handler marks subtask [CITATION NEEDED] or [METADATA PENDING] and continues
+**Task types:** citation lookup, format validation, metadata generation, text extraction, diagram generation  
+**Models:** GLM-5-Turbo (all peon tasks including diagram SVG generation) · GLM-5.1 (Handlers — content writing)  
+**Returns:** Validated result string or raises PeonError after 2 retries  
+**Escalation:** PeonError returned to Handler → Handler marks subtask [CITATION NEEDED], [METADATA PENDING], or [DIAGRAM PENDING] and continues
 
 ---
 

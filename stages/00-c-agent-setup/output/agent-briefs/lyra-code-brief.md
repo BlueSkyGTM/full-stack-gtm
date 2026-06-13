@@ -78,4 +78,4 @@ Triggered by: Stage 05 (Helix build), Stage 06 (site readability), Stage 07 (stu
 
 ## GLM Model
 
-`GLM-5` — high capability for code generation with site architecture reasoning. Not GLM-5.1 (reserved for content). Never downgrade to GLM-4.7 for site component work.
+`GLM-5` — high capability for code generation with site architecture reasoning. Not GLM-5.1 (reserved for content). Never downgrade to GLM-5-Turbo for site component work.

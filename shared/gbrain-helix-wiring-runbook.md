@@ -69,8 +69,8 @@ All zhipu:* embedding model name variants failed:
 |-------|-------|
 | Engine | PGLite (`~/.gbrain/brain.pglite`) |
 | Embedding | `ollama:nomic-embed-text` (768d) |
-| Chat | `zhipu:GLM-4.7` |
-| Expansion | `zhipu:GLM-4.7-Flash` |
+| Chat | `zhipu:GLM-5-Turbo` |
+| Expansion | `zhipu:GLM-5-Turbo` |
 | Pages | 1049 |
 | Chunks | 4816 |
 | Embedded | 4816 (100%) |

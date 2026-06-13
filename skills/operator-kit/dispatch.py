@@ -202,7 +202,7 @@ Output: beat headings + 1-2 sentence description per beat. No full prose. Exerci
 
 def main():
     parser = argparse.ArgumentParser(description="Operator-kit batch dispatcher")
-    parser.add_argument("--workers",      type=int, default=4,    help="Thread pool size (default 4)")
+    parser.add_argument("--workers",      type=int, default=3,    help="Thread pool size (default 3)")
     parser.add_argument("--dry-run",      action="store_true",    help="Preview only, no API calls")
     parser.add_argument("--limit",        type=int, default=0,    help="Process only first N pending rows")
     parser.add_argument("--stage",        type=str, default="01", help="Stage filter (default 01)")

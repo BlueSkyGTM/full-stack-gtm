@@ -51,11 +51,12 @@ except ImportError:
 # Change model names here; no other file needs updating.
 
 MODEL_REGISTRY = {
-    "default":            "GLM-4.7-Flash",
-    "citation_lookup":    "GLM-4.7-Flash",
-    "format_validation":  "GLM-4.7-Flash",
-    "text_extraction":    "GLM-4.7-Flash",
-    "metadata_generation":"GLM-4.7-Flash",
+    "default":            "GLM-5-Turbo",
+    "citation_lookup":    "GLM-5-Turbo",
+    "format_validation":  "GLM-5-Turbo",
+    "text_extraction":    "GLM-5-Turbo",
+    "metadata_generation":"GLM-5-Turbo",
+    "diagram_generation": "GLM-5-Turbo",
 }
 
 ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
@@ -79,6 +80,10 @@ TASK_SCHEMA = {
     "metadata_generation": {
         "required": {"type", "content", "lesson_id"},
         "optional": {"strand"},
+    },
+    "diagram_generation": {
+        "required": {"type", "content", "lesson_id"},
+        "optional": {"format", "width", "height"},
     },
 }
 
@@ -107,6 +112,19 @@ Given lesson content, output a JSON object with:
   "difficulty": "beginner" | "intermediate" | "advanced",
   "strand": "ai-engineering" | "gtm-application" | "both"
 Output: valid JSON only, no prose before or after.""",
+
+    "diagram_generation": """You are a technical diagram creator for an AI/GTM curriculum.
+Given a description of a concept that needs a visual, produce a clean SVG diagram that a student can read inline in a markdown lesson.
+Rules:
+- Output raw SVG only — no markdown fences, no prose before or after
+- viewBox="0 0 800 500" unless the description specifies different dimensions
+- Use flat colors, no gradients. Label every node clearly.
+- Font: sans-serif, minimum 13px
+- If the concept is a flow/pipeline: left-to-right arrows
+- If the concept is a hierarchy: top-down tree
+- If the concept is a comparison: side-by-side columns
+- Fallback marker if concept is too vague: [DIAGRAM PENDING — description: <description>]
+Output: raw SVG string starting with <svg or the fallback marker. Nothing else.""",
 }
 
 # ── Error class ───────────────────────────────────────────────────────────────
@@ -173,6 +191,15 @@ def validate_output(task_type: str, result: str) -> str:
     if task_type == "format_validation":
         if not (result.startswith("PASS") or result.startswith("FAIL")):
             raise ValueError(f"format_validation output must start with PASS or FAIL, got: {result[:50]}")
+
+    if task_type == "diagram_generation":
+        if not (result.startswith("<svg") or result.startswith("[DIAGRAM PENDING")):
+            # Strip markdown fences if model wrapped SVG in ```svg
+            import re
+            result = re.sub(r"^```(?:svg|xml)?\s*", "", result)
+            result = re.sub(r"\s*```$", "", result).strip()
+            if not (result.startswith("<svg") or result.startswith("[DIAGRAM PENDING")):
+                raise ValueError(f"diagram_generation output must be SVG or fallback marker, got: {result[:80]}")
 
     if len(result) < 5:
         raise ValueError(f"output suspiciously short ({len(result)} chars)")
@@ -259,6 +286,7 @@ def smoke_test(task_type: str) -> None:
         "format_validation":   "## Learning Objectives\n- Apply X\n## The Concept\nY\n## Sources\n- Z",
         "text_extraction":     "## Learning Objectives\n- Apply linear algebra\n- Understand tensors\n## The Concept\n...",
         "metadata_generation": "## Learning Objectives\n- Apply embeddings in GTM pipelines\n## The Concept\n...",
+        "diagram_generation":  "A pipeline diagram showing: raw data → feature engineering → model training → inference → GTM action. Left to right flow, 5 nodes.",
     }
 
     task = {
