@@ -121,9 +121,9 @@ Run it before Stage 01 if 00-a archaeology surfaces undocumented patterns. Run i
 - MCP registered: yes (user scope, via `gbrain serve`)
 - Chat model: `zhipu:GLM-4.7` (Z.ai — requires `ZHIPUAI_API_KEY` in env)
 - Expansion model: `zhipu:GLM-4.7-Flash`
-- Embedding model: `openai:embedding-3` (1536d) — **pending Z.ai embedding activation**
-  - Z.ai chat models require `ZHIPUAI_API_KEY`; embedding models (`embedding-3`) return 400 until activated in Z.ai console under resource packages
-  - Once activated: run `gbrain config set embedding_model zhipu:embedding-3 && gbrain config set embedding_dimensions 2048`
+- Embedding model: `ollama:nomic-embed-text` (768d) — local, free, no API key required
+  - Ollama installed 2026-06-12 via winget. Service starts automatically on login.
+  - Z.ai embedding-3 was not activated in BigModel console — blocked on Z.ai side
 - Artifacts sync: off (run `/sync-gbrain` to configure after Phase 0 stages produce content)
 - RESOLVER.md: `skills/RESOLVER.md` (skill routing for gbrain resolver)
 - Health: 65/100 (warnings only: takes_count=0, pack upgrade available)
