@@ -100,6 +100,7 @@ Key routing rules:
 - Security audit → invoke `/cso`
 - Codebase health check → invoke `/health`
 - ICM design / agent onboarding / new pipeline stage / multi-agent architecture → invoke `/interpreted-context-manifest`
+- ICL design / recursive goal / loop that survives session boundaries / chaining stages → invoke `/interpreted-context-loop`
 - Loop / orchestration / sub-agent / handler design → invoke `/loop-eng-check` *(skill not yet written — see TODOS.md; do NOT invoke until `.claude/skills/loop-eng-check/SKILL.md` exists)*
 - Testing Helix gate logic as course author → invoke `/edit-mode` *(skill not yet written — see TODOS.md)*
 
