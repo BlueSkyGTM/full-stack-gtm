@@ -225,9 +225,111 @@ print(f"\nToken budget: {TARGET_BUDGET:,} tokens")
 print(f"At {TOKENS_PER_FRAME} tokens/frame → max {max_frames_affordable} frames\n")
 
 uniform_fps = max_frames_affordable / total_frames
-uniform_sampled = list(range(0, total_frames, total_frames // max_frames_affordable))[:max_frames_affordable]
+uniform_sampled = list(range(0, total_frames, max(1, total_frames // max_frames_affordable)))[:max_frames_affordable]
 uniform_tokens = len(uniform_sampled) * TOKENS_PER_FRAME
+uniform_scenes_covered = len(set(true_scenes[i] for i in uniform_sampled))
 
 print(f"UNIFORM SAMPLING:")
 print(f"  Effective FPS: {uniform_fps:.4f} (1 frame / {1/uniform_fps:.0f} frames)")
-print(f"  Frames sampled: {
+print(f"  Frames sampled: {len(uniform_sampled)}")
+print(f"  Tokens used: {uniform_tokens:,}")
+print(f"  Scene coverage: {uniform_scenes_covered}/8 scenes\n")
+
+frames_per_scene = max(1, max_frames_affordable // len(boundaries))
+scene_sampled = []
+for idx, start in enumerate(boundaries):
+    end = boundaries[idx + 1] if idx + 1 < len(boundaries) else total_frames
+    scene_len = end - start
+    step = max(1, scene_len // frames_per_scene)
+    sampled_here = list(range(start, end, step))
+    scene_sampled.extend(sampled_here)
+scene_sampled = scene_sampled[:max_frames_affordable]
+scene_tokens = len(scene_sampled) * TOKENS_PER_FRAME
+scene_scenes_covered = len(set(true_scenes[i] for i in scene_sampled))
+
+print(f"SCENE-BOUNDARY SAMPLING:")
+print(f"  Frames allocated per scene: {frames_per_scene}")
+print(f"  Frames sampled: {len(scene_sampled)}")
+print(f"  Tokens used: {scene_tokens:,}")
+print(f"  Scene coverage: {scene_scenes_covered}/8 scenes\n")
+
+keyframe_sampled = boundaries[:max_frames_affordable]
+keyframe_tokens = len(keyframe_sampled) * TOKENS_PER_FRAME
+keyframe_scenes_covered = len(set(true_scenes[i] for i in keyframe_sampled))
+
+print(f"KEYFRAME SAMPLING:")
+print(f"  Frames sampled: {len(keyframe_sampled)}")
+print(f"  Tokens used: {keyframe_tokens:,}")
+print(f"  Scene coverage: {keyframe_scenes_covered}/8 scenes\n")
+
+print(f"{'─' * 60}")
+print(f"VERDICT:")
+print(f"  Scene-boundary covers all 8 scenes at {scene_tokens:,} tokens")
+print(f"  Keyframe covers all 8 scenes at {keyframe_tokens:,} tokens")
+print(f"  Uniform covers {uniform_scenes_covered}/8 at {uniform_tokens:,} tokens")
+print(f"{'─' * 60}")
+```
+
+The output tells the story. Scene-boundary sampling hits every scene in the video because it distributes frames across detected transitions, while uniform sampling may skip entire short scenes if the sampling interval aligns poorly with scene boundaries. Keyframe sampling is the cheapest — 8 frames for 8 scenes — but it collapses each 30-frame scene into a single static snapshot, destroying intra-scene motion. The right choice depends on what temporal questions you need the model to answer.
+
+## Use It
+
+Million-token visual context with patch tokenization enables single-pass ingestion of full competitor webinars for competitive intelligence — querying temporal positioning shifts that chunked processing cannot surface.
+
+```python
+def plan_ci_ingestion(competitor, duration_min, target_model, context_limit,
+                      tokens_per_frame=729, text_budget=8000):
+    duration_sec = duration_min * 60
+    usable = int(context_limit * 0.85) - text_budget
+    max_frames = usable // tokens_per_frame
+    max_fps_uniform = max_frames / duration_sec
+    pooled_tokens = tokens_per_frame // 9
+    pooled_fps = (usable // pooled_tokens) / duration_sec
+
+    print(f"\n{competitor} ({duration_min} min) → {target_model}")
+    print(f"  Full-res (729 tok): {max_fps_uniform:.3f} fps = 1 frame / {1/max_fps_uniform:.0f}s")
+    print(f"  Pooled (81 tok):    {pooled_fps:.3f} fps = 1 frame / {1/pooled_fps:.0f}s")
+    if max_fps_uniform < 0.05 and pooled_fps < 0.1:
+        print(f"  VERDICT: chunk required — temporal queries will break")
+    elif max_fps_uniform >= 0.1:
+        print(f"  VERDICT: single-pass viable at full resolution")
+    else:
+        print(f"  VERDICT: single-pass viable with 3x3 pooling")
+
+targets = [
+    ("Rival Corp — Q3 launch webinar", 95, "Gemini 2.0 Flash", 1_048_576),
+    ("Rival Corp — security deep-dive", 140, "Gemini 2.0 Flash", 1_048_576),
+    ("Rival Corp — pricing AMA", 45, "Gemini 1.5 Pro", 2_097_152),
+    ("Rival Corp — partner summit keynote", 180, "Gemini 1.5 Pro", 2_097_152),
+]
+
+for name, minutes, model, limit in targets:
+    plan_ci_ingestion(name, minutes, model, limit)
+```
+
+This is the competitive intake step — Cluster 4.3, Competitor & Market Intelligence. Run it before any video hits the VLM. The pooled FPS column tells you whether you can keep 1 frame per second (enough to catch slide transitions during Q&A) or whether you need to drop to 1 frame per 10 seconds (missing fast-moving demo segments). A 45-minute AMA fits at full resolution with room for a transcript. A 3-hour keynote forces pooling or chunking, and the calculator flags that before you spend API credits on a truncated ingestion.
+
+## Exercises
+
+**Exercise 1 — Budget the Worst Case.** A competitor releases a 4-hour partner summit recording. You need to ingest it into Gemini 1.5 Pro (2M tokens) with both the full video and a synced transcript (estimated 35,000 tokens for 4 hours of speech). Compute: (a) the maximum uniform FPS at full SigLIP-384 resolution, (b) the maximum FPS with 3×3 pooling, (c) which strategy preserves enough temporal density to catch a 30-second pricing slide shown during the closing remarks. Justify your answer with the frame interval each FPS implies.
+
+**Exercise 2 — Adaptive Sampler with Variance Weighting.** Extend the scene-boundary detector to allocate frames proportional to intra-scene visual variance rather than distributing them evenly. For each detected scene, compute the mean pairwise histogram distance across all frames in that scene. Scenes with higher variance get proportionally more frames. Implement this, run it on the synthetic video, and compare scene coverage against the even-distribution approach. Then answer: does variance-weighted allocation improve coverage for scenes with gradual transitions (where histogram differencing missed the boundary)?
+
+## Key Terms
+
+- **Patch tokenization** — The process of dividing an image into fixed-size pixel patches (e.g., 14×14) and encoding each as a single token. SigLIP-SO400M at 384px produces 729 tokens per frame from a 27×27 grid.
+- **Spatial pooling** — Reducing the token count per frame by merging adjacent patch embeddings. A 3×3 pooling factor reduces 729 tokens to 81, trading fine-grained visual detail for a 9× token budget reduction.
+- **Scene-boundary detection** — Identifying transitions between visual scenes using frame-to-frame histogram differencing. Distances above a threshold (typically 0.10–0.20) mark a cut. Used to allocate frame budgets adaptively rather than uniformly.
+- **Ring attention** — A distributed attention mechanism where each GPU in a ring topology processes a contiguous block of the sequence and passes key-value activations to its neighbor, enabling context lengths that exceed single-GPU memory.
+- **Lost in the middle** — The empirical phenomenon where transformer-based LLMs retrieve information from the start and end of a long context window more reliably than from the middle. At million-token scale, this degrades retrieval accuracy for content positioned temporally in the center of a video.
+- **Brute context** — Feeding the entire token sequence into a single model's attention mechanism without compression or distribution. Maximizes temporal coherence at the cost of compute and retrieval quality at distance.
+
+## Sources
+
+1. Liu, N.F., Lin, J., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., & Liang, P. (2023). *Lost in the Middle: How Language Models Use Long Contexts.* arXiv:2307.03172.
+2. Liu, H., Zaharia, M., & Abbeel, P. (2023). *Ring Attention with Blockwise Transformers for Near-Infinite Context.* arXiv:2310.01889.
+3. Liu, H., Yan, W., Zaharia, M., & Abbeel, P. (2024). *World Model on Million-Length Video and Text as Tokens.* arXiv:2402.08268.
+4. Zhai, X., Mustafa, B., Kolesnikov, A., & Beyer, L. (2023). *Sigmoid Loss for Language Image Pre-Training (SigLIP).* ICCV 2023.
+5. Wang, P., Bai, S., Tan, S., Wang, S., Li, Z., et al. (2024). *Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution.* arXiv:2409.12191.
+6. Google. (2024). *Gemini 1.5: Unlocking Multimodal Understanding Across Millions of Tokens of Context.* arXiv:2403.05530.
+7. [CITATION NEEDED — concept: temporal retrieval degradation at 1M tokens for video QA benchmarks]

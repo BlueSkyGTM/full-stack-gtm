@@ -14,7 +14,7 @@ You are paying per token to ask GPT-4 "does this company match our ICP?" 500 tim
 
 Transfer learning and fine-tuning compress that decision into a smaller, cheaper, deterministic model. Instead of asking a 175-billion-parameter model to reason about fit from scratch on every record, you take a model that already understands English sentence structure — someone else spent the GPU budget teaching it that — and you swap its final layer for a classifier head trained on your specific labels. The result runs locally, costs fractions of a cent per thousand records, and produces the same output for the same input every time.
 
-This is not a hypothetical. Production GTM systems that classify and route leads at scale — deciding which companies get full enrichment versus which get discarded — run on fine-tuned models, not per-record LLM calls. The LLM generates the training labels. The fine-tuned model does the inference.
+This is not a hypothetical. Production GTM systems that classify and route leads at scale — deciding which companies get full enrichment versus which get discarded — run on fine-tuned models, not per-record LLM calls. The LLM generates the training labels. The fine-tuned model does the inference. [CITATION NEEDED — concept: production GTM teams using fine-tuned classifiers for lead routing instead of per-record LLM calls]
 
 ## The Concept
 
@@ -214,4 +214,82 @@ The output shows the frozen-to-trainable parameter ratio (roughly 99.8% frozen),
 
 ## Use It
 
-Transfer learning is the mechanism behind custom intent classifiers that route leads into Clay waterfall enrichment sequences. The workflow: you label 200–500 companies from your CRM as Tier A (high-fit,
+Transfer learning is the mechanism behind custom intent classifiers that route leads into Clay waterfall enrichment sequences — this is **Cluster 1.2, TAM Refinement & ICP Scoring**. The workflow: you label 200–500 companies from your CRM as Tier A (high-fit, enterprise), Tier B (mid-market), or Tier C (low-fit, SMB). You fine-tune a small classifier on those labels. You export the model. At enrichment time, the classifier scores every prospect in milliseconds, and only Tier A records enter the expensive waterfall — Clay calls Apollo, then falls back to ContactOut, then Clearbit — because there is no point spending $0.40 enriching a company your classifier flagged as Tier C in 3 milliseconds for free.
+
+The code below takes the fine-tuned model from Build It and runs it as a batch scorer over a prospect list, emitting JSON that a Clay webhook can consume directly for branching logic.
+
+```python
+import torch, json
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+MODEL_NAME = "prajjwal1/bert-tiny"
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model.eval()
+
+prospects = [
+    "Global investment bank with $200B AUM and 30000 employees",
+    "Solo freelance copywriter working from a coworking space",
+    "Series E cybersecurity unicorn with 4000 staff and 800 enterprise customers",
+    "Family-owned auto body shop with 6 mechanics",
+    "Multinational chemicals corporation with 18000 employees",
+]
+
+TIER_MAP = {0: {"tier": "A", "action": "full_waterfall"},
+            1: {"tier": "C", "action": "skip_enrichment"}}
+
+results = []
+for desc in prospects:
+    inputs = tokenizer(desc, return_tensors="pt", truncation=True, max_length=64)
+    with torch.no_grad():
+        probs = torch.softmax(model(**inputs).logits, dim=1)
+    pred = torch.argmax(probs, dim=1).item()
+    routing = TIER_MAP[pred]
+    results.append({"description": desc, **routing, "confidence": round(probs[0][pred].item(), 3)})
+
+print(json.dumps(results, indent=2))
+```
+
+```bash
+python tier_scorer.py
+```
+
+Each record gets a `tier` and an `action` key. Clay's HTTP enrichment node receives this JSON and branches: `action == "full_waterfall"` enters the enrichment chain; `action == "skip_enrichment"` routes to a discard list. The model ran inference on 5 prospects in under 200 milliseconds. The same 5 calls through GPT-4 would cost roughly $0.10 and take 8–15 seconds. At 10,000 prospects per week — a normal enrichment batch for a mid-size RevOps team — the fine-tuned classifier costs effectively nothing (local CPU) while the LLM approach costs $200+ and adds 5+ hours of wall-clock time.
+
+The trade-off: you spent 30 minutes labeling data and 30 seconds training. The classifier only knows what you taught it — if your ICP definition shifts next quarter, you relabel and retrain. But the LLM alternative has the same problem (you rewrite the prompt) plus the cost and latency penalty on top. [CITATION NEEDED — concept: Clay HTTP enrichment node branching on JSON response fields]
+
+## Exercises
+
+**Exercise 1 — Catastrophic Forgetting (Easy)**
+
+Take the Build It script and change the learning rate from `5e-4` to `1e-2` (a 20× increase). Run training for the same 5 epochs. You should observe one of two outcomes: the loss oscillates wildly and never converges, or the model overfits to the training set and degrades on the held-out test predictions. Either way, the pretrained features have been damaged. Now try `5e-5` (10× lower than the original). The model should train more slowly but remain stable. Record the test accuracy at each learning rate (`1e-2`, `5e-4`, `5e-5`) and plot the relationship. The takeaway: learning rate is the single most important hyperparameter in transfer learning, and the safe range is narrower than you think.
+
+**Exercise 2 — LoRA via PEFT (Hard)**
+
+Install the `peft` library (`pip install peft`) and modify the Build It script to use LoRA instead of feature extraction. Your changes:
+
+1. Wrap the model with `get_peft_model` using `LoraConfig(task_type="SEQ_CLS", r=8, lora_alpha=16, lora_dropout=0.1)`.
+2. Print `model.print_trainable_parameters()` — you should see roughly 5,000–15,000 trainable parameters (the LoRA adapters) versus the 4.4M total.
+3. Train for the same 5 epochs at `lr=1e-4` (LoRA typically uses a lower LR than head-only training).
+4. Compare test accuracy against the feature-extraction baseline.
+
+The question to answer: does LoRA improve accuracy on this dataset, or is feature extraction sufficient? Your hypothesis before running: with only 40 training examples on a domain close to pretraining data, feature extraction should match or beat LoRA because the additional capacity of the adapters has nothing useful to learn. Verify or refute this empirically. Then add 5 more epochs and check whether LoRA starts to pull ahead as it has more time to adjust internal representations.
+
+## Key Terms
+
+- **Backbone**: The pretrained network minus its final task-specific layer. In transfer learning, the backbone is the part you freeze (feature extraction) or partially unfreeze (fine-tuning).
+- **Head (classifier head)**: The final linear layer that maps backbone representations to your label space. This is the only layer trained during feature extraction.
+- **Feature extraction**: Training only a new head on top of a fully frozen backbone. Best for small datasets (<1,000 examples) when the target domain is close to the pretraining domain.
+- **Full fine-tuning**: Unfreezing all backbone weights and continuing training at a low learning rate. Requires more data (5,000+ examples) and risks catastrophic forgetting if the learning rate is too high.
+- **LoRA (Low-Rank Adaptation)**: Injecting small rank-*r* trainable matrices into each frozen layer instead of unfreezing the full weight matrices. Reduces trainable parameters by 90%+ while matching full fine-tuning accuracy on most tasks.
+- **Catastrophic forgetting**: When aggressive gradient updates during fine-tuning overwrite the general features the model learned during pretraining, destroying its ability to perform the original task.
+- **Rank (r)**: In LoRA, the dimensionality of the injected adapter matrices. Higher rank = more expressive adapters but more trainable parameters. Typical values: 4, 8, 16.
+
+## Sources
+
+- Hu, E. et al. (2021). "LoRA: Low-Rank Adaptation of Large Language Models." *arXiv:2106.09685*. — Original LoRA paper. Defines the low-rank decomposition mechanism and reports 90%+ parameter reduction with comparable accuracy to full fine-tuning.
+- Bhargava, P. (2021). `prajjwal1/bert-tiny` model card, Hugging Face Hub. — 4.4M parameter BERT variant used in the Build It example. Pretrained on general English text via masked language modeling.
+- Wolf, T. et al. (2020). "Transformers: State-of-the-Art Natural Language Processing." *Proceedings of EMNLP 2020 (System Demonstrations)*. — The `transformers` library used throughout the Build It section, including `AutoModelForSequenceClassification` and `AutoTokenizer` APIs.
+- Devlin, J. et al. (2019). "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding." *Proceedings of NAACL-HLT 2019*. — Establishes the transfer learning paradigm for text: pretrain on general corpus, fine-tune on task-specific data.
+- [CITATION NEEDED — concept: production GTM teams using fine-tuned classifiers for lead routing instead of per-record LLM calls]
+- [CITATION NEEDED — concept: Clay HTTP enrichment node branching on JSON response fields]

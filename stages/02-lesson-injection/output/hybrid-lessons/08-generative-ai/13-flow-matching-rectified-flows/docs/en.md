@@ -185,4 +185,105 @@ ring_stats(euler_sample(model_rect, 1000, 5), "Reflowed 5-step")
 
 The reflowed 1-step sampler should produce a tighter ring (lower `std_r`, mean radius closer to 2.0) than the original 1-step sampler. This is the empirical signature of path straightening: fewer integration steps produce the same quality because the velocity field is closer to a constant displacement along the trajectory.
 
-The analogy to enrichment waterfalls is direct. If your waterfall runs Clearbit → Apollo → LinkedIn → ads library → spend estimator, that is a 5-step Euler integration of an enrichment velocity field. If you analyze which prospects actually converted after passing through, and rebuild the waterfall to skip steps that did not change the outcome
+The analogy to enrichment waterfalls is direct. If your waterfall runs Clearbit → Apollo → LinkedIn → ads library → spend estimator, that is a 5-step Euler integration of an enrichment velocity field. If you analyze which prospects actually converted after passing through, and rebuild the waterfall to skip steps that did not change the outcome, you are performing reflow: replacing the original mapping with a shorter, straighter one that produces the same endpoint. The pruned waterfall is the rectified flow.
+
+This is the Clay waterfall pattern — Cluster 1.2, TAM Refinement & ICP Scoring. [CITATION NEEDED — concept: Clay waterfall step ordering and fallback logic]. The mechanism maps cleanly: each provider lookup is an integration step, the confidence threshold that triggers fallback is your step size `dt`, and the decision to skip a provider when prior data already resolved the field is the same observation that motivates reflow — if the trajectory already arrives at the target, extra steps add cost without adding signal.
+
+```python
+# Enrichment waterfall modeled as a velocity field integration
+# Each step is a provider lookup; reflow prunes steps that don't change the outcome
+
+enrichment_steps = [
+    ("clearbit",      {"cost": 0.03, "fields": ["company", "revenue", "headcount"]}),
+    ("apollo",        {"cost": 0.05, "fields": ["title", "seniority", "email"]}),
+    ("linkedin",      {"cost": 0.02, "fields": ["title", "connections"]}),
+    ("ads_library",   {"cost": 0.01, "fields": ["ad_spend_tier"]}),
+    ("spend_estimator", {"cost": 0.04, "fields": ["est_spend"]}),
+]
+
+def run_waterfall(prospect, steps, coverage_threshold=0.8):
+    resolved = {}
+    total_cost = 0.0
+    for name, config in steps:
+        needed = [f for f in config["fields"] if f not in resolved]
+        if not needed:
+            continue
+        total_cost += config["cost"]
+        for f in config["fields"]:
+            resolved[f] = f"{prospect}_{f}"
+        coverage = len(resolved) / sum(len(c["fields"]) for _, c in steps)
+        if coverage >= coverage_threshold:
+            break
+    return resolved, total_cost
+
+prospects = [f"prospect_{i}" for i in range(100)]
+
+resolved_full, cost_full = run_waterfall(prospects[0], enrichment_steps)
+print(f"Full waterfall: {len(resolved_full)} fields, cost=${cost_full:.2f}")
+
+pruned_steps = enrichment_steps[:2] + enrichment_steps[4:]
+resolved_pruned, cost_pruned = run_waterfall(prospects[0], pruned_steps)
+print(f"Pruned waterfall: {len(resolved_pruned)} fields, cost=${cost_pruned:.2f}")
+print(f"Cost reduction: {((cost_full - cost_pruned) / cost_full * 100):.0f}%")
+```
+
+The output shows the pruned waterfall resolving nearly the same field coverage at lower cost. That delta is what reflow buys you in generative modeling: same output quality, fewer function evaluations, lower inference cost. The GTM engineer who prunes their waterfall by analyzing which steps actually moved the score is doing the same thing as the ML engineer who reflows their velocity field by analyzing which trajectory segments actually moved the sample.
+
+## Exercises
+
+### Exercise 1: Compare Interpolation Paths (Medium)
+
+Replace the straight-line interpolation in the training loop with a curved interpolation and measure how it affects low-step sampling quality. Use spherical interpolation:
+
+```
+x_t = sin((1-t)·π/2) / sin(π/2) · x_0 + sin(t·π/2) / sin(π/2) · x_1
+```
+
+Recompute the conditional velocity for this path (it is no longer constant — take the derivative with respect to `t`). Train a new model with this curved interpolation. Compare 1-step and 5-step Euler sampling quality against the straight-line model. You should observe that the curved interpolation requires more steps to achieve the same quality — the velocity field is stiffer because the path bends.
+
+**Deliverable:** A table comparing `mean_r` and `std_r` for both interpolations at 1, 5, and 20 steps. Write one sentence explaining why the straight-line model degrades less at low step counts.
+
+### Exercise 2: Two-Iteration Reflow Loop (Hard)
+
+Wrap the reflow procedure in a function that runs it `n_iterations` times. After each iteration, record the 1-step sampling quality (`mean_r`, `std_r`) and the average path curvature. Measure curvature as the mean deviation between the model's actual trajectory (sampled at 20 intermediate points) and the straight line from `x_0` to `x̂_1`:
+
+```python
+def measure_curvature(model, n_samples=500, n_steps=20):
+    x0 = torch.randn(n_samples, 2)
+    trajectory = [x0.clone()]
+    x = x0.clone()
+    dt = 1.0 / n_steps
+    for step in range(n_steps):
+        t = torch.full((n_samples,), step * dt)
+        x = x + model(x, t) * dt
+        trajectory.append(x.clone())
+    straight = x0.unsqueeze(0) + (trajectory[-1] - x0).unsqueeze(0) * \
+        torch.linspace(0, 1, n_steps + 1).unsqueeze(1).unsqueeze(2)
+    curvature = sum(
+        ((trajectory[t] - straight[t].squeeze(0)) ** 2).sum(dim=1).sqrt().mean().item()
+        for t in range(n_steps + 1)
+    ) / (n_steps + 1)
+    return curvature
+```
+
+Run 3 reflow iterations. Plot (or print) curvature and 1-step quality after each iteration. You should see curvature decrease monotonically and 1-step quality converge toward 20-step quality. This is the empirical justification for rectified flow as a distillation technique.
+
+**Deliverable:** A 3-row table with columns `[iteration, curvature, 1-step mean_r, 1-step std_r]`. State the iteration at which 1-step quality stops improving meaningfully.
+
+## Key Terms
+
+- **Flow Matching** — Training framework that learns a velocity field `v_θ(x, t)` by regressing against a known target vector field along interpolation paths from source to target distribution.
+- **Rectified Flow** — A specific instance of flow matching that uses straight-line interpolation `x_t = (1-t)·x_0 + t·x_1`, yielding a constant conditional velocity `u_t = x_1 - x_0`. Introduced concurrently with flow matching by Liu et al. (2022).
+- **Conditional Vector Field** — The velocity field for a single source-target pair `(x_0, x_1)`. Matching conditional vector fields (rather than the marginal) makes the loss tractable because it avoids integrating over the data distribution.
+- **Reflow** — Distillation procedure: generate `(x_0, x̂_1)` pairs from a trained model's own ODE trajectories, then retrain on those pairs. Produces straighter paths and better low-step sampling.
+- **Euler Integration** — The simplest ODE solver: `x_{t+dt} = x_t + v(x_t, t)·dt`. Each step evaluates the velocity field once and advances along it. Step count controls the trade-off between accuracy and cost.
+- **Path Straightness** — A measure of how close the model's actual trajectory is to a straight line from source to endpoint. Straighter paths allow fewer Euler steps without quality loss. Reflow increases straightness.
+- **Velocity Field** — A function `v(x, t)` that assigns a displacement vector to every point in space at every time. Integrating it from `t=0` to `t=1` transports samples from the source distribution to the target.
+
+## Sources
+
+- Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., & Le, M. (2022). *Flow Matching for Generative Modeling.* arXiv:2210.02747. — Originates the flow matching framework, proves the conditional matching objective is equivalent to marginal matching in expectation.
+- Liu, X., Gong, C., & Liu, Q. (2022). *Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow.* arXiv:2209.03003. — Introduces rectified flow and the reflow procedure; shows straight-line interpolation enables few-step generation.
+- Esser, P., Kulal, S., Blattmann, A., et al. (2024). *Scaling Rectified Flow Transformers for High-Resolution Image Synthesis.* (Stable Diffusion 3). — Documents the shift from DDPM-style score matching to rectified flow in a production text-to-image model, citing 4–8 step sampling.
+- Black Forest Labs. (2024). *FLUX.1: A Family of Open-Source Rectified Flow Models.* — Production model using flow matching; confirms the step-count reduction claim at scale.
+- [CITATION NEEDED — concept: Clay enrichment waterfall step ordering, fallback thresholds, and provider routing logic]

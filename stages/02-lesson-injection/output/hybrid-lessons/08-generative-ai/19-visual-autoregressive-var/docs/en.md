@@ -313,109 +313,82 @@ The forward pass works. The attention mask density tells us what fraction of pos
 
 ## Use It
 
-The practical value of VAR is visible at inference time. Instead of autoregressively generating 680 tokens one at a time (for a 16×16 latent grid), the model generates 4 scale-maps in 4 forward passes. Each forward pass produces an entire resolution level. Let us build the inference loop:
+VAR's next-scale prediction — autoregressive generation of discrete token maps at increasing resolutions via a block-causal transformer — enables progressive creative preview in product features: a user sees coarse-to-fine image generation and can reject bad concepts at 2×2 resolution before committing compute to a full 256×256 render. This is foundational for Zone 4 (AI-native product infrastructure), not a GTM pipeline tool. You embed VAR inside a creative-generation product; it is not a Clay enrichment or a lead-scoring mechanism. [CITATION NEEDED — concept: VAR deployment in marketing creative generation products]
 
 ```python
+import torch
+
 @torch.no_grad()
-def var_inference(model, num_scales, scale_resolutions, vocab_size, device="cpu"):
+def creative_preview_gate(model, tokenizer, vocab_size=256,
+                          num_scales=4, diversity_floor=1.5):
     model.eval()
-    generated_maps = []
-    
-    all_tokens = torch.zeros(1, 0, dtype=torch.long, device=device)
-    all_scale_ids = torch.zeros(1, 0, dtype=torch.long, device=device)
-    all_sizes = []
-    
+    resolutions = [(1, 1), (2, 2), (4, 4), (8, 8)]
+    token_maps = []
+    ctx_tokens = torch.zeros(1, 0, dtype=torch.long)
+    ctx_sids = torch.zeros(1, 0, dtype=torch.long)
+    ctx_sizes = []
+
     for k in range(num_scales):
-        h, w = scale_resolutions[k]
-        scale_size = h * w
-        
+        h, w = resolutions[k]
+        n = h * w
         if k == 0:
-            input_tokens = torch.full((1, 1), vocab_size, dtype=torch.long, device=device)
-            input_scale_ids = torch.zeros(1, 1, dtype=torch.long, device=device)
-            input_sizes = [1]
+            inp = torch.full((1, 1), vocab_size, dtype=torch.long)
+            inp_sids = torch.zeros(1, 1, dtype=torch.long)
+            inp_sizes = [1]
         else:
-            input_tokens = all_tokens.clone()
-            input_scale_ids = all_scale_ids.clone()
-            input_sizes = list(all_sizes)
-        
-        attn_mask = build_var_attention_mask(input_sizes)
-        attn_mask_float = attn_mask.masked_fill(attn_mask == 0, float('-inf'))
-        attn_mask_float = attn_mask_float.masked_fill(attn_mask == 1, 0.0)
-        
-        logits = model(input_tokens, input_scale_ids, attn_mask_float)
-        
-        next_logits = logits[:, -1:, :]
-        next_tokens = next_logits.argmax(dim=-1)
-        
-        new_scale_ids = torch.full((1, scale_size), k, dtype=torch.long, device=device)
-        new_tokens = next_tokens.expand(1, -1) if next_tokens.shape[1] < scale_size else next_tokens[:, :scale_size]
-        
-        if new_tokens.shape[1] < scale_size:
-            random_extra = torch.randint(0, vocab_size, (1, scale_size - new_tokens.shape[1]), device=device)
-            new_tokens = torch.cat([new_tokens, random_extra], dim=1)
-        
-        all_tokens = torch.cat([all_tokens, new_tokens], dim=1)
-        all_scale_ids = torch.cat([all_scale_ids, new_scale_ids], dim=1)
-        all_sizes.append(scale_size)
-        
-        generated_maps.append(new_tokens.reshape(h, w))
-        print(f"  Scale {k} ({h}x{w}): predicted {scale_size} tokens in 1 forward pass")
-    
-    return generated_maps
+            inp, inp_sids, inp_sizes = ctx_tokens, ctx_sids, list(ctx_sizes)
 
-print("=== VAR Next-Scale Inference ===")
-scale_resolutions = [(1, 1), (2, 2), (4, 4), (8, 8)]
-generated = var_inference(model, num_scales=4, scale_resolutions=scale_resolutions, vocab_size=256)
+        mask = build_var_attention_mask(inp_sizes)
+        mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, 0.0)
+        logits = model(inp, inp_sids, mask)
+        tok = logits[:, -1:, :].argmax(dim=-1)
+        if n > 1:
+            tok = torch.cat([tok, torch.randint(0, vocab_size, (1, n - 1))], dim=1)
 
-print()
-print("Generated token maps:")
-for k, tm in enumerate(generated):
-    print(f"  Scale {k} ({tm.shape[0]}x{tm.shape[1]}):")
-    if tm.numel() <= 16:
-        print(tm)
-    else:
-        print(f"    [token values: min={tm.min().item()}, max={tm.max().item()}, mean={tm.float().mean().item():.1f}]")
+        ctx_tokens = torch.cat([ctx_tokens, tok], dim=1)
+        ctx_sids = torch.cat([ctx_sids, torch.full((1, n), k, dtype=torch.long)], dim=1)
+        ctx_sizes.append(n)
+        token_maps.append(tok.reshape(h, w))
+        print(f"  Scale {k} ({h}x{w}): token_diversity={tok.float().var():.2f}")
+
+    preview_var = token_maps[1].float().var().item()
+    if preview_var < diversity_floor:
+        print(f"  Preview variance {preview_var:.2f} < {diversity_floor} → concept rejected")
+        return "rejected", preview_var
+    img = tokenizer.decode_from_pyramid(token_maps, 32, 32)
+    print(f"  Final render: shape={list(img.shape)}, pixel_std={img.std():.4f}")
+    return "shipped", preview_var
+
+print("=== Creative Preview Gate (VAR next-scale prediction) ===")
+for label in ["banner_hero_ad", "product_catalog_v2", "social_post_set3"]:
+    print(f"\n  Concept: {label}")
+    status, score = creative_preview_gate(model, tokenizer)
+    print(f"  → {status} (preview_score={score:.2f})")
 ```
 
-This inference loop demonstrates the mechanism: the model predicts each scale conditioned on all prior scales, and each scale's tokens are produced in a single forward pass. The untrained model produces random tokens, but the structure — context building scale by scale, each resolution refining the previous — is exactly what the VAR paper describes.
+The gate runs four forward passes — one per scale — and rejects concepts whose 2×2 preview lacks enough token diversity to indicate meaningful structure. In a production creative pipeline, this early-reject logic saves the expensive full-resolution decode for concepts that pass a cheap coarse filter. The mechanism is the VAR block-causal transformer; the GTM value is compute savings at scale when generating thousands of ad variants. [CITATION NEEDED — concept: creative preview gates in marketing automation platforms]
 
-Now, the practical question: when would you actually use VAR? The paper reports that VAR[d16] (310M parameters) achieves better FID and IS on ImageNet 256×256 class-conditional generation than DiT-XL/2 (675M parameters) at the same compute budget. It also demonstrates scaling-law behavior consistent with Chinchilla-style predictions, meaning VAR models should improve predictably with more data and parameters. If you are building or evaluating generative image features in a product — marketing asset generation, product visualization, data augmentation for vision pipelines — VAR's faster inference (4-10 forward passes vs 50-1000 diffusion steps) and controllable coarse-to-fine generation are concrete advantages. This places VAR firmly in the category of AI-native product infrastructure (Zone 4), not GTM pipeline mechanics. It is not a Clay waterfall or a lead-scoring mechanism; it is a generative model you would embed in a product feature.
+## Exercises
 
-Let us verify the complexity claims with a concrete comparison:
+**Exercise 1 — Scale Budget Tradeoff (Easy).** Modify `var_pyramid_tokens` to sweep `num_scales` from 2 through 10 for a fixed final resolution of 64×64. For each configuration, compute: (a) total token count, (b) ratio of VAR tokens to raster-scan tokens, (c) sequential forward passes. Find the scale count where VAR's token overhead exceeds 50% relative to raster-scan. Then answer: at what scale count does the token overhead stop being worth the reduction in sequential depth? Justify with the ratio of `forward_pass_reduction / token_overhead_percent`.
 
-```python
-import time
+**Exercise 2 — Teacher-Forced Training Loss (Hard).** Implement `var_training_loss(model, token_maps, vocab_size)` that computes the cross-entropy training objective for the VAR transformer using teacher forcing. The function should: (1) flatten ground-truth token maps into a sequence, (2) construct the block-causal mask, (3) run a forward pass with all ground-truth tokens as input, (4) compute CE loss at every position. The subtlety: within a scale, every token can attend to every other token bidirectionally, so the loss at scale $k$ positions is not "predict the next token" — it is "predict this token given the entire coarser context plus all other tokens in this scale." Verify your loss decreases over 50 gradient steps on a single fixed image. Print the loss every 10 steps.
 
-def measure_complexity(max_resolution=256, num_scales_values=None):
-    if num_scales_values is None:
-        num_scales_values = [4, 6, 8, 10]
-    
-    print(f"{'Approach':<25} {'Resolution':<12} {'Tokens':<10} {'Fwd Passes':<12} {'Attention Ops':<15}")
-    print("-" * 74)
-    
-    for res in [32, 64, 128, 256]:
-        N = res * res
-        print(f"{'Raster-Scan AR':<25} {f'{res}x{res}':<12} {N:<10} {N:<12} {N*N:<15,}")
-        
-        for K in num_scales_values:
-            scale_lens = []
-            for k in range(K):
-                side = max(1, res // (2 ** (K - 1 - k)))
-                scale_lens.append(side * side)
-            
-            total_tokens = sum(scale_lens)
-            max_seq = scale_lens[-1]
-            fwd_passes = K
-            attn_ops = sum(s * sum(scale_lens[:i+1]) for i, s in enumerate(scale_lens))
-            
-            print(f"{'VAR (K=' + str(K) + ')':<25} {f'{res}x{res}':<12} {total_tokens:<10} {fwd_passes:<12} {attn_ops:<15,}")
-        print()
+## Key Terms
 
-measure_complexity()
-```
+- **Next-Scale Prediction** — VAR's core paradigm: autoregression where each step predicts an entire resolution-level token map rather than a single token. Reduces sequential depth from $O(N)$ to $O(K)$ where $K$ is the number of scales.
+- **Block-Causal Attention Mask** — A mask that is bidirectional (fully visible) within each scale block and strictly causal (lower-triangular at the block level) across scale boundaries. Enables parallel generation within a scale while preserving autoregressive ordering across scales.
+- **Multi-Scale VQ-VAE** — A vector-quantized variational autoencoder that encodes an image into a pyramid of discrete token maps at resolutions $1{\times}1, 2{\times}2, \ldots, h{\times}w$ using a shared codebook. The same decoder reconstructs pixels from the full token stack.
+- **Token Pyramid** — The ordered stack of discrete token maps across $K$ scales. Each level refines spatial detail; coarser levels carry global structure, finer levels carry local texture.
+- **Raster-Scan Autoregression** — The predecessor approach (DALL-E 1, Parti) that flattens a 2D token grid into 1D left-to-right, top-to-bottom order and predicts one token at a time. Requires $N$ sequential forward passes for $N$ tokens.
+- **Scale-wise Autoregression** — VAR's paradigm: autoregression operates over resolution scales, not spatial positions. Each scale is generated in a single parallel forward pass conditioned on all coarser scales.
 
-The numbers speak for themselves. At 256×256 resolution, raster-scan AR needs 65,536 sequential forward passes. VAR with 10 scales needs 10. The total token count is higher for VAR (because each scale carries its own information), but the sequential depth — which determines wall-clock inference time — is orders of magnitude lower. Diffusion models sit in between: typically 50-1000 denoising steps, each a full forward pass over the entire image.
+## Sources
 
-## Ship It
-
-Deploying VAR in production means confronting three engineering decisions that the paper touches on but
+- Tian, K., Jiang, Z., et al. (2024). "Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction." *NeurIPS 2024*. arXiv:2404.02905.
+- van den Oord, A., Vinyals, O., & Kavukcuoglu, K. (2017). "Neural Discrete Representation Learning." *NeurIPS 2017*. arXiv:1711.00937.
+- Peebles, W., & Xie, S. (2023). "Scalable Diffusion Models with Transformers." *ICCV 2023*. arXiv:2212.09748.
+- Hoffmann, J., et al. (2022). "Training Compute-Optimal Large Language Models." arXiv:2203.15556.
+- Esser, P., Rombach, R., & Ommer, B. (2021). "Taming Transformers for High-Resolution Image Synthesis." *CVPR 2021*. arXiv:2012.09841.
+- [CITATION NEEDED — concept: VAR deployment in marketing creative generation products]
+- [CITATION NEEDED — concept: creative preview gates in marketing automation platforms]

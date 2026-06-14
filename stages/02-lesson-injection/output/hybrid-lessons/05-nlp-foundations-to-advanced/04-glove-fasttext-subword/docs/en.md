@@ -167,4 +167,80 @@ for term in oov_terms:
     print(f"  {term:25} -> {', '.join(neighbors)}")
 ```
 
-The OOV block is where the difference becomes concrete. GloVe returns nothing
+The OOV block is where the difference becomes concrete. GloVe returns nothing for `revenueoperations`, `churnprediction`, or any of the test terms — these strings don't exist in its vocabulary, so every lookup raises a KeyError. FastText decomposes each into character n-grams, retrieves vectors for fragments like `<rev`, `ven`, `enu`, `oper`, `rat`, and sums them. The nearest neighbors for `revenueoperations` land near `operations`, `operational`, and `revenue` — imperfect but directionally correct. `churnprediction` clusters near `prediction`, `predict`, and `forecast`. The vectors aren't as precise as a trained-in vocabulary word would be, but they exist, and they carry enough signal for downstream tasks like fuzzy taxonomy matching.
+
+## Use It
+
+FastText's character n-gram subword decomposition lets you fuzzy-match inbound GTM vocabulary — job titles, company descriptions, product names — against a known taxonomy even when the inbound text contains misspellings, compound neologisms, or domain jargon that never appeared in any training corpus. This is **Cluster 1.2, TAM Refinement & ICP Scoring**: normalizing free-text account and contact attributes into canonical segments.
+
+```python
+from gensim.models import FastText
+from gensim.utils import simple_preprocess
+import numpy as np
+
+raw_corpus = [
+    "revenue operations manager handles forecasting",
+    "sales operations lead manages pipeline",
+    "demand generation specialist runs outbound campaigns",
+    "customer success manager owns retention",
+    "field marketing director drives events",
+    "sales development representative qualifies leads",
+    "account executive closes enterprise deals",
+    "product marketing manager positions features",
+    "go to market strategy coordinates launch",
+    "revops analyst tracks churn metrics",
+]
+sentences = [simple_preprocess(s) for s in raw_corpus]
+model = FastText(sentences, vector_size=32, window=3, min_n=3, max_n=6, epochs=80)
+
+taxonomy = ["revenue operations", "sales operations", "demand generation",
+            "customer success", "marketing", "sales development", "account executive"]
+
+def phrase_vec(model, phrase):
+    words = simple_preprocess(phrase)
+    vecs = [model.wv[w] for w in words if w in model.wv]
+    return np.mean(vecs, axis=0) if vecs else np.zeros(model.vector_size)
+
+def cosine(a, b):
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
+    return float(np.dot(a, b) / denom) if denom else 0.0
+
+tax_vectors = {t: phrase_vec(model, t) for t in taxonomy}
+
+inbound = ["revops coordinator", "demgen analyst", "saleops manager", "CSM onboarding"]
+
+print(f"{'Inbound Title':22} {'Best Match':22} {'Score':7}")
+print("-" * 52)
+for title in inbound:
+    vec = phrase_vec(model, title)
+    scores = [(t, cosine(vec, tv)) for t, tv in tax_vectors.items()]
+    best, score = max(scores, key=lambda x: x[1])
+    print(f"{title:22} {best:22} {score:.3f}")
+```
+
+Each inbound title is OOV — none appeared in the training corpus. FastText decomposes `revops` into n-grams that overlap with `revenue` and `operations`, so `revops coordinator` scores highest against the `revenue operations` taxonomy entry. A GloVe or Word2Vec model trained on the same corpus would return nothing for any of these strings. In a production enrichment pipeline, this vector match feeds a scoring layer: above a cosine threshold, auto-assign the canonical segment; below it, route to a human for review. [CITATION NEEDED — concept: production GTM taxonomy matching thresholds in enrichment tools]
+
+## Exercises
+
+**Exercise 1 (Easy):** Modify the co-occurrence matrix builder to use an unweighted window (every word within the window contributes 1.0 regardless of distance) instead of the `1.0 / distance` weighting. Re-run the SVD factorization. Which word pairs change the most in cosine similarity? Hypothesize why GloVe's authors chose a decreasing weight function rather than uniform counting.
+
+**Exercise 2 (Hard):** Build a FastText model from scratch on a corpus of 50+ GTM-related sentences (pull descriptions from company LinkedIn pages or product docs). Then test it on 10 deliberately misspelled or compound domain terms (`revops`, `ABMstrategy`, `churnpred`, `salesforceadmin`, `gtmengineer`). For each OOV term, report the top 3 nearest neighbors and the cosine score. Identify at least one case where subword decomposition produces a misleading match (e.g., a character overlap with an unrelated word), and explain which n-grams caused the false association.
+
+## Key Terms
+
+**Co-occurrence matrix** — A square matrix `X` where `X[i][j]` counts how often word `j` appears within a fixed window around word `i` across a corpus. GloVe factorizes this matrix; Word2Vec approximates it through online sampling.
+
+**Character n-gram** — A contiguous sequence of `n` characters extracted from a word, including boundary markers (e.g., for "cat" with n=3: `<ca`, `cat`, `at>`). FastText uses n-grams of length 3–6 and treats each as a trainable vector.
+
+**Out-of-vocabulary (OOV)** — A word that does not appear in a model's training vocabulary. Word2Vec and GloVe cannot produce vectors for OOV words. FastText can, because it decomposes any string into n-grams whose vectors were learned during training.
+
+**Subword embedding** — A word representation constructed from smaller character-level units rather than a single monolithic vector. FastText's subword approach averages n-gram vectors with the whole-word vector, enabling compositional generalization to unseen words.
+
+**Truncated SVD** — Singular Value Decomposition applied with dimensionality reduction: factorizing a matrix `X` into `U·S·V^T` and keeping only the top `k` singular values. Used here as a simplified analog to GloVe's weighted matrix factorization objective.
+
+## Sources
+
+- Pennington, J., Socher, R., & Manning, C. D. (2014). *GloVe: Global Vectors for Word Representation.* EMNLP 2014. https://nlp.stanford.edu/projects/glove/
+- Bojanowski, P., Grave, E., Joulin, A., & Mikolov, T. (2017). *Enriching Word Vectors with Subword Information.* Transactions of the Association for Computational Linguistics, 5, 135–146. https://arxiv.org/abs/1607.04606
+- Řehůřek, R. & Sojka, P. (2010–present). *Gensim: Models for GloVe and FastText.* https://radimrehurek.com/gensim/auto_examples/index.html
+- Mikolov, T., Sutskever, I., Chen, K., Corrado, G., & Dean, J. (2013). *Distributed Representations of Words and Phrases and their Compositionality.* NeurIPS 2013. https://arxiv.org/abs/1310.4546

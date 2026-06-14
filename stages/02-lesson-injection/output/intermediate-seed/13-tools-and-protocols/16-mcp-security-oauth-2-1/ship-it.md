@@ -1,0 +1,3 @@
+## Ship It
+
+Production deployment of MCP servers with OAuth 2.1 requires three infrastructure decisions baked into your CI/CD pipeline, not added afterward. First: every MCP server needs a stable, unique resource URI that serves as both its `aud` claim value and its RFC 9728 protected-resource-metadata endpoint. This URI must not change between deploys without a coordinated token migration — existing tokens pin to the old URI and will be rejected by the new one. Second: the authorization server's signing key must be

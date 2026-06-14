@@ -254,4 +254,80 @@ noisy_V[sidx[TERMINAL]] = 0.0
 
 print("STATE-BY-STATE ERROR ANALYSIS")
 print("-" * 45)
-print(f"{'State':>8}  {'DP V*':>8
+print(f"{'State':>8}  {'DP V*':>8}  {'Noisy':>8}  {'Error':>8}")
+for s in states:
+    if s == TERMINAL:
+        continue
+    si = sidx[s]
+    err = noisy_V[si] - pi_V[si]
+    print(f"{str(s):>8}  {pi_V[si]:>8.2f}  {noisy_V[si]:>8.2f}  {err:>+8.2f}")
+
+worst_si = int(np.argmax(np.abs(noisy_V - pi_V)))
+print(f"\n  Worst state: {states[worst_si]}")
+print(f"  Error:       {noisy_V[worst_si] - pi_V[worst_si]:+.2f}")
+print(f"  Total |err|: {np.sum(np.abs(noisy_V - pi_V)):.2f}")
+```
+
+Output:
+
+```
+STATE-BY-STATE ERROR ANALYSIS
+---------------------------------------------
+   State     DP V*    Noisy    Error
+  (0, 0)     -4.36     -3.76    +0.60
+  (0, 1)     -3.71     -5.50    -1.79
+  (0, 2)     -2.91     -2.43    +0.49
+  (0, 3)     -1.86     -2.42    -0.55
+  (1, 0)     -3.71     -2.91    +0.80
+  (1, 1)     -2.91     -3.77    -0.86
+  (1, 2)     -1.86     -0.50    +1.36
+  (1, 3)     -0.95     -1.23    -0.28
+  (2, 0)     -2.91     -4.27    -1.36
+  (2, 1)     -1.86     -1.30    +0.56
+  (2, 2)     -0.95      0.24    +1.19
+  (2, 3)      0.00      0.00    +0.00
+  (3, 0)     -1.86     -2.80    -0.95
+  (3, 1)     -0.95     -1.23    -0.28
+  (3, 2)      0.00      0.00    +0.00
+
+  Worst state: (0, 1)
+  Error:       -1.79
+  Total |err|: 11.06
+```
+
+The worst state is (0, 1) — the noisy estimate undershot by 1.79. In a real Q-learning run, you'd see a similar distribution: some states converge well, others lag. The states with large errors are where your sampling was insufficient or your learning rate was too aggressive. Without the DP oracle, you'd have no way to know which states to trust.
+
+This verification pattern is the DP analog of what account scoring pipelines attempt in GTM — **Cluster 1.x, ICP Scoring & TAM Refinement** [CITATION NEEDED — concept: GTM cluster mapping for DP-based account scoring]. When you model account progression states (cold → warm → engaged → demo → closed-won) as an MDP with transition probabilities derived from CRM historical data, DP gives you the exact expected lifetime value per state. That ground-truth value is what your production scoring model — a logistic regression, an XGBoost classifier, an LLM-based signal aggregator — is trying to approximate. The same debug workflow applies: run DP on your transition model, compare against your scorer's outputs, and the states with the largest error are where your scorer is least reliable. The evaluate-improve loop from policy iteration is structurally identical to a RevOps pipeline that re-scores an account when a new signal (funding round, hiring spike, technographic change) arrives and reassigns its tier.
+
+## Exercises
+
+**Exercise 1 (Medium): Add a Terminal Penalty State**
+
+Add a "pit" at position (1, 1): any move that would land on (1, 1) instead terminates the episode with reward −10. Modify `env_step` to check for this state before the normal terminal check. Run both policy iteration and value iteration. Verify three things: (a) both algorithms converge to the same policy, (b) the optimal policy routes around the pit — no arrow points into (1, 1), and (c) states adjacent to the pit have more negative values than they did in the original grid because the pit is now a nearby risk. Print both value grids side by side and compute the element-wise difference.
+
+**Exercise 2 (Hard): Account Funnel MDP — Vary the Discount Factor**
+
+Model a B2B account progression funnel as a 6-state MDP. States: `COLD`, `WARM`, `ENGAGED`, `DEMO`, `WON` (absorbing terminal, reward +100), and `CHURNED` (absorbing terminal, reward 0). Two actions: `NURTURE` (low advancement probability, very low churn) and `OUTBOUND` (higher advancement probability, but higher churn risk). Define explicit transition matrices:
+
+```
+P(s' | COLD, NURTURE)  = {WARM: 0.10, COLD: 0.85, CHURNED: 0.05}
+P(s' | COLD, OUTBOUND) = {WARM: 0.25, COLD: 0.60, CHURNED: 0.15}
+```
+
+Complete the transition definitions for the remaining states using reasonable assumptions. Run value iteration three times with γ = 0.80, γ = 0.95, and γ = 0.99. For each, extract the greedy policy and answer: at which states does the optimal action flip between NURTURE and OUTBOUND as γ increases? Explain why a higher discount factor makes the agent more willing to tolerate short-term churn risk in the `COLD` state.
+
+## Key Terms
+
+- **Bellman equation**: Self-consistency condition relating a state's value to its expected reward plus the discounted value of the successor state, under a fixed policy π.
+- **Bellman optimality equation**: The same recursive structure with a max over actions instead of an expectation; defines V*, the unique fixed point of the Bellman optimality operator.
+- **Policy evaluation**: Iteratively computing V^π for a fixed policy by repeatedly applying the Bellman expectation backup until values converge within a tolerance θ.
+- **Policy improvement**: Updating π to be greedy with respect to the current V — for each state, selecting argmax_a Q(s,a). If no state's action changes, the policy is optimal.
+- **Contraction mapping**: An operator T is a γ-contraction if ‖T(V₁) − T(V₂)‖∞ ≤ γ‖V₁ − V₂)‖∞. The Bellman optimality operator is a contraction with modulus γ ∈ [0,1), guaranteeing a unique fixed point and geometric convergence rate.
+- **Curse of dimensionality**: Per-sweep cost of O(|S|² · |A|) for dense transition MDPs, making exact DP intractable beyond roughly 10⁵ states without function approximation or structural assumptions (sparsity, factoring).
+
+## Sources
+
+- Sutton, R.S. & Barto, A.G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.), Chapters 3–4. MIT Press. http://incompleteideas.net/book/RLbook2020.pdf
+- Bellman, R. (1957). *Dynamic Programming*. Princeton University Press.
+- Puterman, M.L. (1994). *Markov Decision Processes: Discrete Stochastic Dynamic Programming*. Wiley. Chapter 6 (Value Iteration) and Chapter 7 (Policy Iteration).
+- [CITATION NEEDED — concept: GTM account-state MDP modeling for funnel-stage lifetime value computation]

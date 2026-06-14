@@ -121,3 +121,109 @@ def convolve2d_numpy(signal, kern):
     output = np.zeros((oh, ow))
     for i in range(oh):
         for j in range(ow):
+            patch = signal[i:i+kh, j:j+kw]
+            output[i, j] = np.sum(patch * kern)
+    return output
+
+result_np = convolve2d_numpy(signal, kernel_np)
+
+print("NumPy output (4x4):")
+print(result_np)
+
+matches = all(
+    abs(result[i][j] - result_np[i][j]) < 1e-10
+    for i in range(len(result))
+    for j in range(len(result[0]))
+)
+print(f"\nPure Python == NumPy: {matches}")
+```
+
+Both implementations produce identical values. The NumPy version runs faster on large inputs (the inner multiply-and-sum is vectorized in C), but the computation is the same sliding-window dot product.
+
+Now let us see what a different kernel does to the same input. A Laplacian edge detector (`[0,1,0],[1,-4,1],[0,1,0]`) sums the four neighbors and subtracts the center multiplied by 4 — on a uniform region (all pixels equal), it returns exactly zero. It produces large nonzero values only where there is a discontinuity, which is what an edge is.
+
+```python
+edge_kernel = np.array([
+    [0, 1, 0],
+    [1, -4, 1],
+    [0, 1, 0],
+], dtype=float)
+
+edges = convolve2d_numpy(signal, edge_kernel)
+
+print("Edge detection output (4x4):")
+print(edges.astype(int))
+```
+
+Compare the edge output to the sharpen output. The sharpen kernel preserves overall brightness (it sums to 1), so flat regions stay flat and edges are amplified. The edge kernel sums to 0, so flat regions vanish entirely and only boundaries survive. Both are convolutions — the only difference is the kernel weights.
+
+## Use It
+
+1D convolution slides a kernel across a single-axis signal and multiplies at each position — the same sliding-window dot product from Build It, just on a vector instead of a matrix. Applied to weekly engagement time series per account, a derivative kernel `[-1, 0, 1]` computes the week-over-week slope at every position and flags accounts where engagement is accelerating. This is the signal-detection mechanism behind account-scoring pipelines that prioritize sales outreach based on behavioral momentum rather than raw activity volume.
+
+```python
+import numpy as np
+
+accounts = {
+    "Acme Corp":   [2, 2, 3, 5, 8, 12, 18],
+    "Globex Inc":  [15, 14, 13, 12, 10, 8, 5],
+    "Initech LLC": [3, 3, 3, 4, 3, 4, 3],
+    "Stark Inds":  [1, 2, 4, 7, 11, 16, 22],
+}
+
+rising_kernel = np.array([-1, 0, 1])
+
+def convolve1d(signal, kernel):
+    k = len(kernel)
+    return np.array([np.sum(signal[i:i+k] * kernel) for i in range(len(signal) - k + 1)])
+
+threshold = 2
+
+print("Rising-signal detection (derivative kernel [-1, 0, 1])\n")
+for name, weeks in accounts.items():
+    signal = np.array(weeks, dtype=float)
+    slopes = convolve1d(signal, rising_kernel)
+    max_slope = slopes.max()
+    flag = "RISE" if max_slope > threshold else "flat"
+    print(f"  {name:14s}  weeks={weeks}  slopes={slopes.astype(int).tolist()}  -> {flag} (max slope={max_slope:.0f})")
+```
+
+The derivative kernel `[-1, 0, 1]` subtracts last week from next week. Acme and Stark show monotonic acceleration (every slope positive, max slope of 6 and 6). Globex is decelerating uniformly. Initech is flat — no consistent direction. The `threshold > 2` filter surfaces only accounts whose steepest single-week jump exceeds the kernel's bias toward noise, which you would calibrate against your historical conversion data. This connects to Cluster 2.3 (Signal Detection & Account Prioritization) — [CITATION NEEDED — concept: cluster ID for rising-signal account scoring in GTM topic map]. The convolution itself is a three-line function. The GTM work is choosing the kernel shape and the threshold.
+
+## Exercises
+
+### Exercise 1: Hand-Design a Vertical Edge Detector (Medium)
+
+Write a 3×3 kernel that detects vertical edges (sharp left-to-right intensity changes) and run it through `convolve2d_numpy` on the same 6×6 `signal` from Build It. A vertical edge detector assigns opposite signs to the left and right columns — something like `[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]`.
+
+**Verify:** The output should be near-zero in regions where the signal is horizontally uniform and large where there is a strong vertical boundary. Pick two positions in the output, one you predict to be near-zero and one you predict to be large, and explain why before you run the code.
+
+### Exercise 2: Add Padding and Stride (Hard)
+
+Modify `convolve2d_numpy` to accept `padding` and `stride` parameters. Padding wraps the input in `P` zeros on all sides using `np.pad`. Stride skips positions in the outer loops.
+
+**Verify three cases:**
+- `padding=1, stride=1` with a 3×3 kernel on a 6×6 input → output is 6×6 (same-size)
+- `padding=0, stride=2` with a 3×3 kernel on a 6×6 input → output is 2×2
+- `padding=1, stride=2` with a 3×3 kernel on a 6×6 input → output is 3×3
+
+Confirm each output dimension matches `(W - K + 2P) / S + 1` before inspecting the values. If your formula and your code disagree, the bug is in the code.
+
+## Key Terms
+
+- **Convolution / Cross-correlation** — Sliding a kernel across a signal and computing the dot product at each position. Mathematical convolution flips the kernel 180° first; cross-correlation does not. Deep learning frameworks implement cross-correlation and call it convolution.
+- **Kernel (filter)** — A small weight matrix (typically 3×3 or 5×5) whose values determine what pattern the convolution detects. Hand-designed kernels encode signal-processing priors (edges, blur, sharpen). Learned kernels encode whatever the training data rewards.
+- **Stride** — How many positions the kernel advances per step. Stride 1 visits every position; stride 2 skips every other, halving output dimensions.
+- **Padding** — Zeros added around the input border. Controls output size (padding of 1 with a 3×3 kernel preserves dimensions) and ensures border pixels are sampled fairly.
+- **Translation equivariance** — If the input shifts by `(Δx, Δy)`, the output shifts by the same amount. Convolution provides this by construction because the same kernel runs at every position.
+- **Parameter sharing** — One set of kernel weights is reused across the entire input, replacing millions of dense-layer parameters with hundreds of convolutional parameters.
+- **Feature map** — The output of a convolution. Each entry is the dot product of the kernel with the input patch at that position. Strong activations indicate where the kernel's pattern appears in the input.
+
+## Sources
+
+- Goodfellow, I., Bengio, Y., & Courville, A. (2016). *Deep Learning*, Chapter 9: Convolutional Networks. MIT Press. — Defines convolution, cross-correlation, and translation equivariance in the ML context.
+- Gonzalez, R. C., & Woods, R. E. (2018). *Digital Image Processing*, 4th ed., Chapter 3: Intensity Transformations and Spatial Filtering. Pearson. — Source for hand-designed kernels (sharpen, Laplacian, Sobel) and the sliding-window formulation from signal processing.
+- Oppenheim, A. V., & Schafer, R. W. (2010). *Discrete-Time Signal Processing*, 3rd ed. Pearson. — 1D convolution, derivative-of-difference kernels, and the formal distinction between convolution and correlation.
+- Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). "ImageNet Classification with Deep Convolutional Neural Networks." *NeurIPS.* — The AlexNet paper demonstrating end-to-end learned convolutional kernels trained on GPUs.
+- PyTorch Documentation. `torch.nn.Conv2d` — confirms that PyTorch implements cross-correlation under the name "convolution": "This module can be seen as the exact implementation of a 2D cross-correlation." https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+- [CITATION NEEDED — concept: GTM cluster ID for rising-signal account scoring via engagement time-series convolution]

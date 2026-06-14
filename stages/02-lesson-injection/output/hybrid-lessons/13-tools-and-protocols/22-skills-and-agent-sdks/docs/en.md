@@ -390,9 +390,9 @@ def execute_tool(name, args):
         return data
     return {"error": "unknown tool"}
 
-system_prompt = """You are a GTM enrichment agent. Your job is to gather 
+system_prompt = """You are a GTM enrichment agent. Your job is to gather
 sufficient data about a target company to create a complete prospect record.
-A complete record needs: industry, company size, at least one decision-maker 
+A complete record needs: industry, company size, at least one decision-maker
 email, and a phone number if available.
 
 Call tools in the most efficient order. If one provider returns enough data,
@@ -434,4 +434,36 @@ while True:
             "content": json.dumps(result)
         })
 
-print(f"\nTotal provider calls: {iteration - 1
+print(f"\nTotal provider calls: {iteration - 1}")
+print(f"Total messages in context: {len(messages)}")
+```
+
+Run this and you will watch the model reason through the waterfall in real time. It calls Clearbit first — the firmographics provider — because the system prompt names industry and size as required fields. It observes the result. Then it decides: do I have a decision-maker email? The firmographics payload did not include contacts, so it calls Hunter or Apollo next. After the second call, it assesses sufficiency against the system prompt's definition of a complete record and either stops or makes one more call.
+
+The key difference from a Clay waterfall column: Clay executes a fixed sequence — provider A, then B, then C — and stops at the first non-null result. The agent SDK loop lets the model reason about *what it still needs*. If Clearbit returns industry and size but the user asked specifically for a CTO-level contact, the model knows to call a contact provider next. If the user asked only for firmographics, the model stops after one call. The judgment about data sufficiency is the model's, not a hardcoded threshold.
+
+This maps directly to GTM Cluster 1 — TAM Refinement & Enrichment. Every enrichment pipeline in production is some version of this loop. The agent SDK version replaces static if-then rules with model-driven routing, at the cost of a per-decision inference call. For a single high-value account, that tradeoff favors the agent. For a 50,000-row CSV enrichment, you still want the deterministic Clay waterfall — but you can use the agent loop on the top-tier accounts where judgment matters and hand off the long tail to the static pipeline.
+
+## Exercises
+
+**Exercise 1 — Port the enrichment loop to Anthropic.** Take the OpenAI enrichment agent above and rewrite it using the Anthropic Messages API tool-calling format. You will need to change three things: the tool declaration schema (`input_schema` instead of `parameters`), the tool-call detection logic (`stop_reason == "tool_use"` and `block.type == "tool_use"` instead of `msg.tool_calls`), and the result format (`tool_result` content blocks in a user message instead of `role: "tool"` messages). Run it and confirm the model makes the same provider-routing decisions. This exercise forces you to internalize that the loop is identical across providers — only the serialization format differs.
+
+**Exercise 2 — Add an AGENTS.md permission gate to the enrichment loop.** Combine the AGENTS.md parser from Build It with the enrichment agent from Use It. Before executing each tool call, look up the tool name in the parsed permissions dict. If the permission level is `ALLOW`, execute normally. If it is `REQUIRE_APPROVAL`, print the tool name and arguments, pause with `input("Approve? (y/n): ")`, and only execute if the user approves. If the capability is not listed at all, refuse the call and feed back a message saying the tool is not permitted. Test it by adding `lookup_apollo` to the AGENTS.md file with `REQUIRE_APPROVAL` and watching the agent pause when it tries to call Apollo. This exercise bridges the two layers the lesson covers: the execution loop (SDK) and the permission layer (AGENTS.md).
+
+## Key Terms
+
+- **Tool loop (tool-calling loop):** The cycle of model-decides-to-call-tool → your-code-executes-tool → result-fed-back-to-model → model-resumes-reasoning. The core abstraction both Anthropic and OpenAI implement. State lives on your side (Anthropic) or server-side (OpenAI threads), but the loop shape is identical.
+- **AGENTS.md:** A declarative markdown file at the repository root specifying project context, capabilities, and permission levels. Read by compatible agent runtimes (Claude Code, Cursor, Codex CLI) at session start. It is a permission and context contract, not an execution engine.
+- **SKILL.md:** The know-how packaging format for Anthropic Skills. Markdown with YAML frontmatter (name, description, instructions). Loaded on demand via description matching. Enables progressive disclosure — only the relevant skill body enters the context window.
+- **Function calling (tool use):** The API mechanism where a model returns a structured request to invoke an external function, yielding control to your code. You execute the function and feed the result back as a structured message. The model never executes code itself — it emits a request.
+- **Progressive disclosure:** A context-window management strategy where only the context immediately relevant to the current step is loaded into the model. Deeper subdirectories of instructions or reference material are pulled in only when the model's current reasoning requires them.
+- **Enrichment waterfall:** A GTM pattern where multiple data providers are queried in sequence, falling back to the next provider if the previous result is insufficient or null. The agent SDK tool loop generalizes this by letting the model decide provider order and sufficiency rather than relying on a fixed sequence.
+
+## Sources
+
+- Anthropic. "Tool Use with Claude." *Anthropic Documentation.* [https://docs.anthropic.com/en/docs/build-with-claude/tool-use](https://docs.anthropic.com/en/docs/build-with-claude/tool-use)
+- OpenAI. "Function Calling." *OpenAI Platform Documentation.* [https://platform.openai.com/docs/guides/function-calling](https://platform.openai.com/docs/guides/function-calling)
+- [CITATION NEEDED — concept: AGENTS.md spec and adoption in 60,000+ repositories]
+- [CITATION NEEDED — concept: Anthropic Skills SKILL.md format and progressive disclosure mechanism]
+- [CITATION NEEDED — concept: OpenAI Agents SDK architecture and server-side state via threads]
+- [CITATION NEEDED — concept: enrichment waterfall as agent tool loop, source: Saruggia 80/20 GTM Engineer Handbook]

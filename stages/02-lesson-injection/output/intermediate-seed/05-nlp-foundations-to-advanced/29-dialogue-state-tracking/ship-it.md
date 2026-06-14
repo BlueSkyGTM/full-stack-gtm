@@ -1,0 +1,13 @@
+## Ship It
+
+Production DST systems face four concerns that the minimal implementation above doesn't address.
+
+**State persistence.** Where does *b_t* live between turns? In a web chatbot, the user might close the browser and return tomorrow. You need to persist the belief state — typically as JSON in a database keyed by session ID or visitor ID. The state is small (a few hundred bytes), so even a key-value store works. The non-obvious requirement: you also need to persist the *dialogue history* or at least a summary, because the update rule for corrections depends on what was said previously. Storing just the current slot values loses the context needed to interpret the next utterance.
+
+**Out-of-ontology values.** A user mentions a cuisine you didn't define ("I want Ethiopian food"). Three strategies: reject and ask again (bad UX), accept into an open-vocab overflow field (lose structure), or expand the ontology dynamically (risky — now your downstream systems need to handle arbitrary values). The pragmatic choice is a hybrid: closed-vocab slots for the common cases your backend can act on, plus an open-vocab "notes" field for everything else, plus a monitoring pipeline that surfaces frequently-requested new values so you can expand the ontology deliberately.
+
+**Confidence fallback.** When the DST system is uncertain — the user said something ambiguous, or the extractor returned a low confidence score — the system should ask a clarifying question rather than guessing. This requires per-slot confidence thresholds. If `confidence["cuisine"] < 0.7`, the system responds with "Just to confirm, you're looking for Italian food?" rather than silently filling the slot. The threshold is domain-specific: a wrong cuisine recommendation is recoverable; a wrong wire transfer amount is not.
+
+**Evaluation.** Joint Goal Accuracy (JGA) is the standard metric: the fraction of turns where *every* slot matches the ground truth. It's all-or-nothing — get one slot wrong and the turn counts as a miss. Slot accuracy (per-slot correctness) is a softer metric that helps diagnose which slots are failing. Both require labeled data with turn-by-turn state annotations, which is expensive to produce.
+
+[CITATION NEEDED — concept: standard DST benchmark datasets (MultiWOZ, SGD) and their evaluation protocols for production systems]. The academic benchmarks exist and are well-documented, but translating their evaluation protocols to production GTM systems — where ground truth is the eventual conversion outcome, not a human-annotated slot label — remains an open problem.

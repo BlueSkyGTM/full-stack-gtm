@@ -363,51 +363,47 @@ print("=== DONE ===")
 
 This agent chains three GTM-relevant tools: enrichment, ICP scoring, and email drafting. The model decides the order based on the tool descriptions and the user's request. You did not write `if` statements controlling the flow — the function-calling protocol did. That is the same delegation pattern that powers a Clay waterfall, an n8n agent node, or a custom routing layer. The tools change. The loop does not.
 
-## Ship It
+## Exercises
 
-Production function-calling agents fail in three predictable ways: tools throw exceptions, the model loops without terminating, and API latency compounds across turns. Ship code that handles all three.
+### 1. Add a CRM Lookup Tool (Medium)
 
-```python
-import json
-import time
-import openai
+Add a third tool called `check_crm_history` to the GTM agent that takes a domain and returns a mock list of past interactions (e.g., emails sent, calls made, last touch date). Update the system prompt so the agent calls this tool *before* drafting the email and uses the history to adjust the email tone — if there are already three touches, the email should reference them rather than acting like first contact.
 
-client = openai.OpenAI()
+**Requirements:**
+- Write the tool function and its JSON Schema.
+- Add it to `gtm_tools` and `functions_map`.
+- Modify the system prompt to enforce the new ordering.
+- Run the agent and verify the email output changes based on CRM history.
 
-def safe_tool_call(func, args, max_retries=2):
-    for attempt in range(max_retries + 1):
-        try:
-            result = func(**args)
-            return {"status": "ok", "data": result}
-        except Exception as e:
-            if attempt < max_retries:
-                wait = 2 ** attempt
-                print(f"  Retry {attempt+1}/{max_retries} after {wait}s: {e}")
-                time.sleep(wait)
-            else:
-                return {"status": "error", "error": str(e)}
+**Why this matters:** Real enrichment chains always merge multiple data sources. A cold email drafted without checking whether the prospect was already contacted three times last quarter is worse than no email at all. The exercise forces you to think about tool *ordering* — the model will follow whatever the system prompt and tool descriptions tell it, so your descriptions must encode the business logic.
 
-def run_agent(messages, tools, functions_map, max_turns=6):
-    conversation = list(messages)
-    log = []
-    
-    for turn in range(max_turns):
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=conversation,
-                tools=tools,
-                tool_choice="auto",
-                timeout=30
-            )
-        except openai.APITimeoutError:
-            log.append({"turn": turn + 1, "event": "timeout", "action": "abort"})
-            return {"answer": None, "error": "LLM request timed out", "log": log}
-        except openai.RateLimitError:
-            wait = 5
-            print(f"  Rate limited, waiting {wait}s")
-            time.sleep(wait)
-            continue
-        
-        msg = response.choices[0].message
-        conversation.append(msg)
+### 2. Port to Anthropic and Add Parallel Tool Calls (Hard)
+
+Rewrite the GTM agent using the Anthropic Messages API instead of OpenAI. The agent must work identically — enrich, score, draft — but using `input_schema`, content blocks, and `tool_result` messages. Then extend it: add a second enrichment tool (e.g., `check_tech_stack` that returns a different data slice from `enrich_domain`) and configure the system prompt so the model calls both enrichment tools in parallel in a single turn.
+
+**Requirements:**
+- Port the three existing tools to Anthropic's schema format (`input_schema`, no `type: "function"` wrapper).
+- Handle `tool_use` content blocks instead of `tool_calls`.
+- Return `tool_result` blocks with the correct `tool_use_id` matching.
+- Add the parallel enrichment tool and verify the model calls both in the same response.
+- Enforce a `MAX_TURNS` limit.
+
+**Why this matters:** Provider lock-in is a real cost. If your agent only runs on OpenAI and OpenAI has an outage or changes their API, your GTM pipeline stops. Knowing both protocols means you can swap providers by changing the serialization layer without rewriting your tool functions or business logic. Parallel tool calls matter because enrichment waterfalls are latency-sensitive — if two lookups have no data dependency, calling them sequentially doubles your response time for no reason.
+
+## Key Terms
+
+- **Tool Schema** — A JSON Schema object that declares a function's name, description, and parameters to the LLM. The model uses this to decide whether and how to call the function. OpenAI wraps it inside `{"type": "function", "function": {...}}`; Anthropic uses a flat object with `input_schema`.
+- **Tool Call** — The structured output the model produces when it decides a function should be executed. On OpenAI this appears as an entry in `message.tool_calls` with a `name` and JSON-string `arguments`. On Anthropic this appears as a `tool_use` content block with `name` and a parsed `input` dict.
+- **Tool Result** — The return value your code produces after executing the function. You append it to the conversation as a message (role `tool` on OpenAI, a `tool_result` content block on Anthropic) so the model can use the data in its next response.
+- **Agent Loop** — The declare → decide → execute → feed back cycle. Each iteration is one turn. The loop terminates when the model responds without tool calls or when you hit a max-turns limit.
+- **Parallel Tool Calls** — When the model requests multiple functions in a single response. Your code must execute all of them, collect all results, and append all tool-result messages before re-prompting.
+- **Content Blocks** — Anthropic's response format. A single assistant message contains an array of typed blocks (`text`, `tool_use`, `tool_result`), allowing prose and tool calls to coexist in one message.
+- **Tool Choice** — A parameter (`tool_choice`) that controls whether the model must call a tool, may call a tool (`"auto"`), or must not call a tool (`"none"`). Useful for forcing function execution or preventing it.
+
+## Sources
+
+- OpenAI. "Function Calling." *OpenAI Platform Documentation*, 2024. [https://platform.openai.com/docs/guides/function-calling](https://platform.openai.com/docs/guides/function-calling) — Defines the `tools` array, `tool_calls` response format, and the `tool` role message protocol.
+- OpenAI. "Function Calling with Chat Models API Reference." *OpenAI API Reference*, 2024. [https://platform.openai.com/docs/api-reference/chat/create](https://platform.openai.com/docs/api-reference/chat/create) — Documents `tool_choice`, `tool_call_id`, and parallel tool call behavior.
+- Anthropic. "Tool Use with Claude." *Anthropic Documentation*, 2024. [https://docs.anthropic.com/en/docs/build-with-claude/tool-use](https://docs.anthropic.com/en/docs/build-with-claude/tool-use) — Defines `input_schema`, `tool_use` content blocks, `tool_result` responses, and the `stop_reason: "tool_use"` signal.
+- [CITATION NEEDED — concept: Clay waterfall tool-call internals] — The claim that Clay waterfalls map to sequential function calls (Clearbit → Apollo → Hunter → custom) is based on observed behavior and community documentation, not an official Clay engineering reference. The mechanism is functionally equivalent to the agent loop in this lesson, but the internal implementation is closed-source and not publicly documented at the protocol level.
+- [CITATION NEEDED — concept: n8n AI agent node tool-calling internals] — The claim that n8n's AI Agent node implements the same declare → decide → execute → feed back loop is inferred from the node's observable behavior (it accepts tool definitions, executes them, and re-prompts). No official n8n engineering documentation confirms the exact protocol.

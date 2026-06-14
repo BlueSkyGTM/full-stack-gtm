@@ -255,4 +255,36 @@ for i, step in enumerate(outbound_steps):
     print(f"  {step:18s} -> attends most to: {sig}")
 ```
 
-This is a toy — the weights are random, not trained. But it demonstrates the structural pattern: each outbound step (target) attends to a distribution over account signals (source). When you fine-tune on deal history, you are training these cross-attention weights to learn which signals should drive which parts of your outreach. A subject line that references a recent funding round is cross-attention learning to map the "Series B raised" encoder position to the
+This is a toy — the weights are random, not trained. But it demonstrates the structural pattern: each outbound step (target) attends to a distribution over account signals (source). When you fine-tune on deal history, you are training these cross-attention weights to learn which signals should drive which parts of your outreach. A subject line that references a recent funding round is cross-attention learning to map the "Series B raised" encoder position to the subject-line generation step. An opening hook that mentions the new CTO maps that signal to the hook position. The feed-forward layers then transform those attended representations into token logits, producing the actual email copy.
+
+The practical implication: if your enrichment pipeline (the "encoder") is shallow or noisy, your generation (the "decoder") has nothing worth attending to. Cross-attention does not create signal — it routes it. This is why data quality upstream of your generation step matters more than prompt engineering downstream. A well-enriched account representation, contextualized across multiple signal sources via bidirectional self-attention in the encoder, gives the decoder rich, structured material to cross-attend to. A sparse or stale representation gives it noise.
+
+## Exercises
+
+**Exercise 1 (Medium) — Modify the Causal Mask**
+
+Starting from the `MiniEncoderDecoder` class, remove the causal mask from the decoder's self-attention sub-layer. Run the forward pass and inspect the output shapes. Then answer: what shape changes, if any? What does *not* change, and why? Next, compute the total parameter count difference between the encoder block and the decoder block — the decoder has an extra `MultiHeadAttention` module for cross-attention. Print both counts using `sum(p.numel() for p in module.parameters())` and explain why the cross-attention module has the same parameter count as a self-attention module despite serving a different function.
+
+**Exercise 2 (Hard) — Greedy Decoding Loop**
+
+The `Build It` code runs a single forward pass with a pre-supplied target sequence. In real inference, you generate tokens one at a time. Implement a `greedy_decode(model, src, max_len, start_token)` function that: (1) encodes `src` once and caches `enc_out`, (2) initializes `tgt` with only the start token, (3) for each step up to `max_len`, runs a forward pass through just the decoder block (reusing the cached `enc_out`), takes the argmax of the logits at the last position, appends it to `tgt`, and repeats. Print the generated token IDs and the cross-attention weights at each step. Observe how the cross-attention pattern shifts as the decoder generates longer sequences — the same source positions may receive different attention at different generation steps.
+
+## Key Terms
+
+- **Encoder Stack**: The set of Transformer blocks that processes the source sequence with bidirectional self-attention, producing a matrix `H_enc` of contextualized representations. Each token's representation incorporates information from every other token via unrestricted attention.
+
+- **Decoder Stack**: The set of Transformer blocks that generates the target sequence autoregressively. Each block contains three sub-layers: masked causal self-attention, cross-attention to the encoder output, and a feed-forward network.
+
+- **Cross-Attention**: The attention sub-layer where queries come from the decoder's hidden state and keys/values come from the encoder's output `H_enc`. This is the only attention variant where Q, K, and V originate from different sequences. The weight matrix has shape `(tgt_len, src_len)`, which is rectangular rather than square.
+
+- **Causal Mask**: The lower-triangular mask applied to the decoder's self-attention scores, setting positions above the diagonal to negative infinity before softmax. This prevents each target position from attending to future positions, enforcing autoregressive generation order.
+
+- **`H_enc` (Encoder Output)**: The tensor of shape `(batch, src_len, d_model)` produced by the encoder stack's final layer. It is computed once and cached, then reused as the key and value source for cross-attention at every decoder layer and every generation step.
+
+- **Autoregressive Decoding**: The inference process where the model generates one token at a time, conditioning each new token on all previously generated tokens. The encoder-decoder architecture caches `H_enc` so the source is not reprocessed at each step — only the decoder's forward pass over the growing target prefix is recomputed.
+
+## Sources
+
+- Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L., & Polosukhin, I. (2017). *Attention Is All You Need*. arXiv:1706.03762. — Original encoder-decoder Transformer architecture, cross-attention formulation, and the three-attention pattern (encoder self-attention, masked decoder self-attention, cross-attention).
+
+- [CITATION NEEDED — concept: Zone 07 ABM signal orchestration mapping to cross-attention]

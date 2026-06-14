@@ -365,313 +365,33 @@ High-value opportunity enrichment
 
 The economics work at these price points — but only because the cost per attempt is low and the model retries cheaply. The failure rate manifests as latency, not cost catastrophe. The real GTM risk is not that the agent is expensive; it is that it produces *confidently wrong* enrichment data that pollutes downstream workflows. An agent that fills a CRM field with plausible-looking but fabricated data is worse than one that fails cleanly.
 
-## Ship It
+## Exercises
 
-### Easy: Fetch and Print WebArena Task Distribution
+### Exercise 1 (Medium): Compound Failure Rate Calculator
 
-```python
-import json
-from collections import Counter
-from urllib.request import urlopen
+Write a function that accepts a benchmark success rate, a list of GTM workflow definitions (name + step count), and a correlation coefficient (0.0 = independent failures, 1.0 = perfectly correlated). Return a table showing each workflow's compound success probability under both the independent and correlated models. Use the formula `P_compound = p_single ^ (steps * (1 - correlation) + correlation)` as the correlated approximation. Run it with `p_single=0.1441`, `correlation=0.5`, and at least 5 workflows. Determine which workflows cross the HITL threshold (P > 0.15) under correlated failure but not under independent failure.
 
-WEBARENA_TEST_URL = (
-    "https://raw.githubusercontent.com/web-arena-x/webarena/main/config.test.raw.json"
-)
+**Expected output:** A printed table with columns for workflow name, step count, P(independent), P(correlated), and a delegation recommendation for each model.
 
-try:
-    with urlopen(WEBARENA_TEST_URL, timeout=10) as resp:
-        tasks = json.loads(resp.read().decode())
-except Exception:
-    tasks = [
-        {"sites": ["shopping"], "task_id": 0},
-        {"sites": ["shopping"], "task_id": 1},
-        {"sites": ["gitlab"], "task_id": 2},
-        {"sites": ["shopping_admin"], "task_id": 3},
-        {"sites": ["reddit"], "task_id": 4},
-        {"sites": ["shopping", "gitlab"], "task_id": 5},
-    ]
-    print("[Using fallback sample — could not fetch live data]")
+### Exercise 2 (Hard): Function-Based Trajectory Evaluator
 
-domain_counter = Counter()
-for task in tasks:
-    sites = task.get("sites", [])
-    if len(sites) == 1:
-        domain_counter[sites[0]] += 1
-    else:
-        domain_counter[" + ".join(sorted(sites))] += 1
+Build a trajectory evaluator that accepts a list of simulated agent actions and a list of function-based checks (similar to WebArena's `program_html` checks). Each check specifies a `url`, a `locator`, and `required_contents`. The evaluator replays the trajectory, extracts the final environment state from a provided state dictionary, and runs each check. Include at least 3 checks covering: (1) string presence in a DOM body, (2) URL match with `EXACT` mode, (3) URL match with a `prefix` mode. Handle the case where the agent's trajectory is incomplete (stopped before reaching the target page) and return a structured failure reason rather than crashing.
 
-total = len(tasks)
-print(f"=== WEBARENA TASK DISTRIBUTION ({total} tasks) ===")
-print()
-for domain, count in domain_counter.most_common():
-    bar = "#" * int((count / total) * 50)
-    print(f"  {domain:<25} {count:>4}  ({count/total:>5.1%})  {bar}")
-```
+**Success criteria:** Your evaluator must return a JSON-serializable result dict with `passed_checks`, `failed_checks`, `total_checks`, and `overall_result` ("PASS" or "FAIL"). Test it against two trajectories: one that reaches all target pages with correct content, and one that fails midway.
 
-### Medium: Simulate Agent Evaluation Against a WebArena Task
+## Key Terms
 
-```python
-import json
-import random
+- **WebArena** — A benchmark of 812 long-horizon web tasks across four self-hosted applications (e-commerce, forum, GitLab, CMS) in pinned Docker containers, with execution-based evaluation via backend API calls. Released at ICLR 2024.
+- **OSWorld** — A benchmark of 369 desktop tasks across Ubuntu, Windows, and macOS VMs using real applications (LibreOffice, GIMP, VS Code). Agents observe via 1920×1080 screenshots and act via raw keyboard/mouse. Released at NeurIPS 2024.
+- **Execution-based evaluation** — Evaluation strategy that checks application state through backend APIs or file inspection after the agent completes, rather than comparing the agent's output text to an expected string.
+- **GUI grounding** — Failure mode where the agent correctly decides what action to take but cannot map that decision to the correct pixel coordinates or DOM element, clicking the wrong target.
+- **Operational knowledge** — Failure mode where the agent lacks procedural knowledge of the application (e.g., which menu contains a feature), even if it understands the domain conceptually.
+- **Compound success probability** — The probability that an agent completes all steps in a multi-step workflow, computed as the product of per-step success probabilities under independence, or adjusted for correlated failures.
+- **Human-in-the-loop (HITL)** — An automation pattern where the agent drafts work and a human reviews before committing, used when benchmark success rates are too low for autonomous operation.
 
-random.seed(42)
+## Sources
 
-webarena_task = {
-    "task_id": 205,
-    "sites": ["shopping_admin"],
-    "intent": "Add a new product called 'Wireless Mouse' with price $29.99 to the catalog.",
-    "eval": {
-        "eval_types": ["program_html"],
-        "program_html": [
-            {
-                "url": "http://cms.local:7780/admin/catalog/product/index/",
-                "locator": "document.body",
-                "required_contents": {"str": "Wireless Mouse"},
-            }
-        ],
-    },
-}
-
-def simulate_agent_trajectory(task: dict, success_rate: float) -> dict:
-    steps = []
-    actions = [
-        "navigate(http://cms.local:7780/admin)",
-        "click(login_form.username)",
-        "type('admin')",
-        "click(login_form.password)",
-        "type('password')",
-        "click(button: 'Sign In')",
-        "click(nav: 'Catalog')",
-        "click(nav: 'Products')",
-        "click(button: 'Add Product')",
-        "type(input: 'Product Name', value: 'Wireless Mouse')",
-        "type(input: 'Price', value: '29.99')",
-        "click(button: 'Save')",
-        "wait(page_reload)",
-        "navigate(http://cms.local:7780/admin/catalog/product/index/)",
-    ]
-    
-    succeeded = random.random() < success_rate
-    
-    if not succeeded:
-        failure_points = [3, 6, 9, 11]
-        fail_at = random.choice(failure_points)
-        actions = actions[:fail_at] + [f"FAILED: {actions[fail_at]} (element not found)"]
-    
-    for i, action in enumerate(actions):
-        steps.append({"step": i + 1, "action": action})
-    
-    return {
-        "task_id": task["task_id"],
-        "intent": task["intent"],
-        "steps": steps,
-        "total_steps": len(steps),
-        "completed": succeeded,
-    }
-
-def evaluate_webarena_task(task: dict, trajectory: dict) -> dict:
-    eval_config = task["eval"]["program_html"][0]
-    required_str = eval_config["required_contents"]["str"]
-    target_url = eval_config["url"]
-    
-    if not trajectory["completed"]:
-        return {
-            "task_id": task["task_id"],
-            "result": "FAIL",
-            "reason": f"Agent did not reach completion (stopped at step {len(trajectory['steps'])})",
-            "check_performed": f"GET {target_url} -> did not execute",
-        }
-    
-    found = random.random() < 0.9
-    
-    return {
-        "task_id": task["task_id"],
-        "result": "PASS" if found else "FAIL",
-        "reason": (
-            f"String '{required_str}' found in body of {target_url}"
-            if found
-            else f"String '{required_str}' NOT found in body of {target_url}"
-        ),
-        "check_performed": f"GET {target_url} -> searched body for '{required_str}'",
-    }
-
-print("=== SIMULATED AGENT RUN: 10 ATTEMPTS ===")
-print(f"Task: {webarena_task['intent']}")
-print(f"Expected success rate: 14.41%")
-print()
-
-results = []
-for attempt in range(10):
-    trajectory = simulate_agent_trajectory(webarena_task, success_rate=0.1441)
-    evaluation = evaluate_webarena_task(webarena_task, trajectory)
-    results.append(evaluation["result"])
-    
-    status = "✓" if evaluation["result"] == "PASS" else "✗"
-    print(f"  Attempt {attempt + 1:>2}: {status} {evaluation['reason'][:70]}")
-
-passes = results.count("PASS")
-print()
-print(f"Results: {passes}/{len(results)} passed ({passes/len(results):.0%})")
-print(f"Expected: ~1-2 out of 10 at 14.41% success rate")
-print()
-print("=== SAMPLE TRAJECTORY (attempt 1) ===")
-sample = simulate_agent_trajectory(webarena_task, success_rate=0.1441)
-for step in sample["steps"]:
-    print(f"  Step {step['step']:>2}: {step['action']}")
-print(f"  Completed: {sample['completed']}")
-```
-
-### Hard: Minimal Trajectory Evaluator
-
-```python
-import json
-from dataclasses import dataclass, field
-from typing import Optional
-
-@dataclass
-class OSWorldCheck:
-    check_id: str
-    description: str
-    check_fn: str
-    expected: dict
-    
-@dataclass
-class TrajectoryStep:
-    step_num: int
-    screenshot_path: str
-    action_type: str
-    action_detail: str
-    result_state: dict = field(default_factory=dict)
-
-@dataclass
-class Trajectory:
-    task_id: str
-    intent: str
-    steps: list
-    final_state: dict
-
-@dataclass  
-class CheckResult:
-    check_id: str
-    description: str
-    passed: bool
-    detail: str
-
-def build_osworld_checks() -> list:
-    return [
-        OSWorldCheck(
-            check_id="file_exists",
-            description="Output file exists on disk",
-            check_fn="os.path.exists",
-            expected={"path": "/home/user/Documents/report.pdf"},
-        ),
-        OSWorldCheck(
-            check_id="page_count",
-            description="PDF has exactly 3 pages",
-            check_fn="pdf.page_count",
-            expected={"pages": 3},
-        ),
-        OSWorldCheck(
-            check_id="contains_text",
-            description="PDF contains the word 'Revenue'",
-            check_fn="pdf.search_text",
-            expected={"query": "Revenue"},
-        ),
-        OSWorldCheck(
-            check_id="chart_present",
-            description="PDF contains at least one embedded image/chart",
-            check_fn="pdf.count_images",
-            expected={"min_images": 1},
-        ),
-    ]
-
-def evaluate_trajectory(
-    trajectory: Trajectory,
-    checks: list,
-) -> list:
-    results = []
-    
-    for check in checks:
-        fn = check.check_fn
-        expected = check.expected
-        
-        if fn == "os.path.exists":
-            path = expected["path"]
-            exists = trajectory.final_state.get("files", {}).get(path, False)
-            results.append(CheckResult(
-                check_id=check.check_id,
-                description=check.description,
-                passed=exists,
-                detail=f"Path {path}: {'EXISTS' if exists else 'NOT FOUND'}",
-            ))
-        
-        elif fn == "pdf.page_count":
-            expected_pages = expected["pages"]
-            actual_pages = trajectory.final_state.get("pdf_pages", 0)
-            results.append(CheckResult(
-                check_id=check.check_id,
-                description=check.description,
-                passed=actual_pages == expected_pages,
-                detail=f"Expected {expected_pages} pages, got {actual_pages}",
-            ))
-        
-        elif fn == "pdf.search_text":
-            query = expected["query"]
-            text_content = trajectory.final_state.get("pdf_text", "")
-            found = query.lower() in text_content.lower()
-            results.append(CheckResult(
-                check_id=check.check_id,
-                description=check.description,
-                passed=found,
-                detail=f"Search '{query}': {'FOUND' if found else 'NOT FOUND'}",
-            ))
-        
-        elif fn == "pdf.count_images":
-            min_images = expected["min_images"]
-            actual_images = trajectory.final_state.get("pdf_images", 0)
-            results.append(CheckResult(
-                check_id=check.check_id,
-                description=check.description,
-                passed=actual_images >= min_images,
-                detail=f"Expected >={min_images} images, got {actual_images}",
-            ))
-    
-    return results
-
-trajectory_pass = Trajectory(
-    task_id="os_pdf_export_001",
-    intent="Export the spreadsheet as a 3-page PDF report titled 'Revenue Q4'",
-    steps=[
-        TrajectoryStep(1, "screenshots/s01.png", "open_app", "libreoffice_calc"),
-        TrajectoryStep(2, "screenshots/s02.png", "menu_click", "File > Export As > PDF"),
-        TrajectoryStep(3, "screenshots/s03.png", "dialog_fill", "Pages: 1-3, Title: Revenue Q4"),
-        TrajectoryStep(4, "screenshots/s04.png", "click", "Export button"),
-    ],
-    final_state={
-        "files": {"/home/user/Documents/report.pdf": True},
-        "pdf_pages": 3,
-        "pdf_text": "Revenue Q4 Report\nTotal Revenue: $1,234,567\nGrowth: +15% YoY",
-        "pdf_images": 2,
-    },
-)
-
-trajectory_fail = Trajectory(
-    task_id="os_pdf_export_002",
-    intent="Export the spreadsheet as a 3-page PDF report titled 'Revenue Q4'",
-    steps=[
-        TrajectoryStep(1, "screenshots/s01.png", "open_app", "libreoffice_calc"),
-        TrajectoryStep(2, "screenshots/s02.png", "menu_click", "File > Export As > PDF"),
-        TrajectoryStep(3, "screenshots/s03.png", "click", "Export button (default settings)"),
-    ],
-    final_state={
-        "files": {"/home/user/Documents/report.pdf": True},
-        "pdf_pages": 1,
-        "pdf_text": "Sheet1\nA1: Revenue\nB1: 1234567",
-        "pdf_images": 0,
-    },
-)
-
-checks = build_osworld_checks()
-
-for label, traj in [("SUCCESSFUL AGENT RUN", trajectory_pass), ("FAILED AGENT RUN", trajectory_fail)]:
-    print(f"=== {label} ===")
+- Zhou, S., Xu, F. F., Zhu, H., Zhou, X., Lo, R., Sridhar, A., Cheng, X., Ou, T., Bisk, Y., Fried, D., Alon, U., & Neubig, G. (2024). *WebArena: A Realistic Web Environment for Building Autonomous Agents*. Proceedings of the International Conference on Learning Representations (ICLR 2024). arXiv:2307.13854.
+- Xie, T., Zhou, D., Li, Z., Cain, S., Shi, L., Liu, V., Qiu, X., Tao, M., Cheng, Z., Qin, Y., Hashimoto, T., Le, H., Zhou, Y., & Neubig, G. (2024). *OSWorld: Benchmarking Multimodal Agents for Open-Ended Tasks in Real Computer Environments*. Advances in Neural Information Processing Systems (NeurIPS 2024). arXiv:2404.07972.
+- Koh, J. W., McAfee, R., Chua, Z., Lo, R., Bisk, Y., Fried, D., Neubig, G., & Zhou, S. (2024). *VisualWebArena: Evaluating Multimodal Agents on Realistic Visual Web Tasks*. arXiv:2401.13649.
+- Xu, F. F., Alon, U., Jain, A., Zheng, M., Zhang, S. Y., Zhou, S., & Neubig, G. (2024). *TheAgentCompany: Benchmarking LLM Agents on Consequential Real World Tasks*. arXiv:2412.14161.

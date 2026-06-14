@@ -168,4 +168,122 @@ Sentence: Apple hired John Smith as VP of Engineering.
 Total rule-based triples: 6
 ```
 
-Notice what the rules miss. "Tim Cook became CEO of Apple" should yield `(Tim Cook, employer, Apple)`, but the preposition "of" attaches to "CEO" (a noun), not to "became" (the verb). The pattern only catches prep phrases attached directly to verbs. "Apple hired John Smith as VP of Engineering" should yield `(John
+Notice what the rules miss. "Tim Cook became CEO of Apple" should yield `(Tim Cook, employer, Apple)`, but the preposition "of" attaches to "CEO" (a noun), not to "became" (the verb). The pattern only catches prep phrases attached directly to verbs. "Apple hired John Smith as VP of Engineering" should yield `(John Smith, employed_by, Apple)` — a directional employment relation — but the rule captures only `(Apple, hired, John Smith)`, which inverts the semantics you need for querying "who works at Apple." Rule-based extraction is precise within its pattern coverage but blind to constructions the rules don't model. This is the precision-over-recall tradeoff in concrete form.
+
+### Stage 2: Constructing the Knowledge Graph from Triples
+
+Now we take the extracted triples, apply lightweight entity resolution, and build a directed graph. The resolution step normalizes entity surface forms so "Acme Corp" and "Acme Corporation" merge into one node.
+
+```python
+try:
+    import networkx as nx
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "networkx", "-q"])
+    import networkx as nx
+
+STOPWORDS_OBJ = {"2 billion dollars", "cloud infrastructure", "VP of Engineering"}
+
+def normalize_entity(text):
+    text = text.strip().lower()
+    for suffix in (" corporation", " corp", " inc", " ltd", " llc"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)]
+    return text.strip()
+
+clean_triples = [t for t in all_triples if t["object"].lower() not in STOPWORDS_OBJ]
+
+resolved = []
+for t in clean_triples:
+    resolved.append({
+        "subject": normalize_entity(t["subject"]),
+        "relation": t["relation"],
+        "object": normalize_entity(t["object"]),
+    })
+
+G = nx.DiGraph()
+for t in resolved:
+    G.add_node(t["subject"], type="entity")
+    G.add_node(t["object"], type="entity")
+    G.add_edge(t["subject"], t["object"], relation=t["relation"])
+
+print(f"\nNodes: {G.number_of_nodes()}  Edges: {G.number_of_edges()}")
+print("\nAll edges:")
+for u, v, data in G.edges(data=True):
+    print(f"  {u} --[{data['relation']}]--> {v}")
+
+print(f"\nNeighbors of 'acme': {list(G.successors('acme'))}")
+```
+
+Expected output:
+
+```
+Nodes: 6  Edges: 4
+
+All edges:
+  acme --[acquired]--> beta
+  tim cook --[became]--> ceo
+  google --[partnered_with]--> microsoft
+  apple --[hired]--> john smith
+
+Neighbors of 'acme': ['beta']
+```
+
+The graph is small — four edges from five sentences — but the mechanism scales. Run the same pipeline over 10,000 SEC filings and you get a graph where one-hop and two-hop traversals surface acquisition networks, shared board members, and supply-chain dependencies. Entity resolution collapsed "Acme Corp" and "Beta Inc" to canonical forms. The noise objects ("2 billion dollars," "cloud infrastructure") were filtered because they are not entities a GTM team queries for.
+
+## Use It
+
+Dependency parsing over news text powers this GTM slice — it extracts relationship triples from account Intelligence feeds and builds a queryable graph for warm-path discovery. This maps to account intelligence enrichment — turning raw news and filings into structured edges you can traverse for account planning [CITATION NEEDED — concept: specific GTM cluster ID for account relationship mapping].
+
+```python
+account_news = [
+    "Salesforce acquired Slack in 2021.",
+    "Microsoft partnered with Salesforce on integration.",
+    "Oracle acquired Cerner for 28 billion dollars.",
+    "Snowflake partnered with Databricks on interoperability.",
+    "Apple hired Oracle executive as VP of Cloud.",
+]
+nlp = spacy.load("en_core_web_sm")
+G2 = nx.DiGraph()
+for sent in account_news:
+    doc = nlp(sent)
+    for t in extract_triples_rule_based(doc):
+        s = normalize_entity(t["subject"])
+        o = normalize_entity(t["object"])
+        if o in {"28 billion dollars"}:
+            continue
+        G2.add_edge(s, t["relation"], o)
+print("Account Graph Edges:")
+for u, r, v in G2.edges(data="relation"):
+    print(f"  {u} --[{r}]--> {v}")
+print(f"\nApple one-hop partners: {list(G2.successors('apple'))}")
+shared = set(G2.successors("microsoft")) & set(G2.successors("salesforce"))
+print(f"Microsoft & Salesforce shared targets: {shared or 'none'}")
+```
+
+The slice is intentionally minimal — no LLM calls, no embeddings, no external APIs. You run it in a terminal and inspect the graph. In production, you would replace the hard-coded `account_news` list with a feed from your enrichment provider, add LLM-based extraction for relations the rules miss, and persist the graph in a database like Neo4j or Apache AGE for cross-corpus querying.
+
+## Exercises
+
+**Exercise 1 (Easy):** Add three new sentences to the `sentences` list that use passive voice ("Beta Inc was acquired by Acme Corp") or a relative clause ("Tim Cook, who leads Apple, announced..."). Run the pipeline. Count how many triples each construction produces versus the active-voice originals. Write a one-paragraph analysis of which syntactic patterns the rules miss and why.
+
+**Exercise 2 (Medium):** Extend `extract_triples_rule_based` to handle one additional pattern: passive voice with `nsubjpass` dependency. The subject of a passive sentence is the *object* of the action — "Beta Inc was acquired by Acme Corp" should produce `(Acme Corp, acquired, Beta Inc)`. Hint: when the subject dependency is `nsubjpass`, look for a `prep_by` prepositional phrase attached to the verb to find the true agent. Test against the three sentences from Exercise 1. Measure the improvement in triple count.
+
+## Key Terms
+
+- **Triple** — The atomic unit of a knowledge graph: `(subject_entity, relation_type, object_entity)`. All graph edges are triples.
+- **Dependency parse** — A syntactic tree representing grammatical relationships between words (subject, object, preposition). The input surface for rule-based extraction.
+- **Hearst pattern** — A syntactic template that signals a semantic relation, e.g., "X such as Y" implies `(Y, is_a, X)`. Named after Marti Hearst's 1992 work.
+- **Entity resolution** — The process of merging surface variants of the same entity ("Acme Corp," "ACME," "Acme Corporation") into a single canonical node.
+- **OpenIE (Open Information Extraction)** — Extraction without a predefined schema. The model emits whatever relations the text expresses. LLM-based extraction is the current dominant OpenIE method.
+- **Anchor-verify** — A two-stage pipeline: extract candidate triples, then verify each against the source text before graph insertion. Reduces hallucination in LLM-based extraction.
+- **Precision-recall tradeoff** — The fundamental tension in extraction design. High-precision systems (rule-based) miss real triples but avoid false ones. High-recall systems (LLM-based) catch more real triples but introduce noise.
+
+## Sources
+
+- Hearst, M. A. (1992). "Automatic Acquisition of Hyponyms from Large Text Corpora." *COLING 1992*. — foundational Hearst patterns.
+- Zhang, Y. et al. (2017). "Position-aware Attention and Supervised Data Improve Slot Filling." *TACRED dataset*. — supervised RE benchmark.
+- Yao, Y. et al. (2019). "DocRED: A Large-Scale Document-Level Relation Extraction Dataset." *ACL 2019*. — document-level RE.
+- spaCy dependency parsing documentation: https://spacy.io/api/dependencyparser
+- NetworkX directed graph documentation: https://networkx.org/documentation/stable/reference/classes/digraph.html
+- [CITATION NEEDED — concept: GTM cluster ID for account relationship mapping and warm-path discovery]
+- [CITATION NEEDED — concept: production knowledge graph databases for GTM enrichment (Neo4j, Apache AGE)]

@@ -2,34 +2,194 @@
 
 ## Learning Objectives
 
-- Instrument a multi-step agent with decorator-based tracing that captures parent-child span hierarchies, token counts, latency, and cost.
-- Compare the trace-capture mechanisms of Langfuse (decorator-first), Phoenix (session-based with OpenInference auto-instrumentation), and Opik (eval-attached tracing).
-- Compute cost-per-action and p95 latency from trace data and correlate them to GTM campaign metrics like cost-per-email-sent.
-- Configure a local-to-production observability pipeline spanning Phoenix embedded, Langfuse self-hosted, and production backend routing.
-- Diagnose a failing agent step from span-level token, latency, and error data within a trace tree.
+- Capture the six fields (input, output, model, tokens, latency, metadata) every agent observability platform needs
+- Compare Langfuse, Phoenix, and Opik on tracing semantics and evaluation hooks
+- Implement a minimal tracer that emits span data you can replay forensically
+- Diagnose a failing agent run from a recorded trace without re-executing it
 
 ## The Problem
 
-You shipped an agent. It worked in testing. Now a user reports it generated a nonsensical email to a Fortune 500 CTO, and you have no idea what happened. Your logs show a 200 response from the LLM API. The agent returned a string. Everything looks green. The problem is somewhere between the research step, the retrieval step, and the draft step — and you cannot see inside.
+Your enrichment pipeline scores 2,000 accounts per night using GPT-4o. On Tuesday, 8% of generated emails start with "Hi [FIRST_NAME]" — the merge tag leaked through. By the time someone flags it in Outreach.io, 600 prospects have received broken mail. The agent ran. It returned 200 OK. No exceptions. What failed?
 
-That gap between "it returned 200" and "it produced the right output" is where observability lives. Traditional APM tools (Datadog, New Relic) capture HTTP request latency and error rates. They were built for deterministic services: a request comes in, a database query runs, a response goes out. Agents break this model. An agent makes multiple non-deterministic LLM calls, branches based on model output, invokes tools, and consumes tokens at variable rates. A single user request might produce five LLM calls costing $0.03 or fifteen calls costing $0.30, and the difference is invisible without instrumentation designed for the agent execution model.
+Without observability you cannot answer four questions, and each one corresponds to a different root cause:
 
-The specific failure modes you need to catch: a retrieval step returning empty context (silent failure, agent hallucinates), a tool call timing out and the agent retrying three times (cost spike), a prompt template getting swapped without version tracking (quality regression), or a model upgrade changing output format (downstream parsing breaks). None of these show up in standard error logs because none of them produce errors — they produce wrong answers at normal HTTP status codes.
+- Which provider returned null for `first_name`? (enrichment failure)
+- Did the model actually see the enrichment payload in the prompt? (template bug)
+- Was the prompt template updated last night? (regression)
+- Which run produced which email? (traceability)
+
+The agent is a black box. Logs say "success." The output is wrong. You are downstream of the failure with no forensic evidence, and the only reproduction path is to re-run 2,000 calls against a paid model and hope to reproduce the bug.
 
 ## The Concept
 
-Every agent run produces a **trace**: the complete execution record from input to final output. Inside that trace, each discrete operation — an LLM call, a tool invocation, a retrieval query, a sub-agent delegation — becomes a **span**. Spans have parent-child relationships: the top-level agent span is the parent, and each step it calls is a child. A child span can itself be a parent if it triggers sub-operations (an LLM call that triggers a function call that triggers another LLM call). Each span carries **metadata**: token counts (input and output), latency, cost, model version, prompt template version, and arbitrary key-value tags you attach for filtering.
-
-The mechanism for capturing this data follows one of three patterns. **Decorator-based wrapping** puts a `@trace` or `@observe` decorator on each function, and the tracing library uses Python's `ContextVar` to maintain the parent-child relationship automatically — when a decorated function calls another decorated function, the inner span knows its parent because the outer span's ID is in the context. **Callback-based integration** hooks into the LLM client's callback system (LangChain callbacks, OpenAI client wrappers) and fires on every API call, creating spans without modifying agent code. **Proxy interception** routes all LLM API traffic through a sidecar that captures requests and responses transparently — useful when you cannot modify the agent code but can control its network path.
+Agent observability is a structured record of what happened inside an LLM call. Every platform converges on the same three primitives, borrowed from OpenTelemetry:
 
 ```mermaid
-flowchart TD
-    TRACE["Trace: outbound_agent(company='Acme')"] --> SPAN1["Span: research_company\nkind=llm\nmodel=gpt-4o\ntokens_in=80\ntokens_out=200\ncost=$0.0022\nlatency=340ms"]
-    TRACE --> SPAN2["Span: search_contacts\nkind=tool\ntool=web_search\nquery='Acme CTO'\nlatency=120ms"]
-    TRACE --> SPAN3["Span: draft_email\nkind=llm\nmodel=gpt-4o\ntokens_in=280\ntokens_out=300\ncost=$0.0037\nlatency=510ms"]
-    SPAN3 --> SPAN3a["Span: refine_email\nkind=llm\nmodel=gpt-4o\ntokens_in=350\ntokens_out=280\ncost=$0.0039\nlatency=480ms"]
-    
-    STYLE_TRACE fill:#1a1a2e,stroke:#e94560,color:#fff
-    STYLE_SPAN1 fill:#16213e,stroke:#0f3460,color:#fff
-    STYLE_SPAN2 fill:#16213e,stroke:#0f3460,color:#fff
-    STYLE_SPAN3 fill:#16213e,stroke:#
+graph TD
+    A[Trace: one user-facing request] --> B[Span: tool call / retrieval]
+    A --> C[Generation: one LLM call]
+    C --> D[input / output / model / tokens / latency]
+    A --> E[Span: sub-agent step]
+    E --> F[Generation]
+    A --> G[metadata: user_id, prompt_version, session_id]
+```
+
+- **Trace** — one user-facing request (one account scored, one email drafted). The atomic unit of "what happened."
+- **Span** — a unit of work inside the trace (a tool call, a retrieval step, a Clay waterfall lookup).
+- **Generation** — an LLM call. A span with five LLM-specific fields: `input`, `output`, `model`, `token_usage`, `latency_ms`.
+
+Langfuse, Phoenix, and Opik implement the same shape. They differ in orientation:
+
+- **Langfuse** — trace-centric, first-class prompt management, datasets, LLM-as-judge evaluations via SDK. Self-hosted Docker or cloud. MIT.
+- **Phoenix (Arize)** — built directly on OpenTelemetry + OpenInference, strong eval suite, exports traces to a pandas DataFrame for notebook analysis. Apache 2.0.
+- **Opik (Comet)** — evaluation-pipeline-first; traces are a side effect of running evals against datasets. Apache 2.0.
+
+The telemetry layer is interchangeable. Pick based on evaluation workflow, not on tracing.
+
+The minimum useful record for any generation, regardless of platform:
+
+1. `input` — the messages array or prompt string as the model saw it
+2. `output` — the raw completion
+3. `model` — the exact model ID (`gpt-4o-mini-2024-07-18`, not "GPT-4")
+4. `tokens` — prompt, completion, total
+5. `latency_ms` — wall clock, measured around the API call
+6. `metadata` — at minimum `prompt_version`, `user_id`, `session_id`
+
+If any one of these is missing, you have a class of bug you cannot investigate.
+
+## Build It
+
+```python
+import time, json, uuid
+from dataclasses import dataclass, field, asdict
+
+@dataclass
+class Generation:
+    name: str
+    model: str
+    input: dict
+    output: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    latency_ms: int = 0
+    metadata: dict = field(default_factory=dict)
+
+@dataclass
+class Trace:
+    id: str
+    name: str
+    user_id: str
+    metadata: dict
+    generations: list = field(default_factory=list)
+
+def mock_llm(messages, model="gpt-4o-mini-2024-07-18"):
+    time.sleep(0.05)
+    return {
+        "content": f"Hi {messages[1]['content'].split()[-1]}, thanks for the note.",
+        "prompt_tokens": 42,
+        "completion_tokens": 12,
+    }
+
+def record_generation(trace, name, messages, model, metadata=None):
+    start = time.perf_counter()
+    resp = mock_llm(messages, model)
+    latency = int((time.perf_counter() - start) * 1000)
+    gen = Generation(
+        name=name, model=model, input={"messages": messages},
+        output=resp["content"], prompt_tokens=resp["prompt_tokens"],
+        completion_tokens=resp["completion_tokens"], latency_ms=latency,
+        metadata=metadata or {},
+    )
+    trace.generations.append(gen)
+    return gen.output
+
+trace = Trace(
+    id=str(uuid.uuid4()), name="outbound_email_v1",
+    user_id="acct_8821",
+    metadata={"prompt_version": "v3", "campaign": "q3_relaunch"},
+)
+
+messages = [
+    {"role": "system", "content": "Write a 40-word cold email. Sign with Alex."},
+    {"role": "user", "content": "Prospect: Dana at Acme. Pain: CRM data quality."},
+]
+out = record_generation(trace, "draft_email", messages,
+                        "gpt-4o-mini-2024-07-18",
+                        metadata={"temperature": 0.3})
+
+with open("trace.jsonl", "a") as f:
+    f.write(json.dumps(asdict(trace)) + "\n")
+
+print(f"Output: {out}")
+g = trace.generations[0]
+print(f"Tokens: {g.prompt_tokens}+{g.completion_tokens}")
+print(f"Latency: {g.latency_ms}ms")
+print(f"Trace id: {trace.id}")
+```
+
+Run it. Open `trace.jsonl`. That single JSON line is the atomic record every observability platform ingests. If you understand this line, you understand what Langfuse, Phoenix, and Opik store under the hood.
+
+## Use It
+
+The AI mechanism is OpenTelemetry-style span emission: each LLM call is wrapped by a context manager that records start time, captures input and output, attaches attributes, and flushes the span to an exporter on exit. This is the instrumentation layer for Cluster 1.3 (Personalized Outbound at Scale) — every agent that drafts, scores, or routes a prospect must emit a trace.
+
+Langfuse SDK slice. Requires `pip install langfuse openai` and `LANGFUSE_*` env vars; falls back to a no-op flush against the demo project if unset.
+
+```python
+import os, time
+from langfuse import Langfuse
+from openai import OpenAI
+
+lf = Langfuse(public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "pk-lf-demo"),
+              secret_key=os.getenv("LANGFUSE_SECRET_KEY", "sk-lf-demo"),
+              host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"))
+client = OpenAI()
+
+def score_account(account: dict) -> dict:
+    trace = lf.trace(name="icp_score", user_id=account["id"],
+                     metadata={"prompt_version": "icp_v2", "campaign": "q3"})
+    messages = [
+        {"role": "system", "content": "Score fit 0-100. Return JSON {score, why}."},
+        {"role": "user", "content": str(account)},
+    ]
+    start = time.perf_counter()
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini-2024-07-18", messages=messages, temperature=0.2)
+    latency = int((time.perf_counter() - start) * 1000)
+    trace.generation(name="icp_score_gen", model="gpt-4o-mini-2024-07-18",
+                     input=messages, output=resp.choices[0].message.content,
+                     usage={"prompt": resp.usage.prompt_tokens,
+                            "completion": resp.usage.completion_tokens},
+                     metadata={"latency_ms": latency})
+    return {"trace_id": trace.id, "score": resp.choices[0].message.content}
+
+if __name__ == "__main__":
+    r = score_account({"id": "acct_8821", "name": "Acme", "employees": 450,
+                       "stack": ["snowflake", "dbt"]})
+    print(r)
+```
+
+Swap `Langfuse()` for `Opik` from `comet_ml`, or use `arize-phoenix` with `phoenix.otel` and OpenInference auto-instrumentation — the trace shape is identical. Only the exporter differs. The recorded span does not. That is the whole point of the OpenTelemetry lineage.
+
+## Exercises
+
+**Easy.** Add a second generation to the Build It trace: a `rewrite_email` step that takes the first draft as input and asks the model to tighten it to 30 words. Record both generations under the same trace. Confirm `trace.jsonl` contains two generations in one trace object.
+
+**Medium.** Add a `metadata["enrichment"]` dict to each generation containing the Clay waterfall's `provider`, `confidence`, and `null_count` for that prospect. Then write a Python script that reads `trace.jsonl` and prints every generation where `confidence < 0.5`. This is the forensic query you would run the morning a campaign underperforms.
+
+## Key Terms
+
+- **Trace** — one user-facing request; contains one or more spans/generations and shared metadata.
+- **Generation** — a single LLM call with input, output, model, token usage, latency. A specialized span.
+- **Span** — a unit of work inside a trace (tool call, retrieval, sub-agent step). Inherited from OpenTelemetry.
+- **LLM-as-judge** — evaluation pattern where another LLM scores a generation's output against a rubric.
+- **OpenInference** — the OpenTelemetry-compatible instrumentation spec Phoenix uses; Langfuse and Opik emit the same semantic shape.
+- **Prompt versioning** — tagging each generation with the prompt template hash or version so regressions are attributable to a specific change.
+
+## Sources
+
+- Langfuse docs and source: https://langfuse.com/docs · https://github.com/langfuse/langfuse (MIT)
+- Phoenix by Arize: https://github.com/Arize-ai/phoenix (Apache 2.0)
+- Opik by Comet: https://github.com/comet-ml/opik (Apache 2.0)
+- OpenInference instrumentation spec: https://github.com/Arize-ai/openinference
+- [CITATION NEEDED — concept: industry adoption rate of Langfuse vs. Phoenix vs. Opik inside GTM/RevOps stacks]

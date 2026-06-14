@@ -227,108 +227,51 @@ This demonstrates the core engineering tension. Uniform sampling uses 15 tokens 
 
 ## Use It
 
-Temporal grounding maps directly to **Zone 2 — Signal Intelligence / Conversation Analysis** in GTM engineering. A 45-minute Zoom recording is a video. The question "when did the champion mention budget approval?" is a temporal grounding query. The mechanism is identical to what we built above: encode the audio-visual stream into temporal tokens, project the text query into the same embedding space, predict the start and end timestamp.
-
-This is retrieval-augmented generation applied to video instead of text. Instead of chunking a document into passages and retrieving by embedding similarity, you chunk a recording into temporal windows and ground language queries against them. The temporal span prediction head replaces the dense passage retriever — both return a bounded slice of content that an LLM can then summarize, quote, or reason over.
-
-Gong and Chorus implement proprietary versions of this pattern for sales call analysis. The user-facing feature is "show me the moment the customer asked about security" — the underlying mechanism is temporal grounding over the call's audio-visual stream. [CITATION NEEDED — concept: Gong/Chorus temporal search architecture, any public technical description] The same architecture applies to product demo analysis: a GTM team records 50 demo calls per week and needs to find the exact moment each prospect reacted to pricing, asked about integrations, or expressed a specific objection. Without temporal grounding, a team would watch all 50 calls in full or rely on ASR transcripts that lose the visual context (screen share, facial expression, slide changes) critical to interpreting the reaction.
-
-The practical pipeline is: ingest the recording (video + audio), extract frame-level embeddings at 1–2 FPS using a vision encoder, extract audio embeddings from the Mel spectrogram or ASR transcript, fuse them into a unified temporal token sequence, and serve a grounding API that accepts text queries and returns timestamp spans. The tIoU metric becomes your QA threshold — if grounding accuracy at tIoU@0.5 drops below 80%, the system starts returning wrong moments, and users lose trust in the "search within call" feature.
-
-## Ship It
-
-Deploying a temporal grounding pipeline in production requires the same observability discipline as any retrieval system — this is where **Zone 12 (Observability, logging, tracing)** connects. The GTM mapping is direct: just as "reply rate drift is your model degradation signal" in a sales sequence, "grounding tIoU drift is your model degradation signal" in a video search system. If average tIoU on production queries drops from 0.62 to 0.48 over two weeks, something in the pipeline has degraded — maybe the frame sampler is hitting a different video codec that produces different frame timing, or the vision encoder checkpoint was silently updated.
+Temporal span prediction over frame-level embeddings grounds natural-language queries against sales call recordings — the same mechanism that powers "search within call" features in conversation intelligence platforms. This maps to **Zone 2 — Signal Intelligence / Conversation Analysis**: a GTM team recording 50 demos per week needs to locate the exact moment a prospect reacted to pricing, asked about integrations, or raised a security objection, without rewatching every call.
 
 ```python
 import numpy as np
-from datetime import datetime, timedelta
 
-np.random.seed(100)
+np.random.seed(7)
+FRAMES, DIM, FPS = 180, 64, 1.0
+call_tokens = np.random.randn(FRAMES, DIM) * 0.3
 
-DAYS = 14
-QUERIES_PER_DAY = 50
+pricing_event = np.random.randn(DIM) * 0.3
+for f in range(95, 112):
+    call_tokens[f] = pricing_event + np.random.randn(DIM) * 0.05
 
-gt_spans = np.array([[10, 20], [30, 45], [5, 12], [50, 70], [15, 25]])
-
-tiou_history = []
-daily_results = []
-
-for day in range(DAYS):
-    degradation = 0.0 if day < 5 else (day - 4) * 0.025
-    day_tious = []
-    for q in range(QUERIES_PER_DAY):
-        gt = gt_spans[q % len(gt_spans)]
-        noise_scale = 2.0 + degradation * 12.0
-        pred_start = max(0, gt[0] + np.random.randn() * noise_scale)
-        pred_end = gt[1] + np.random.randn() * noise_scale
-        if pred_end < pred_start:
-            pred_start, pred_end = pred_end, pred_start
-        inter = min(pred_end, gt[1]) - max(pred_start, gt[0])
-        union = max(pred_end, gt[1]) - min(pred_start, gt[0])
-        tiou = max(inter, 0) / max(union, 1e-9)
-        day_tious.append(tiou)
-    day_mean = np.mean(day_tious)
-    day_recall = np.mean([1 if t >= 0.5 else 0 for t in day_tious])
-    tiou_history.append(day_mean)
-    daily_results.append((day, day_mean, day_recall))
-
-date = datetime(2025, 1, 6)
-print("GROUNDING PIPELINE HEALTH — Last 14 days")
-print("=" * 62)
-print(f"{'Date':<12} {'Avg tIoU':>8} {'R@0.5':>8} "
-      f"{'Delta':>8} {'Status':>12}")
-print("-" * 62)
-
-baseline = tiou_history[0]
-for day, mean_tiou, recall in daily_results:
-    d = date + timedelta(days=day)
-    delta = mean_tiou - baseline
-    if abs(delta) < 0.03:
-        status = "OK"
-    elif delta < -0.10:
-        status = "DEGRADED"
-    elif delta < -0.05:
-        status = "WARNING"
-    else:
-        status = "OK"
-    print(f"{d.strftime('%Y-%m-%d'):<12} {mean_tiou:>8.3f} "
-          f"{recall:>8.2f} {delta:>+8.3f} {status:>12}")
-
-print("-" * 62)
-recent_mean = np.mean(tiou_history[-3:])
-early_mean = np.mean(tiou_history[:3])
-drift = recent_mean - early_mean
-print(f"\nWeek 1 avg tIoU: {early_mean:.3f}")
-print(f"Week 2 avg tIoU: {recent_mean:.3f}")
-print(f"Drift:          {drift:+.3f}")
-if drift < -0.05:
-    print("ALERT: Grounding accuracy degraded beyond threshold.")
-    print("Check: frame sampler timing, encoder checkpoint hash, "
-          "input video codec distribution")
-elif drift > 0.05:
-    print("NOTE: Grounding accuracy improved — investigate "
-          "whether input distribution changed")
-else:
-    print("STATUS: Stable within drift threshold (±0.05)")
+queries = {
+    "prospect reacted to pricing": (pricing_event, 95, 111),
+}
+for label, (proto, gt_s, gt_e) in queries.items():
+    query = proto + np.random.randn(DIM) * 0.05
+    sims = call_tokens @ query / (
+        np.linalg.norm(call_tokens, axis=1) * np.linalg.norm(query) + 1e-9)
+    probs = np.exp(sims / 0.1 - (sims / 0.1).max())
+    probs /= probs.sum()
+    joint = np.outer(probs, probs) * np.triu(np.ones_like(probs[None], dtype=bool))
+    ps, pe = np.unravel_index(joint.argmax(), joint.shape)
+    pred_s, pred_e = ps / FPS, pe / FPS
+    inter = min(pred_e, gt_e / FPS) - max(pred_s, gt_s / FPS)
+    union = max(pred_e, gt_e / FPS) - min(pred_s, gt_s / FPS)
+    tiou = max(inter, 0) / max(union, 1e-9)
+    print(f"Query:   '{label}'")
+    print(f"Grounded: {pred_s:.0f}s - {pred_e:.0f}s  "
+          f"tIoU={tiou:.3f}  conf={joint[ps, pe]:.4f}  "
+          f"R@0.5={'PASS' if tiou >= 0.5 else 'FAIL'}")
 ```
 
-The alerting logic is straightforward: compare a rolling 3-day mean against the baseline established in the first week of deployment. A drift of more than 0.05 tIoU points triggers investigation. The diagnostic checklist is specific to video pipelines — frame timing errors (off by one frame due to codec differences), encoder checkpoint mismatches (someone swapped ViT-B for ViT-L without updating the projection layer), and input distribution shifts (more screen-share heavy calls than training data). Each of these manifests as tIoU drift before users complain about wrong results.
-
-The production architecture for a GTM team handling call recordings at scale: a queue-based ingestion pipeline extracts temporal tokens asynchronously (one GPU job per recording), stores the token sequence in a vector database keyed by recording ID, and serves grounding queries via a lightweight API that runs the span prediction head on the stored tokens. Query latency is dominated by the span head forward pass, not the vision encoder — the expensive part (frame extraction and embedding) happens at ingestion time, not query time. This is the same pattern as document RAG: pre-compute embeddings at write time, retrieve at read time.
+The production pipeline wraps this pattern: at ingestion time, extract frame embeddings at 1–2 FPS and store them keyed by recording ID; at query time, project the text query into the embedding space, run the span head, and return the timestamp pair. The expensive work (vision encoder forward passes) happens once per recording. Query latency is dominated by a single matrix multiply and an argmax over a T×T grid — milliseconds, not seconds. This is the same architecture-as-RAG distinction: pre-compute at write time, retrieve at read time, but the "retrieval" is span prediction rather than top-k cosine.
 
 ## Exercises
 
-**Exercise 1 — Span Prediction on Pre-Extracted Embeddings (Easy)**
+**Exercise 1 — Cosine-Similarity Span Prediction with Top-3 Ranking (Easy)**
 
-Given a 10-second clip at 2 FPS (20 frames) with pre-computed embeddings, implement a span prediction head that takes a text query embedding and returns the start/end frame indices. Use cosine similarity instead of dot product. Print the top-3 candidate spans ranked by joint probability, not just the argmax. Verify that the ground-truth span (frames 8–12) appears in the top-3.
+Generate a 10-second clip at 2 FPS (20 frames) with synthetic embeddings (dim 64). Inject a signal at frames 8–12 using a prototype vector with linear falloff. Implement a span prediction head using cosine similarity (normalize before dot product) instead of raw dot product. Print the top-3 candidate spans ranked by joint start×end probability. Verify the ground-truth span (8–12) appears in the top-3. Then lower the temperature from 0.15 to 0.05 and observe how the distribution sharpens — does the top-1 span get more confident? Does the top-3 ranking change?
 
-**Exercise 2 — Factorized Spatial-Then-Temporal Attention (Medium)**
+**Exercise 2 — Sliding-Window Grounding with NMS (Hard)**
 
-Implement factorized attention on a synthetic 16-frame, 4×4 spatial grid (256 tokens). First apply spatial self-attention within each frame (each of the 16 patches attends to the other 15 in the same frame). Then apply temporal self-attention across frames (each patch at position (h,w) attends to the same position across all 16 frames). Print the attention weight matrices for both passes and verify that temporal attention heads produce non-zero weights across frames while spatial heads produce non-zero weights within frames only. Use a single-head attention with embedding dim 32.
-
-**Exercise 3 — Sliding-Window Temporal Grounding (Hard)**
-
-Build a sliding-window grounding system over a simulated 5-minute video (600 frames at 2 FPS). The video contains three signal events at frames 80–95, 240–260, and 420–450. Use a window size of 60 frames and a stride of 30 frames. For each window, run the span prediction head and collect candidate spans with confidence > 0.3. Implement non-maximum suppression (NMS) to merge overlapping predictions using a tIoU threshold of 0.3. Print the final merged spans and compare against ground truth. Handle edge cases: windows that partially overlap a signal event, and adjacent windows that both detect the same event.
+Build a sliding-window temporal grounding system over a simulated 5-minute video (300 frames at 1 FPS). Place three signal events at frames 60–72, 150–165, and 230–250, each with its own distinct prototype embedding. Use a window size of 40 frames and a stride of 20 frames. For each window position, run the span prediction head against a single query that matches one of the three prototypes. Collect all candidate spans with joint confidence > 0.2 across all windows. Implement non-maximum suppression: sort candidates by confidence descending, greedily keep the highest-confidence span, and suppress any remaining candidate whose tIoU with a kept span exceeds 0.3. Print the raw candidate count, the post-NMS count, and the final merged spans with their tIoU against the ground-truth event for that query. Handle two edge cases: a window that partially overlaps a signal event (producing a truncated span), and two adjacent windows that both detect the same event (producing overlapping candidates that NMS should merge).
 
 ## Key Terms
 
@@ -342,4 +285,21 @@ Build a sliding-window grounding system over a simulated 5-minute video (600 fra
 
 **Temporal grounding** — The task of predicting a start and end timestamp in a video that corresponds to a natural language query. Structured as span prediction over temporal tokens, analogous to extractive QA over text.
 
-**Temporal IoU (tIoU
+**Temporal IoU (tIoU)** — The 1D analogue of Intersection-over-Union from object detection, computed over time intervals: tIoU = |pred ∩ gold| / |pred ∪ gold|. A prediction is correct at threshold τ if tIoU ≥ τ. Standard thresholds are 0.3, 0.5, and 0.7.
+
+**TMRoPE** — Temporal-Modal Rotary Position Embedding, introduced in Qwen2.5-VL, which decomposes each token's position into temporal, height, and width components and applies rotary encoding independently to each axis.
+
+**Dynamic-FPS sampling** — A frame sampling strategy that allocates more sampled frames to segments with high motion or scene-change density (detected via optical flow or frame differencing), concentrating the token budget where information density is highest rather than sampling at a fixed rate.
+
+## Sources
+
+- Bertasius, G., Wang, H., & Torresani, L. (2021). "Is Space-Time Attention All You Need for Video Understanding?" (TimeSformer). *ICML 2021*. https://arxiv.org/abs/2102.05095
+- Arnab, A., Dehghani, M., Heigold, G., Sun, C., Lučić, M., Schmid, C., & Cordts, M. (2021). "ViViT: A Video Vision Transformer." *ICCV 2021*. https://arxiv.org/abs/2103.15691
+- Zhang, H. et al. (2023). "Video-LLaMA: An Instruction-tuned Audio-Visual Language Model for Video Understanding." *EMNLP 2023*. https://arxiv.org/abs/2306.02858
+- Lin, B. et al. (2023). "Video-LLaVA: Learning United Visual Representation by Alignment Before Projection." *EMNLP 2023*. https://arxiv.org/abs/2311.10122
+- Bai, J. et al. (2025). "Qwen2.5-VL Technical Report." https://arxiv.org/abs/2502.13923
+- Soldan, M., Lazzaro, M. T., Quarta, F., Moltisanti, M., Sànchez, J., & Ricci, E. (2022). "MAD: A Scalable Dataset for Language Grounding in Videos from Movie Audio Descriptions." *CVPR 2022*. https://arxiv.org/abs/2112.00431
+- Krishna, R., Hata, K., Ren, F., Fei-Fei, L., & Niebles, J. C. (2017). "Dense-Captioning Events in Videos." *ICCV 2017* (ActivityNet Captions). https://arxiv.org/abs/1705.00754
+- Gao, J., Sun, C., Yang, Z., & Nevatia, R. (2017). "TALL: Temporal Activity Localization via Language Query." *ICCV 2017* (Charades-STA). https://arxiv.org/abs/1705.02101
+- [CITATION NEEDED — concept: Gong/Chorus temporal search architecture, any public technical description]
+- [CITATION NEEDED — concept: MAD and ActivityNet Grounding current SOTA results, 2024–2025]

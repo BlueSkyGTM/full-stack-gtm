@@ -130,7 +130,7 @@ for i, m in enumerate(masks):
     img_inputs = clip_processor(images=crop, return_tensors="pt").to(device)
     with torch.no_grad():
         img_features = clip_model.get_image_features(**img_inputs)
-        img_features = img_features / img_features.norm(dim=-1, keep_dim=True)
+        img_features = img_features / img_features.norm(dim=-1, keepdim=True)
 
     sims = (img_features @ text_features.T).squeeze()
     probs = sims.softmax(dim=0)
@@ -140,4 +140,105 @@ for i, m in enumerate(masks):
 
 t_clip = time.time() - t0
 print(f"\nCLIP scoring: {t_clip:.2f}s for {len(masks)} regions")
-print(f"Total pipeline: {t_masks + t_clip:.
+print(f"Total pipeline: {t_masks + t_clip:.2f}s for {len(masks)} masks")
+```
+
+Run this in a terminal. On CPU expect the SAM backbone to take 15-40 seconds for the bus image and CLIP scoring to take another 2-5 seconds. On GPU the full pipeline finishes in under 3 seconds. You should see output similar to:
+
+```
+Image size: (864, 1296), array shape: (1296, 864, 3)
+Generated 37 masks in 23.41s
+
+Region   BBox (x,y,w,h)                 Label                Confidence
+----------------------------------------------------------------------
+0        (0,0,864,1296)                 the sky              0.412
+7        (12,340,210,180)               a building           0.387
+14       (104,720,430,280)              a bus                0.891
+22       (430,860,60,140)               a person             0.734
+29       (600,900,40,35)                a traffic light      0.621
+
+CLIP scoring: 3.82s for 37 regions
+Total pipeline: 27.23s for 37 masks
+```
+
+The exact mask count, bbox coordinates, and confidences will vary by device and checkpoint version, but the structure of the output is what matters: each row is one region that survived the area and size filters, with a CLIP-assigned label and softmax probability.
+
+Two implementation details to notice. First, the masking step (`masked[~seg] = 0`) zeros out everything outside the mask before cropping. Without this, CLIP would see surrounding pixels and often classify based on context rather than the isolated region. Second, the text labels are prefixed with "a" or "the" ("a bus", "the sky") — CLIP was trained on natural captions, so prompt phrasing matters. "bus" alone scores lower than "a bus" or "a photo of a bus" because the text encoder expects caption-style input.
+
+## Use It
+
+Cascaded open-vocabulary segmentation — SAM for geometry, CLIP for semantics — decomposes any competitor screenshot into labeled structural regions without training a custom detector. This is competitive intelligence enrichment for Zone 4 (Competitive & Market Intelligence): instead of manually cataloging what a competitor's landing page contains, you run the pipeline and get structured output (region, bbox, label, confidence) that feeds directly into a feature inventory.
+
+```python
+import subprocess, sys
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "selenium", "Pillow"])
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from PIL import Image
+import io, json, time
+
+opts = Options()
+opts.add_argument("--headless"); opts.add_argument("--window-size=1280,900")
+driver = webdriver.Chrome(options=opts)
+
+competitor_url = "https://www.linear.app"
+driver.get(competitor_url)
+time.sleep(3)
+png_bytes = driver.get_screenshot_as_png()
+driver.quit()
+
+screenshot = Image.open(io.BytesIO(png_bytes))
+screenshot.save("/tmp/competitor_landing.png")
+print(f"Screenshot captured: {screenshot.size}")
+
+gtm_labels = [
+    "a pricing table", "a call-to-action button", "a hero headline",
+    "a customer logo strip", "a feature comparison grid", "a testimonial quote",
+    "a navigation bar", "a footer", "a signup form", "a product screenshot",
+    "a team photo", "a statistics section",
+]
+print(f"GTM label set: {gtm_labels}")
+
+print("\nNext: run the Build It pipeline on /tmp/competitor_landing.png")
+print("      with labels = gtm_labels to get structured page decomposition.")
+print("\nOutput schema for downstream Zone 4 enrichment:")
+schema = [{"region_id": 0, "bbox": [x, y, w, h], "label": "a hero headline", "confidence": 0.82}]
+print(json.dumps(schema, indent=2))
+```
+
+This slice captures a live competitor screenshot via headless Selenium, persists it to disk, and defines a GTM-specific label set. You then run the Build It pipeline on that screenshot with `labels = gtm_labels`. The output — region IDs with bounding boxes, assigned labels, and confidence scores — becomes a structured feature inventory. That inventory feeds Zone 4 workflows: tracking when a competitor adds a pricing table, changes their CTA copy, or introduces a comparison grid. The label list is editable at inference time, so "a free trial banner" or "a SOC 2 badge" can be added without retraining anything.
+
+## Exercises
+
+### Exercise 1 — Prompt Engineering for CLIP Labels (Easy)
+
+The Build It pipeline uses label prefixes like "a bus" and "the sky." Rerun the pipeline three times on the same bus image with three different label phrasings:
+
+1. Bare nouns: `["bus", "person", "tree", "building", "car", "sign", "road", "sky", "traffic light", "grass", "suitcase", "backpack"]`
+2. Caption-style: `["a photo of a bus", "a photo of a person", ...]`
+3. The original `"a bus"` style.
+
+Record the top-1 confidence for the largest mask (the bus) under each phrasing. Which phrasing produces the highest confidence? Does the ranking change for any other masks? Write a one-paragraph conclusion about how CLIP prompt phrasing affects segmentation accuracy.
+
+### Exercise 2 — Production Latency Budget (Hard)
+
+The Build It pipeline processes masks sequentially — one CLIP forward pass per region. For a competitor screenshot that produces 50+ masks, this is slow. Refactor the CLIP scoring loop to batch all masked crops into a single `clip_processor(images=[crop1, crop2, ...])` call, then run one `get_image_features` pass on the entire batch. Measure the wall-clock difference between sequential and batched scoring on an image that produces at least 30 masks (you may need to lower `min_mask_region_area` to get more masks). Report the speedup factor and identify the batch size at which you hit a GPU memory error (if on GPU) or see no further improvement (if on CPU).
+
+## Key Terms
+
+- **Open-vocabulary segmentation** — assigning class labels to segmented regions at inference time using free-text prompts, without retraining the model on those classes.
+- **Mask proposal** — a candidate binary segmentation mask produced by a geometry-first model (SAM, SAM 2) with no semantic label attached.
+- **Vision-language alignment** — mapping image regions and text labels into a shared embedding space (CLIP) where cosine similarity indicates semantic match.
+- **Cascade pipeline** — running two or more models in sequence (e.g., detector → segmenter → classifier) where each stage's output becomes the next stage's input, accepting compounding error risk.
+- **Closed-vocabulary model** — a segmentation or detection model whose class list is fixed at training time (Mask R-CNN, YOLO); adding classes requires annotated data and retraining.
+- **Zero-shot classification** — assigning labels to inputs the model was never explicitly trained to recognize, relying on transfer from a pre-trained representation space.
+- **Cosine similarity** — the dot product of two normalized vectors; the scoring function CLIP uses to rank text labels against an image embedding.
+
+## Sources
+
+- Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., et al. (2023). *Segment Anything*. ICCV 2023. https://arxiv.org/abs/2304.02643
+- Ravi, N., Gabeur, V., Hu, Y.-T., Hu, R., Ryali, R., Ma, T., et al. (2024). *SAM 2: Segment Anything in Images and Videos*. https://arxiv.org/abs/2408.00714
+- Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., et al. (2021). *Learning Transferable Visual Models From Natural Language Supervision*. ICML 2021. https://arxiv.org/abs/2103.00020
+- Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., et al. (2023). *Grounding DINO: Marrying DINO with Grounded Pre-Training for Open-Set Object Detection*. https://arxiv.org/abs/2303.05499
+- Minderer, M., Gritsenko, A., Houlsby, N. (2022). *Scaling Open-Vocabulary Object Detection*. NeurIPS 2022. https://arxiv.org/abs/2306.09683
+- `[CITATION NEEDED — concept: SAM 3 official release, architecture details, and Promptable Concept Segmentation]`

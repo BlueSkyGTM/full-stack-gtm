@@ -141,10 +141,10 @@ merged = []
 for i in range(max(len(user_stream), len(model_stream))):
     u = user_stream[i] if i < len(user_stream) else None
     m = model_stream[i] if i < len(model_stream) else None
-    
+
     u_active = u and u["active"]
     m_active = m and m["active"]
-    
+
     if u_active and m_active:
         state = TURN_STATES[2]
     elif u_active:
@@ -153,7 +153,7 @@ for i in range(max(len(user_stream), len(model_stream))):
         state = TURN_STATES[1]
     else:
         state = TURN_STATES[3]
-    
+
     merged.append({
         "frame": i,
         "time_ms": i * MIMI_FRAME_MS,
@@ -171,3 +171,112 @@ print("Conversation state distribution:")
 print(f"  user_speaking:   {len(user_only):>3} frames ({len(user_only)/len(merged)*100:.1f}%)")
 print(f"  model_speaking:  {len(model_only):>3} frames ({len(model_only)/len(merged)*100:.1f}%)")
 print(f"  overlap:         {len(overlap_frames):>3} frames ({len(overlap_frames)/len(merged)*100:.1f}%)")
+print(f"  silence:         {len(silence_frames):>3} frames ({len(silence_frames)/len(merged)*100:.1f}%)")
+print()
+
+print("=== Interruption Event (frames 42-44: user speaks, model yields) ===")
+for f in merged[40:47]:
+    marker = " <<< turn transition" if f["state"] == "user_speaking" else ""
+    print(f"  Frame {f['frame']:>3} | {f['time_ms']:>6.0f}ms | {f['state']:<16}{marker}")
+print()
+
+def detect_sustained_overlap(merged_stream, threshold=3):
+    events = []
+    current_run = 0
+    for f in merged_stream:
+        if f["state"] == "overlap":
+            current_run += 1
+        else:
+            if current_run >= threshold:
+                events.append({"length": current_run, "end_frame": f["frame"] - 1})
+            current_run = 0
+    if current_run >= threshold:
+        events.append({"length": current_run, "end_frame": len(merged_stream) - 1})
+    return events
+
+sustained = detect_sustained_overlap(merged, threshold=3)
+print(f"Sustained overlap events (>= {3} consecutive frames):")
+for e in sustained:
+    duration_ms = e["length"] * MIMI_FRAME_MS
+    print(f"  {e['length']} frames ({duration_ms:.0f}ms) ending at frame {e['end_frame']}")
+print()
+
+pipeline_latency_ms = 450
+s2s_frames = 2
+s2s_overhead_ms = 35
+s2s_latency_ms = s2s_frames * MIMI_FRAME_MS + s2s_overhead_ms
+print("=== Architecture Comparison ===")
+print(f"Pipelined (ASR+LLM+TTS): {pipeline_latency_ms}ms")
+print(f"Full-duplex (2 frames + overhead): {s2s_latency_ms:.0f}ms")
+print(f"Speedup: {pipeline_latency_ms / s2s_latency_ms:.1f}x")
+print(f"Interruptions handled in full-duplex: {len(user_only)} frames")
+print(f"Interruptions dropped in pipeline: ~all (VAD gate closed)")
+```
+
+Run this and you will see the conversation state distribution and the critical interruption event at frames 42–44. At frame 42, the user starts speaking while the model is mid-output. The model sees the incoming user tokens in its attention window and yields — its output goes silent for three frames (240 ms), then resumes. No VAD gate closed. No silence was detected. The turn-taking decision happened inside the transformer's forward pass because both streams were visible simultaneously.
+
+The sustained overlap detector flags the long stretches where both speakers are active — which in a real Moshi deployment represents the model producing backchannel cues ("mm-hmm") while the user is still talking. A pipelined agent cannot do this. It can only speak after the user stops.
+
+## Use It
+
+Full-duplex dual-stream token processing — where a single transformer attends to user and model audio codebooks simultaneously at 12.5 Hz — is what makes a voice agent feel human enough for cold outbound. This is the **AI Voice Agent / Outbound Calling** cluster. The latency budget determines whether a prospect hangs up before the agent finishes its first sentence.
+
+```python
+import random
+random.seed(99)
+
+DAILY_CALLS = 5000
+TARGET_MS = 200
+PIPELINE_MS = 450
+PROSPECT_PICKUP_P = 0.08
+INTERRUPT_RATE = 0.15
+BACKCHANNEL_RATE = 0.40
+HANGUP_IF_LATENCY_GT_MS = 350
+
+calls = []
+for i in range(DAILY_CALLS):
+    connected = random.random() < PROSPECT_PICKUP_P
+    lat = max(120, min(450, TARGET_MS + random.gauss(0, 25)))
+    interrupted = connected and random.random() < INTERRUPT_RATE
+    backchanneled = connected and random.random() < BACKCHANNEL_RATE
+    hung_up = connected and lat > HANGUP_IF_LATENCY_GT_MS
+    calls.append({"id": i, "connected": connected, "latency": round(lat),
+                  "interrupted": interrupted, "backchannel": backchanneled, "hung_up": hung_up})
+
+connected = [c for c in calls if c["connected"]]
+survived = [c for c in connected if not c["hung_up"]]
+lats = sorted(c["latency"] for c in connected)
+
+print(f"Calls dialed: {DAILY_CALLS} | Connected: {len(connected)} ({len(connected)/DAILY_CALLS*100:.1f}%)")
+print(f"P50 latency: {lats[len(lats)//2]}ms | P95: {lats[int(len(lats)*0.95)]}ms")
+print(f"Survived latency hangup: {len(survived)} ({len(survived)/max(len(connected),1)*100:.1f}%)")
+print(f"Interruptions handled: {sum(c['interrupted'] for c in survived)}")
+print(f"Backchannels produced: {sum(c['backchannel'] for c in survived)}")
+pipeline_lost = len(connected) * INTERRUPT_RATE
+print(f"Pipeline would drop ~{pipeline_lost:.0f} interruptions (half-duplex turn-loss)")
+```
+
+Run this and compare the two architectures. The full-duplex agent at 200 ms keeps nearly all connected calls under the 350 ms hangup threshold. The pipelined agent at 450 ms loses most of them — not because the content is worse, but because the prospect hears dead air and assumes the call dropped. The interruption handling gap is even starker: when a prospect says "wait, what do you mean by that?" mid-sentence, the full-duplex agent yields and responds. The pipelined agent keeps talking over them until VAD detects silence, by which point the prospect has already disengaged.
+
+For GTM teams running outbound at scale, the math compounds. At 5,000 calls per day with an 8% pickup rate, you get roughly 400 conversations. If the pipeline drops 15% of those to latency-induced hangups or failed interruption handling, that is 60 conversations lost per day — conversations that cost the same in dialer fees and data enrichment regardless of outcome. The full-duplex architecture is not a latency optimization; it is a conversation survival mechanism.
+
+## Exercises
+
+**Exercise 1 — Backchannel Timing Model.** Modify the dual-stream simulation to inject backchannel events: every time the model detects 5+ consecutive frames of `user_speaking` with no overlap, have it produce a 2-frame backchannel burst (set model active for exactly 2 frames, then yield again). Print a timeline showing when backchannels fire and verify they never overlap with model_speaking stretches longer than 2 frames. Calculate the total backchannel time as a percentage of call duration.
+
+**Exercise 2 — Fleet Latency Budget Under Load.** Build a function that takes GPU count, concurrency per GPU (default 4), and target latency (default 200 ms) and simulates what happens when GPU utilization exceeds 80%. Add 15 ms of scheduling jitter per additional 10% load beyond 80%. At what fleet size does P95 latency exceed 300 ms? Plot the latency curve across fleet utilization from 50% to 100% and identify the breaking point where full-duplex degrades to pipeline-level latency.
+
+## Key Terms
+
+- **Mimi codec** — Neural audio tokenizer that compresses 24 kHz PCM into 8 codebooks of discrete tokens at 12.5 Hz (80 ms per frame). The semantic-acoustic codebook split lets a single transformer both understand and produce speech.
+- **Dual-stream attention** — Architecture pattern where the transformer receives user audio tokens and model audio tokens as parallel inputs at every frame, eliminating the pipeline handoff between listening and speaking.
+- **Full-duplex S2S** — Speech-to-speech system that processes input and generates output simultaneously, with no VAD gate or silence-based turn detection. Theoretical latency floor is two codec frames (160 ms).
+- **Overlap frame** — A frame in the merged dual-stream where both user and model audio tokens are active. This is a first-class conversational state in Moshi, not an error condition.
+- **Temporal Transformer** — Moshi's 7B-parameter model that processes the dual-stream token sequence. Distinct from a text-only LLM because it operates on audio codebooks directly.
+- **Pipelined voice agent** — The standard ASR → LLM → TTS architecture with VAD gating. Latency floor is the sum of stage minimums (300–500 ms). Cannot produce backchannels or handle mid-sentence interruptions.
+
+## Sources
+
+- Defossez, A., et al. "Moshi: A speech-text foundation model for real-time dialogue." Kyutai, 2024. [arXiv:2410.00037](https://arxiv.org/abs/2410.00037) — describes the Mimi codec, dual-stream Temporal Transformer architecture, and the 160 ms theoretical / 200 ms practical latency figures.
+- Kyutai. "Moshi: your real-time AI voice agent." kyutai.org, 2024. — public model card and inference demos; confirms single-L4 deployment target and duplex streaming behavior.
+- [CITATION NEEDED — concept: Hibiki model architecture, relationship to Moshi, and whether it shares Mimi codec or Moshi weights]. Available Kyutai documentation references Hibiki as a speech-to-speech translation model but does not specify the internal architecture or codec reuse.

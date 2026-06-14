@@ -121,4 +121,92 @@ The Clay waterfall pattern is a state machine. [CITATION NEEDED — concept: Cla
 
 Compare this to a linear Zapier-style DAG. A Zapier zap fetches LinkedIn, then fetches company, then writes to a table, in fixed order. If the LinkedIn title does not match your ICP, you have wasted a company enrichment API call. The waterfall pattern — and the state machine that implements it — skips that call entirely because the conditional edge short-circuits to `END`.
 
-Here is the enrichment waterfall implemented as a LangGraph state machine with mock data
+Here is the enrichment waterfall implemented as a LangGraph state machine with mock data:
+
+```python
+from langgraph.graph import StateGraph, END, START
+from typing import TypedDict
+
+class EnrichmentState(TypedDict):
+    contact_name: str
+    title: str
+    company: str
+    headcount: int
+    icp_match: bool
+
+DATA = {"Jane": ("VP Sales", "Acme", 450), "Bob": ("Intern", "Startup", 12)}
+ICP_TITLES = {"VP Sales", "Director Sales", "CRO"}
+
+def enrich(state):
+    t, c, hc = DATA.get(state["contact_name"], ("Unknown", "Unknown", 0))
+    return {"title": t, "company": c, "headcount": hc}
+
+def check_icp(state):
+    match = state["title"] in ICP_TITLES and 100 <= state["headcount"] <= 1000
+    return {"icp_match": match}
+
+def route(state):
+    return "write" if state["icp_match"] else END
+
+def write(state):
+    print(f"  MATCH: {state['contact_name']} — {state['title']} @ {state['company']}")
+
+builder = StateGraph(EnrichmentState)
+builder.add_node("enrich", enrich)
+builder.add_node("check_icp", check_icp)
+builder.add_node("write", write)
+builder.add_edge(START, "enrich")
+builder.add_edge("enrich", "check_icp")
+builder.add_conditional_edges("check_icp", route)
+builder.add_edge("write", END)
+
+graph = builder.compile()
+for contact in ["Jane", "Bob"]:
+    print(f"Processing: {contact}")
+    graph.invoke({"contact_name": contact})
+```
+
+Expected output:
+
+```
+Processing: Jane
+  MATCH: Jane — VP Sales @ Acme
+Processing: Bob
+```
+
+Jane matches ICP (VP Sales at a 450-person company) and reaches `write`. Bob fails the title check (Intern) and the conditional edge in `route` sends him straight to `END` — `write` never executes. That is the waterfall: the conditional edge short-circuits based on what enrichment found, and you avoid the wasted table write or the wasted downstream enrichment API call.
+
+In production, the nodes would call real APIs — Apollo for LinkedIn data, Clearbit for company data, HubSpot for the table write. The state machine stays the same. The conditional edges stay the same. What changes is that each node's `return` statement wraps an HTTP call instead of a dict lookup. This is the Clay waterfall pattern — Cluster 1.2, TAM Refinement & ICP Scoring — where enrichment providers are chained with conditional fallback logic, and non-matching records are short-circuited to save API spend. [CITATION NEEDED — concept: Clay waterfall enrichment providers with conditional fallback, Cluster 1.2]
+
+## Exercises
+
+**Exercise 1 (Easy) — Add a fourth classification route.**
+
+Modify the Build It classifier to handle a fourth category: `"escalation"` for messages containing `"legal"`, `"compliance"`, or `"lawsuit"`. Create a new `escalate_node` that returns `{"response": "Routed to legal team. SLA: 4 hours."}`. Update `route_after_classify` so that escalations route to `"escalate"` instead of `"respond"`. Wire the new node into the graph with `builder.add_node` and `builder.add_edge("escalate", END)`. Test with: `"We have a compliance issue with our contract."` Verify the output shows `[escalate]` instead of `[respond]`.
+
+**Exercise 2 (Hard) — Implement a provider fallback waterfall.**
+
+Convert the Use It enrichment waterfall into a multi-provider fallback pattern. Replace the single `enrich` node with two: `enrich_primary` and `enrich_secondary`. Define mock data where primary covers only `{"Jane", "Sarah"}` and returns `("Unknown", "Unknown", 0)` for everyone else; secondary covers everyone. After `enrich_primary`, add a conditional edge: if `state["title"] == "Unknown"`, route to `enrich_secondary`; otherwise route directly to `check_icp`. After `enrich_secondary`, always route to `check_icp`. Test with four contacts — two that primary covers, two that fall through to secondary. Print which provider was used for each contact by adding a `"provider"` key to the state. This models the Apollo → Clearbit → ZoomInfo waterfall in Clay, where each provider has different coverage and the graph falls through to the next provider when the current one returns no data.
+
+## Key Terms
+
+**State Machine** — A computational model where execution transitions between defined states via edges. Unlike a DAG, state machines permit cycles, enabling loops like ReAct (reason → act → observe → repeat).
+
+**TypedDict (State Schema)** — A Python type defining the shape of data flowing through the graph. Every node reads from and writes to this schema. LangGraph merges partial updates returned by each node into the shared state.
+
+**Node** — A Python function in a LangGraph graph. Takes current state as input, performs work (LLM call, tool execution, data lookup), returns a partial state update containing only the keys it changed.
+
+**Conditional Edge** — A routing rule that inspects state and returns the name of the next node (or `END`). Without conditional edges, the graph is a fixed pipeline. With them, the graph can branch, loop, and short-circuit.
+
+**DAG (Directed Acyclic Graph)** — A graph where edges point forward only and no path cycles back. Tools like Zapier and n8n implement DAGs. DAGs cannot express iterative loops without unrolling them to a fixed depth.
+
+**Checkpointer** — A persistence layer in LangGraph that saves state after every node execution. Enables interrupts (pause for human approval), time-travel (replay from a past state), and fault recovery (resume after a crash).
+
+**ReAct Pattern** — A reasoning loop where an LLM reasons about a task, takes an action (tool call), observes the result, and decides whether to continue or finish. Requires a state machine with a cycle — cannot be expressed in a DAG.
+
+## Sources
+
+- LangGraph documentation — StateGraph API, conditional edges, checkpointing: https://langchain-ai.github.io/langgraph/
+- LangGraph concepts guide — nodes, edges, state schemas, reducers: https://langchain-ai.github.io/langgraph/concepts/
+- [CITATION NEEDED — concept: Clay enrichment waterfall as state machine pattern, Cluster 1.2]
+- [CITATION NEEDED — concept: reply classification as eval feedback loop in revenue intelligence, Zone 11]

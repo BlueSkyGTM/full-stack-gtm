@@ -178,84 +178,90 @@ The `modality` and `source` fields on each item are not cosmetic. They are what 
 
 ## Use It
 
-Cross-modal retrieval is the retrieval pattern underneath multimodal signal intelligence pipelines. In a competitive intelligence workflow, a revenue team ingests competitor pitch decks (PDF with embedded slides), product screenshots (PNG), pricing pages (HTML), and win/loss call transcripts (text). These artifacts live in different formats but answer the same questions: How does the competitor position on security? What do they charge? Where are they weak?
-
-A rep asks a natural-language question. The cross-modal system retrieves the relevant comparison slide (an image) alongside the transcript excerpt where a prospect reacted to it (text). Both are returned in a single ranked list. The rep sees the slide the competitor showed and the prospect's verbal reaction in one view — context that neither modality provides alone.
+Contrastive cross-modal retrieval via a shared CLIP embedding space lets a rep's natural-language question surface competitive slides and call-reaction transcripts in one ranked list — this is competitive intelligence retrieval (Cluster 3.3, Competitor & Market Intelligence). The rep never needs to know whether the answer lives in a slide image or a transcript; the dual-encoder shared space handles the mapping.
 
 ```python
-queries = [
-    "what are competitor X's security weaknesses",
-    "how much does competitor X cost",
-    "what architecture does competitor X use",
-    "what do prospects say about competitor X security",
-    "what pitch deck slide should I lead with",
+battlecard_questions = [
+    "how do we beat competitor X on security",
+    "what does competitor X charge",
+    "prospect objections about competitor X",
 ]
 
-print(f"{'Query':<55}{'Cross-modal?':<15}{'Top modality'}")
-print("-" * 85)
-
-for q in queries:
-    results = retrieve(q, k=5)
-    modalities = [item["modality"] for _, item in results]
-    image_count = modalities.count("image")
-    text_count = modalities.count("text")
-    cross_modal = "YES" if image_count > 0 and text_count > 0 else "NO"
-    dominant = "image" if image_count > text_count else "text" if text_count > image_count else "tie"
-    print(f"{q:<55}{cross_modal:<15}{dominant}")
-
-print("\n--- Detailed breakdown for security query ---")
-sec_results = retrieve("competitor X security weaknesses", k=5)
-for rank, (score, item) in enumerate(sec_results, 1):
-    print(f"{rank}. [{item['modality']:5}] sim={score:.4f} src={item['source']}")
-    print(f"   {item['content'][:80]}")
+for q in battlecard_questions:
+    results = retrieve(q, k=4)
+    top_mod = results[0][1]["modality"]
+    has_img = any(it["modality"] == "image" for _, it in results)
+    has_txt = any(it["modality"] == "text" for _, it in results)
+    cross = "CROSS-MODAL" if (has_img and has_txt) else "single-modality"
+    print(f"Q: {q}")
+    print(f"  {cross} | top result: [{top_mod}] {results[0][0]:.3f}")
+    for score, item in results[:2]:
+        print(f"    {item['modality']:5} {score:.3f}  {item['content'][:65]}")
+    print()
 ```
 
-This output reveals which queries naturally cross modality boundaries and which stay within text. Queries about visual artifacts ("what slide should I lead with") should retrieve images. Queries about prospect sentiment ("what do prospects say") should retrieve text. Queries that span both ("security weaknesses") should surface images of comparison slides and text of prospect reactions.
+Run this after the Build It code. Queries about security and pricing should return `CROSS-MODAL` results — the comparison slide alongside the transcript passage — because the CLIP shared space places the text query near both the image and the relevant text chunk. A rep asking "how do we beat competitor X on security" sees the competitor's own security slide and the internal note about win-rate impact in a single retrieval call. That is the cross-modal advantage: the answer was always split across modalities; the retrieval system finally unifies them.
 
-Clay's enrichment waterfall can feed structured text extracted from competitor domains into the text side of this index — company descriptions, pricing page copy, leadership team bios — while screenshots captured during competitive research populate the image side. [CITATION NEEDED — concept: Clay enrichment waterfall feeding structured data into a RAG index] The waterfall's output is structured text records; those records become additional items in the text modality of the cross-modal index, queryable alongside images from the same competitors.
+## Exercises
 
-The signal intelligence value is not just retrieval speed. It is retrieval completeness. A text-only system misses the comparison matrix. An image-only system misses the prospect's verbal reaction. Cross-modal retrieval surfaces both, and the rep gets the full picture without knowing which format the answer lives in.
+**Exercise 1 — Score normalization (Easy)**
 
-## Ship It
+Modality bias happens when text-to-text cosine similarities cluster higher than text-to-image similarities, causing images to vanish from top-k results. Write a function `retrieve_normalized(query, k, items)` that z-score normalizes similarity scores *within each modality* before ranking, so image and text results compete on equal footing.
 
-Production cross-modal RAG needs the same observability discipline as any retrieval pipeline — but the metrics must decompose by modality. Three signals tell you the system is degrading before users complain.
+1. Compute raw cosine similarity for all items (as the existing `retrieve` does).
+2. Group scores by modality. For each modality, compute mean and standard deviation of the scores.
+3. Replace each raw score with its z-score within its modality group: `z = (score - mean) / std`.
+4. Rank by z-score instead of raw score.
 
-**Modality bias** is the most common production failure. Embedding scales drift: text-to-text cosine similarities cluster around 0.7–0.9 while text-to-image similarities cluster around 0.2–0.4. Without normalization, text results dominate every ranking and images effectively disappear. You detect this by logging the modality distribution of top-k results across queries and alerting when any modality's share drops below a threshold.
+**Verification:** Run the same five queries from Build It with both `retrieve` and `retrieve_normalized`. Print results side by side. If the original results were text-dominated, the normalized version should surface more images in the top-k. Print the modality distribution (count of image vs text in top-5) for both methods to confirm the shift.
 
-**Recall drift per modality** is the model degradation signal. If you have a held-out evaluation set with known-relevant image and text results per query, you compute recall@k separately for each modality. A drop in image recall while text recall holds steady indicates the vision encoder is encountering out-of-distribution images — perhaps a new competitor's deck uses a visual style the model has not seen.
+**Exercise 2 — Per-modality recall evaluation (Medium)**
 
-**Chunk boundary failures** appear as recall drops on queries that should return table or diagram content. When a table is split across two image chunks, neither chunk contains enough context to match the query. You detect this by tracking per-source recall: if recall drops for one specific document but holds for others, the problem is chunking, not the model.
+Build a miniature evaluation harness that measures recall@k separately for each modality, then flags queries where cross-modal retrieval is failing.
 
+1. Create a ground-truth dict mapping each query to a set of relevant item IDs, where some relevant items are images and some are text:
 ```python
-import json
-from collections import Counter
-from datetime import datetime
+ground_truth = {
+    "security comparison": {"security_comparison", "text_0", "text_3"},
+    "pricing and cost": {"pricing_tiers", "text_1"},
+    "architecture and tech stack": {"arch_diagram", "text_2"},
+}
+```
 
-def log_retrieval_event(query, results, filter_modality="any"):
-    return {
-        "timestamp": datetime.utcnow().isoformat(),
-        "query": query,
-        "filter": filter_modality,
-        "top_k_modalities": [item["modality"] for _, item in results],
-        "top_k_scores": [round(score, 4) for score, _ in results],
-        "top_score": results[0][0] if results else 0.0,
-        "modality_split": dict(Counter(item["modality"] for _, item in results)),
-    }
+2. Write `evaluate_recall(queries_truth, k=3)` that, for each query, retrieves top-k results and computes:
+   - Overall recall@k: fraction of relevant items in top-k
+   - Image recall@k: fraction of relevant *image* items in top-k
+   - Text recall@k: fraction of relevant *text* items in top-k
+   - A `cross_modal_hit` boolean: True if at least one image AND one text relevant item appears in top-k
 
-def compute_bias_metrics(events, window=50):
-    recent = events[-window:]
-    modality_shares = Counter()
-    score_by_modality = {}
+3. Print a table showing per-query recall decomposed by modality, and flag any query where image recall is 0 with `*** IMAGE RECALL FAILURE`.
 
-    for event in recent:
-        for mod, score in zip(event["top_k_modalities"], event["top_k_scores"]):
-            modality_shares[mod] += 1
-            score_by_modality.setdefault(mod, []).append(score)
+**Verification:** All three queries should have non-zero overall recall. If any query shows image recall of 0 while text recall is non-zero, that indicates either the CLIP encoder is not placing the query near the image, or score bias is pushing images below the cutoff. Add a comment (in your analysis, not the code) explaining which failure mode is more likely for each flagged query.
 
-    total = sum(modality_shares.values())
-    print(f"--- Modality Distribution (last {len(recent)} queries) ---")
-    for mod in sorted(modality_shares):
-        share = modality_shares[mod] / total
-        avg_score = np.mean(score_by_modality[mod])
-        flag = " *** BIAS ALERT" if share < 0.15 else ""
-        print(f"  {
+## Key Terms
+
+- **Shared embedding space** — A vector space where items from different modalities (text, image, audio) are mapped such that semantically related items land near each other regardless of source format. Produced by contrastive training on paired data.
+
+- **Contrastive learning** — A training paradigm that pulls matching pairs (e.g., an image and its caption) close together in vector space while pushing non-matching pairs apart. The InfoNCE loss is the standard objective.
+
+- **Cross-modal retrieval** — Retrieving documents of modality B given a query of modality A (e.g., text query → image result). Requires a shared embedding space; cannot be done with modality-specific encoders alone.
+
+- **CLIP (Contrastive Language-Image Pre-training)** — OpenAI's dual-encoder model that trains a vision transformer and a text transformer jointly on 400M image-caption pairs using contrastive loss. The encoders share a vector space after training.
+
+- **Score fusion** — The simplest fusion strategy for multimodal retrieval: normalize raw similarity scores across modalities (e.g., via z-scoring or min-max scaling) and merge into a single ranked list.
+
+- **Modality bias** — A production failure mode where one modality dominates retrieval results due to systematic differences in embedding scale (e.g., text-to-text similarities cluster at 0.8 while text-to-image similarities cluster at 0.3), causing the lower-scale modality to effectively disappear from rankings.
+
+- **ColPali** — A 2024 model that applies visual-language models to document-level retrieval, treating each page as an image rather than extracting text first. Demonstrated that late-interaction over visual patches can outperform text-extraction pipelines for document retrieval.
+
+## Sources
+
+- Radford, A. et al. (2021). "Learning Transferable Visual Models From Natural Language Supervision." *Proceedings of ICML.* — The CLIP paper. Defines the dual-encoder contrastive architecture that underpins cross-modal retrieval.
+
+- Faysse, M. et al. (2024). "ColPali: Efficient Document Retrieval with Vision Language Models." *arXiv:2407.01449.* — Demonstrated visual document retrieval without text extraction, motivating the unified-index approach.
+
+- Abootorabi, M. et al. (2025). "A Comprehensive Survey on Multimodal RAG." [CITATION NEEDED — concept: exact arXiv ID and author list for Abootorabi et al. 2025 multimodal RAG survey]
+
+- [CITATION NEEDED — concept: Mei et al. 2025 survey on multimodal RAG taxonomy, exact title and venue]
+
+- [CITATION NEEDED — concept: Zhao et al. 2025 survey on multimodal RAG, exact title and venue]

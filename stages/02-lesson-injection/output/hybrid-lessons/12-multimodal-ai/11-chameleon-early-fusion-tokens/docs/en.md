@@ -316,260 +316,52 @@ This is the structural advantage of early fusion in miniature. A single autoregr
 
 ## Use It
 
-Early-fusion token-only models produce natively interleaved multimodal output in a single generation pass. For a GTM engineer building content enrichment workflows, this architectural property maps directly to a pipeline design problem. Consider a Zone 1 content enrichment task: generating a product description with an inline visual — currently this requires orchestrating a text generation call, an image generation call, and a layout step to merge them. An early-fusion model collapses all three into one forward pass because text and image tokens share the same output distribution.
-
-But the more immediate GTM application of this lesson's architecture is conceptual: tracing data flow through a unified token stream is the same mental model as tracing signals through a unified GTM pipeline. In Zone 12 (observability, logging, tracing), the principle is identical — you want one stream, one vocabulary of events, one place to look for drift. When your sequence emails, reply detection, and CRM updates all flow through one traceable pipeline, reply rate drift becomes a single-signal degradation metric rather than a cross-tool correlation problem. The early-fusion insight — merge at the first layer, not the last — applies to pipeline architecture: instrument at ingestion, not at the dashboard.
-
-Let's make the tracing analogy concrete. The sentinel tokens in Chameleon (`<image-start>`, `<image-end>`) serve as boundary markers that let a downstream decoder route tokens to the right processor. In a GTM pipeline, boundary markers serve the same role: a `SEQUENCE_STARTED` event and a `SEQUENCE_COMPLETED` event bracket the steps in between, and a tracer can reconstruct the full path without querying each tool individually.
+Sentinel-based token interleaving — the mechanism that lets Chameleon route mixed text and image tokens through one transformer with boundary markers — maps directly to Zone 12 (living observability). A GTM engineer faces the same architectural decision Chameleon solved: do you instrument each tool's dashboard separately and correlate manually (late fusion), or do you stream every event into one vocabulary with sentinel boundaries (early fusion)? The early-fusion approach wins for the same reason: drift detection happens in one stream, not across N tabs.
 
 ```python
-from datetime import datetime, timedelta
 import random
-
 random.seed(42)
 
-EVENT_TYPES = {
-    "EMAIL_SENT": "signal",
-    "EMAIL_OPENED": "signal",
-    "REPLY_RECEIVED": "signal",
-    "LINK_CLICKED": "signal",
-    "CRM_UPDATED": "action",
-    "ENRICHMENT_RUN": "action",
-    "WATERFALL_STEP": "action",
-    "SEQUENCE_STARTED": "sentinel",
-    "SEQUENCE_COMPLETED": "sentinel",
+EVENT_VOCAB = {
+    "EMAIL_SENT": "signal", "EMAIL_OPENED": "signal",
+    "REPLY_RECEIVED": "signal", "CRM_UPDATED": "action",
+    "SEQ_START": "sentinel", "SEQ_END": "sentinel",
 }
 
+def trace_journey(contact_id, steps):
+    seq = [("SEQ_START", "sentinel", contact_id)]
+    for s in steps:
+        seq.append((s, EVENT_VOCAB.get(s, "unknown"), contact_id))
+    seq.append(("SEQ_END", "sentinel", contact_id))
+    return seq
 
-def generate_trace(steps=12):
-    trace = []
-    trace.append(("SEQUENCE_STARTED", datetime.now(), {}))
+actions = ["EMAIL_SENT", "EMAIL_OPENED", "REPLY_RECEIVED", "CRM_UPDATED"]
+journeys = [trace_journey(c, random.choices(actions, k=random.randint(3, 7)))
+            for c in range(1001, 1021)]
 
-    t = datetime.now() + timedelta(minutes=5)
-    actions = ["EMAIL_SENT", "EMAIL_OPENED", "LINK_CLICKED", "REPLY_RECEIVED",
-               "ENRICHMENT_RUN", "WATERFALL_STEP", "CRM_UPDATED"]
+sent = replies = 0
+for j in journeys:
+    inner = [(e, t) for e, t, _ in j if t != "sentinel"]
+    sent += sum(1 for e, _ in inner if e == "EMAIL_SENT")
+    replies += sum(1 for e, _ in inner if e == "REPLY_RECEIVED")
 
-    for _ in range(steps):
-        event = random.choice(actions)
-        t += timedelta(minutes=random.randint(2, 45))
-        trace.append((event, t, {"contact_id": random.randint(1000, 9999)}))
-
-    trace.append(("SEQUENCE_COMPLETED", t + timedelta(minutes=10), {}))
-    return trace
-
-
-def parse_trace_like_decoder(trace):
-    segments = []
-    current_mode = None
-    current_events = []
-
-    for event_type, timestamp, metadata in trace:
-        cat = EVENT_TYPES.get(event_type, "unknown")
-
-        if cat == "sentinel" and event_type == "SEQUENCE_STARTED":
-            current_mode = "ACTIVE"
-            current_events = []
-        elif cat == "sentinel" and event_type == "SEQUENCE_COMPLETED":
-            if current_events:
-                segments.append((current_mode, current_events))
-            current_mode = None
-            current_events = []
-        elif current_mode == "ACTIVE":
-            current_events.append((event_type, timestamp, metadata))
-
-    return segments
-
-
-def compute_reply_rate(traces):
-    total_sequences = len(traces)
-    sequences_with_replies = 0
-
-    for trace in traces:
-        segments = parse_trace_like_decoder(trace)
-        has_reply = any(
-            event_type == "REPLY_RECEIVED"
-            for _, events in segments
-            for event_type, _, _ in events
-        )
-        if has_reply:
-            sequences_with_replies += 1
-
-    rate = sequences_with_replies / total_sequences if total_sequences > 0 else 0
-    return rate, total_sequences, sequences_with_replies
-
-
-baseline_traces = [generate_trace() for _ in range(100)]
-current_traces = [generate_trace() for _ in range(100)]
-
-baseline_rate, baseline_n, baseline_replies = compute_reply_rate(baseline_traces)
-current_rate, current_n, current_replies = compute_reply_rate(current_traces)
-
-print("=== PIPELINE TRACE ANALYSIS ===")
-print(f"\nBaseline window: {baseline_n} sequences, {baseline_replies} replies")
-print(f"  Reply rate: {baseline_rate:.1%}")
-
-print(f"\nCurrent window: {current_n} sequences, {current_replies} replies")
-print(f"  Reply rate: {current_rate:.1%}")
-
-drift = current_rate - baseline_rate
-print(f"\nReply rate drift: {drift:+.1%}")
-
-if abs(drift) > 0.05:
-    print("ALERT: Reply rate drift exceeds 5% threshold.")
-    print("This is your degradation signal — investigate before adjusting copy.")
-else:
-    print("Reply rate within expected range.")
-
-sample_segments = parse_trace_like_decoder(baseline_traces[0])
-print(f"\n=== SAMPLE TRACE (sequence 0) ===")
-for mode, events in sample_segments:
-    print(f"  [{mode}]")
-    for event_type, timestamp, metadata in events:
-        print(f"    {timestamp.strftime('%H:%M')} {event_type:<20} contact={metadata['contact_id']}")
-
-print(f"\nSentinel-based parsing found {len(sample_segments)} sequence segment(s).")
-print("Same pattern as Chameleon's sentinel-based modality routing:")
-print("boundaries define segments, segments define metrics.")
+rate = replies / sent if sent else 0
+drift = rate - 0.05
+print(f"Unified stream: {len(journeys)} sentinel-bracketed journeys")
+print(f"Reply rate: {rate:.1%}  |  Drift vs 5% baseline: {drift:+.1%}")
+print("ALERT: investigate sequence health" if abs(drift) > 0.05
+      else "Metrics within nominal range")
 ```
 
-The tracing logic mirrors Chameleon's decoder. Sentinel events bracket a sequence just as sentinel tokens bracket an image. Inside the boundaries, events are counted and categorized. Outside, they are ignored. This is the same algorithm whether you are routing image tokens to a VQ-VAE decoder or routing sequence events to a reply-rate computation.
+The `SEQ_START` and `SEQ_END` events are sentinels — identical in function to Chameleon's `<image-start>` and `<image-end>`. They bracket a segment so the parser can extract inner events, compute metrics, and flag drift without querying each tool's API. The event vocabulary is the shared token set. The drift check is the output head deciding whether the current distribution looks healthy.
 
 [CITATION NEEDED — concept: Chameleon production API availability and pricing for GTM content generation workflows]
 
-## Ship It
-
-Deploying an early-fusion model — or deploying the tracing pattern it teaches — into a production GTM stack requires answering one question: where does the unified stream live? In Chameleon, the unified stream is the token sequence inside the transformer's context window. In a GTM pipeline, the unified stream is your observability layer — the system that ingests events from every tool (email platform, CRM, enrichment API, sequence orchestrator) and presents them as one traceable sequence.
-
-Zone 12 defines this as living observability: not a static dashboard, but a real-time signal feed where reply rate drift, enrichment failure rate, and sequence step latency are all visible as events in a single stream. The connection to early fusion is structural. Late-fusion observability — checking each tool's dashboard separately and correlating manually — is the GTM equivalent of a vision encoder bolted to an LLM: two systems, a projector (your brain or a spreadsheet), and alignment friction. Early-fusion observability — one event stream, one vocabulary of event types, one tracing interface — is the Chameleon pattern applied to pipeline health.
-
-Here is a minimal observability layer that implements the unified-stream pattern:
-
-```python
-from datetime import datetime, timedelta
-import random
-import json
-
-random.seed(7)
-
-EVENT_VOCAB = {
-    "SEQ_START":        {"type": "sentinel", "zone": "12"},
-    "SEQ_END":          {"type": "sentinel", "zone": "12"},
-    "EMAIL_QUEUED":     {"type": "signal",  "zone": "2"},
-    "EMAIL_SENT":       {"type": "signal",  "zone": "2"},
-    "EMAIL_OPENED":     {"type": "signal",  "zone": "3"},
-    "EMAIL_CLICKED":    {"type": "signal",  "zone": "3"},
-    "REPLY_RECEIVED":   {"type": "signal",  "zone": "3"},
-    "ENRICHMENT_FETCH": {"type": "action",  "zone": "1"},
-    "ENRICHMENT_HIT":   {"type": "action",  "zone": "1"},
-    "ENRICHMENT_MISS":  {"type": "action",  "zone": "1"},
-    "CRM_PUSH":         {"type": "action",  "zone": "4"},
-    "WATERFALL_START":  {"type": "sentinel", "zone": "1"},
-    "WATERFALL_END":    {"type": "sentinel", "zone": "1"},
-}
-
-
-def emit_event(event_name, contact_id, extra=None):
-    if event_name not in EVENT_VOCAB:
-        raise ValueError(f"Unknown event: {event_name}")
-    event = {
-        "event": event_name,
-        "contact_id": contact_id,
-        "timestamp": datetime.now().isoformat(),
-        "meta": EVENT_VOCAB[event_name],
-        "payload": extra or {},
-    }
-    return event
-
-
-def simulate_contact_journey(contact_id):
-    events = []
-    events.append(emit_event("SEQ_START", contact_id))
-
-    t = datetime.now()
-    steps = random.choices(
-        ["EMAIL_SENT", "ENRICHMENT_FETCH", "EMAIL_OPENED",
-         "EMAIL_CLICKED", "REPLY_RECEIVED", "CRM_PUSH",
-         "ENRICHMENT_MISS"],
-        weights=[20, 15, 12, 8, 5, 15, 10],
-        k=random.randint(4, 10),
-    )
-
-    for step in steps:
-        t += timedelta(seconds=random.randint(30, 3600))
-        event = emit_event(step, contact_id, {"elapsed_s": int((t - datetime.now()).total_seconds())})
-        events.append(event)
-
-    events.append(emit_event("SEQ_END", contact_id))
-    return events
-
-
-def health_report(all_events):
-    total = len([e for e in all_events if e["meta"]["type"] != "sentinel"])
-    by_type = {}
-    for e in all_events:
-        if e["meta"]["type"] == "sentinel":
-            continue
-        by_type[e["event"]] = by_type.get(e["event"], 0) + 1
-
-    enrichment_total = by_type.get("ENRICHMENT_FETCH", 0) + by_type.get("ENRICHMENT_HIT", 0) + by_type.get("ENRICHMENT_MISS", 0)
-    enrichment_hit_rate = by_type.get("ENRICHMENT_HIT", 0) / enrichment_total if enrichment_total > 0 else 0
-
-    emails_sent = by_type.get("EMAIL_SENT", 0)
-    replies = by_type.get("REPLY_RECEIVED", 0)
-    reply_rate = replies / emails_sent if emails_sent > 0 else 0
-
-    opens = by_type.get("EMAIL_OPENED", 0)
-    open_rate = opens / emails_sent if emails_sent > 0 else 0
-
-    print("=== PIPELINE HEALTH (Unified Event Stream) ===")
-    print(f"\nTotal non-sentinel events: {total}")
-    print(f"\n--- Key Metrics ---")
-    print(f"  Reply rate:      {reply_rate:.1%}  ({replies}/{emails_sent})")
-    print(f"  Open rate:       {open_rate:.1%}  ({opens}/{emails_sent})")
-    print(f"  Enrichment hit:  {enrichment_hit_rate:.1%}  ({by_type.get('ENRICHMENT_HIT', 0)}/{enrichment_total})")
-
-    print(f"\n--- Event Distribution ---")
-    for event_name, count in sorted(by_type.items(), key=lambda x: -x[1]):
-        zone = EVENT_VOCAB[event_name]["zone"]
-        pct = count / total * 100
-        bar = "#" * int(pct / 2)
-        print(f"  [{zone:>2}] {event_name:<20} {count:>4}  {pct:>5.1f}%  {bar}")
-
-    print(f"\n--- Drift Check ---")
-    if reply_rate < 0.03:
-        print("  WARNING: Reply rate below 3% — possible content degradation")
-    if enrichment_hit_rate < 0.5:
-        print("  WARNING: Enrichment hit rate below 50% — check provider health")
-    if open_rate < 0.15:
-        print("  WARNING: Open rate below 15% — subject line or deliverability issue")
-    if reply_rate >= 0.03 and enrichment_hit_rate >= 0.5 and open_rate >= 0.15:
-        print("  All metrics within expected range.")
-
-
-all_events = []
-for cid in range(1001, 1021):
-    journey = simulate_contact_journey(cid)
-    all_events.extend(journey)
-
-health_report(all_events)
-
-print("\n=== SAMPLE TRACE (contact 1001) ===")
-sample = simulate_contact_journey(1001)
-for e in sample:
-    print(f"  [{e['meta']['zone']:>2}] {e['timestamp'][-12:-4]}  {e['event']:<20}  type={e['meta']['type']}")
-```
-
-This is not a toy abstraction. The event vocabulary (`EVENT_VOCAB`) is the shared token set. The `emit_event` function is the tokenizer — it maps a GTM action to a discrete event type with metadata. The sentinel events (`SEQ_START`, `SEQ_END`, `WATERFALL_START`, `WATERFALL_END`) bracket segments exactly like Chameleon's `<image-start>` and `<image-end>`. The health report computes metrics by parsing the unified stream, not by querying individual tool APIs.
-
-When you deploy this pattern — whether with OpenTelemetry, a custom event bus, or structured logging into a queryable store — you get the same structural benefit Chameleon gets from early fusion: one stream, one vocabulary, one place to detect drift. Reply rate drift becomes your model degradation signal in the same way that a spike in image-token probability at a text position would signal something unusual in Chameleon's output distribution.
-
 ## Exercises
 
-**Easy:** Modify the first code block to change `IMAGE_GRID_SIZE` from 8 to 16. How many image tokens does a single image now produce? What is the new total sequence length for the same text prompt? Print the before and after.
+**Easy / Medium:** The `interleave` function currently appends one image block after all text tokens. Rewrite it to accept a list of `(position, image_tokens)` pairs so you can insert multiple image blocks at arbitrary positions within the text — for example: text → `[IMG_START]` image `[IMG_END]` → text → `[IMG_START]` image `[IMG_END]` → text. Then write a `validate_sentinels(sequence)` function that asserts every `SENTINEL_IMAGE_START` has a matching `SENTINEL_IMAGE_END`, that image tokens (IDs in the image range) only appear between sentinel pairs, and that sentinels are properly nested (no interleaving of start/end across blocks). Run it against three test sequences: one valid, one with an unclosed sentinel, one with an image token leaking outside sentinel boundaries. Print pass/fail for each.
 
-**Medium:** The `interleave` function currently places one image block after the text. Modify it to support multiple image blocks at arbitrary positions in the text sequence — for example, text → image → text → image → text. Use sentinel pairs (`SENTINEL_IMAGE_START`, `SENTINEL_IMAGE_END`) to bracket each image. Write assertions that verify every `SENTINEL_IMAGE_START` has a matching `SENTINEL_IMAGE_END` and that image tokens only appear between sentinels.
-
-**Hard:** Replace the random codebook with a trained one. Generate a synthetic dataset of 200 "images" (each a list of 64 random 16-dimensional vectors). Run k-means clustering (implement it with stdlib — no sklearn) with k=128 clusters. Use the cluster centroids as the codebook. Quantize all 200 images, then reconstruct them by replacing each patch vector with its assigned centroid. Compute the average reconstruction MSE across all patches. Print the codebook, three sample quantization results, and the final MSE. This is the core loop of VQ-VAE training without the neural encoder/decoder — the codebook learns to represent the data distribution just as k-means clusters it.
+**Hard:** Replace the random codebook with a k-means-trained one. Generate 200 synthetic "images" (each a list of 64 random 16-dimensional vectors drawn from two Gaussian clusters so the data has real structure). Implement k-means from scratch using only stdlib (`random`, `math`) — no sklearn. Run 50 iterations of Lloyd's algorithm with k=128 centroids, initializing centroids by sampling random data points. Use the final centroids as the codebook. Quantize all 200 images (replace each patch with its nearest centroid), reconstruct, and compute the average per-patch MSE across the entire dataset. Then repeat with k=32 centroids and compare MSE. Print both MSE values, the reconstruction of three sample patches (original vector, nearest centroid, squared error), and a one-line interpretation of what the k=128 vs k=32 gap tells you about the representational capacity of the codebook. This is the core loop of VQ-VAE codebook learning without a neural encoder/decoder.
 
 ## Key Terms
 
@@ -583,4 +375,18 @@ When you deploy this pattern — whether with OpenTelemetry, a custom event bus,
 
 **Sentinel Token** — Special vocabulary entry that acts as a boundary marker in a token sequence. Chameleon uses `<image-start>` and `<image-end>` to bracket image token blocks so the decoder can route output tokens to the correct detokenizer (text or image).
 
-**QK-Norm** — Normalization applied to query and
+**QK-Norm** — Normalization applied to query and key vectors before computing the dot-product attention score. Chameleon introduced this (along with revised dropout and LayerNorm placement) to stabilize training on mixed text-image token sequences at scale. Without it, attention logits grew unbounded and training diverged.
+
+**Next-Token Prediction (Cross-Entropy Loss)** — The training objective applied uniformly at every position in an early-fusion sequence. The model predicts the next token ID (whether text or image) and the loss penalizes incorrect predictions over the full shared vocabulary. There is no separate image loss or text loss — one loss, one gradient signal.
+
+## Sources
+
+1. Team Chameleon. "Chameleon: Mixed-Modal Early-Fusion Foundation Models." arXiv:2405.09818, May 2024. — Primary source for the early-fusion architecture, QK-Norm stability modifications, and the claim that training diverged without them.
+
+2. van den Oord, A., Vinyals, O., & Kavukcuoglu, K. "Neural Discrete Representation Learning." NeurIPS 2017. — Original VQ-VAE paper. Defines the codebook quantization mechanism that Chameleon's image tokenizer builds on.
+
+3. Gafni, O., et al. "Make-A-Scene: Scene-Based Text-to-Image Generation with Human Priors." arXiv:2203.13131, 2022. — Image tokenization approach referenced by Chameleon as a precursor to its discrete image tokenizer.
+
+4. [CITATION NEEDED — concept: Chameleon production API availability and pricing for GTM content generation workflows]
+
+5. [CITATION NEEDED — concept: benchmark comparison of early-fusion vs late-fusion VLMs on image understanding tasks at matched parameter counts]

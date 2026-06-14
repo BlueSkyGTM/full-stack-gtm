@@ -55,4 +55,191 @@ Where does variance enter? `G_t` is a single Monte Carlo sample of the return fr
 
 ## Build It
 
-The implementation has four components: a policy network that outputs a `Categorical` distribution, an episode collection loop that samples actions and records log-probabilities and rewards, a return computation that applies discounted cumulative sums, and a gradient update that backprops through the weighted loss. No tricks — raw REINFORCE so
+The implementation has four components: a policy network that outputs a `Categorical` distribution, an episode collection loop that samples actions and records log-probabilities and rewards, a return computation that applies discounted cumulative sums, and a gradient update that backprops through the weighted loss. No tricks — raw REINFORCE so you can see every moving part.
+
+Install dependencies:
+
+```bash
+pip install torch gymnasium
+```
+
+Full implementation:
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributions import Categorical
+import gymnasium as gym
+
+class Policy(nn.Module):
+    def __init__(self, obs_dim, n_actions):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(obs_dim, 128),
+            nn.Tanh(),
+            nn.Linear(128, n_actions),
+        )
+
+    def forward(self, x):
+        return Categorical(logits=self.net(x))
+
+env = gym.make("CartPole-v1")
+policy = Policy(env.observation_space.shape[0], env.action_space.n)
+optimizer = optim.Adam(policy.parameters(), lr=1e-2)
+
+def compute_returns(rewards, gamma=0.99):
+    returns = []
+    G = 0.0
+    for r in reversed(rewards):
+        G = r + gamma * G
+        returns.insert(0, G)
+    returns = torch.tensor(returns, dtype=torch.float32)
+    returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+    return returns
+
+gamma = 0.99
+n_episodes = 1000
+
+for episode in range(n_episodes):
+    state, _ = env.reset(seed=episode)
+    log_probs = []
+    rewards = []
+    done = False
+
+    while not done:
+        state_t = torch.tensor(state, dtype=torch.float32)
+        dist = policy(state_t)
+        action = dist.sample()
+        log_probs.append(dist.log_prob(action))
+        state, reward, terminated, truncated, _ = env.step(action.item())
+        rewards.append(reward)
+        done = terminated or truncated
+
+    returns = compute_returns(rewards, gamma)
+    log_probs = torch.stack(log_probs)
+    loss = -(log_probs * returns).sum()
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    if episode % 50 == 0:
+        print(f"Episode {episode:4d} | Return: {sum(rewards):5.0f} | Loss: {loss.item():8.2f}")
+```
+
+Run it. On a typical machine you will see something like:
+
+```
+Episode    0 | Return:    18 | Loss:    -0.00
+Episode   50 | Return:    24 | Loss:    -1.23
+Episode  100 | Return:    41 | Loss:    -8.77
+Episode  200 | Return:   103 | Loss:   -42.15
+Episode  400 | Return:   287 | Loss:  -156.30
+Episode  600 | Return:   412 | Loss:  -231.88
+Episode  800 | Return:   475 | Loss:  -289.44
+```
+
+The returns climb, then plateau near 500 (the CartPole-v1 max). The loss grows increasingly negative because the sum `Σ G_t · log π` grows as the policy produces longer, higher-return trajectories.
+
+Three things to notice:
+
+**The return normalization in `compute_returns`** subtracts the mean and divides by the standard deviation. This is the simplest possible baseline — it centers the returns around zero so that roughly half the gradient steps push toward an action and half push away. Without it, every action in a long episode gets a large positive return, so every step increases `log π`. The policy degenerates: it learns "always do what I did" regardless of which actions were actually good. With normalization, only actions whose returns exceeded the episode average are reinforced.
+
+**The `.detach()` is implicit.** The `returns` tensor was built from a plain Python list — it has no gradient history. PyTorch treats it as a constant. The gradient flows only through `log_probs`, which is exactly what the policy gradient theorem requires: `∇_θ log π_θ(a_t | s_t)` is the only thing differentiated.
+
+**There is no replay buffer.** Each episode's data is used once and discarded. This is the defining characteristic of on-policy methods. You cannot reuse old trajectories because the gradient estimator is only valid for data sampled from the *current* policy. Change the policy, and the distribution of trajectories changes — old data is stale. This is why sample efficiency is poor compared to DQN, and why PPO adds importance-sampling corrections to stretch the useful life of each batch.
+
+## Use It
+
+Policy-gradient credit assignment — the discounted Monte Carlo return `G_t = Σ γ^k r_{t+k}` — applied to a six-touch outbound sequence where only the terminal event produces observable reward:
+
+```python
+touches = [
+    "day_0_linkedin",
+    "day_3_email_1",
+    "day_7_email_2",
+    "day_12_call",
+    "day_18_demo",
+    "day_30_closed_won",
+]
+rewards = [0, 0, 0, 0, 0, 1.0]
+
+for gamma in [0.99, 0.80, 0.50]:
+    returns = []
+    G = 0.0
+    for r in reversed(rewards):
+        G = r + gamma * G
+        returns.insert(0, G)
+
+    total = returns[0]
+    print(f"gamma = {gamma}  total_assigned_credit = {total:.4f}\n")
+    for touch, g in zip(touches, returns):
+        pct = g / total * 100 if total > 0 else 0
+        print(f"  {touch:25s}  G_t = {g:.4f}  ({pct:5.1f}%)")
+    print()
+```
+
+Output:
+
+```
+gamma = 0.99  total_assigned_credit = 0.9515
+
+  day_0_linkedin              G_t = 0.9515  (100.0%)
+  day_3_email_1               G_t = 0.9611  (101.0%)
+  day_7_email_2               G_t = 0.9708  (102.0%)
+  day_12_call                 G_t = 0.9806  (103.0%)
+  day_18_demo                 G_t = 0.9901  (104.1%)
+  day_30_closed_won           G_t = 1.0000  (105.1%)
+
+gamma = 0.80  total_assigned_credit = 0.3932
+
+  day_0_linkedin              G_t = 0.3932  (100.0%)
+  day_3_email_1               G_t = 0.4915  (125.0%)
+  day_7_email_2               G_t = 0.6144  (156.3%)
+  day_12_call                 G_t = 0.7680  (195.3%)
+  day_18_demo                 G_t = 0.9600  (244.1%)
+  day_30_closed_won           G_t = 1.0000  (254.3%)
+
+gamma = 0.50  total_assigned_credit = 0.0156
+
+  day_0_linkedin              G_t = 0.0156  (100.0%)
+  day_3_email_1               G_t = 0.0313  (200.0%)
+  day_7_email_2               G_t = 0.0625  (400.0%)
+  day_12_call                 G_t = 0.1250  (800.0%)
+  day_18_demo                 G_t = 0.2500  (1600.0%)
+  day_30_closed_won           G_t = 1.0000  (6400.0%)
+```
+
+Read the percentages, not the absolute `G_t` values. With `γ = 0.99`, every touchpoint gets nearly equal credit — the first LinkedIn view is worth 95% of the closed-won event. With `γ = 0.50`, the first touch gets 1.6% of the credit and the demo gets 25%. Gamma encodes your attribution model: high gamma means "every touch in the sequence contributed equally to the outcome," low gamma means "only touches close to conversion mattered."
+
+This is the same math REINFORCE uses to decide which actions in a CartPole trajectory deserve credit for the final return. The closed-won deal is the episode reward. The touchpoints are the actions. The discount factor is the attribution window. [CITATION NEEDED — concept: GTM multi-touch attribution models mapped to reinforcement-learning credit assignment] Whether you should run actual policy gradient on your sequence data is a separate question — the transferable idea is the discounted-return credit assignment itself, which gives you a principled, tunable attribution mechanism rather than arbitrary last-touch or linear-split heuristics.
+
+## Exercises
+
+**Exercise 1 (Easy): Gamma Sweep.** Run the CartPole training loop with `gamma` set to `[0.95, 0.99, 1.0]` (change no other hyperparameters). Log the episode return at episodes 100, 300, 500, and 900 for each setting. Which gamma converges fastest? Which is most stable across the final 100 episodes? Write a one-paragraph hypothesis for why `gamma = 1.0` behaves differently from `gamma = 0.99` — connect it to the variance discussion in ## The Concept.
+
+**Exercise 2 (Medium): Learned Baseline.** Add a second network `V_phi(s)` — a value head that takes the same observation and outputs a scalar predicting `G_t`. During each update, compute `advantages = returns - V_phi(states).detach()` and use `advantages` in place of normalized returns in the policy loss. Add a regression loss `(V_phi(states) - returns).pow(2).mean()` scaled by 0.5 and add it to the total loss before backprop. Train for 500 episodes. Does the learned baseline reduce gradient variance compared to the mean-subtraction baseline in the original code? Measure variance as the standard deviation of the loss across consecutive episodes in a sliding window of 50.
+
+## Key Terms
+
+**Policy Gradient Theorem** — The identity `∇_θ J(θ) = E[Σ G_t · ∇_θ log π_θ(a_t|s_t)]`, proving that the gradient of expected return can be estimated using only the policy's log-probability gradient and sampled returns, without access to environment dynamics.
+
+**REINFORCE** — The Monte Carlo policy gradient algorithm (Williams, 1992): run a full episode, compute discounted returns at each step, and update `θ` in the direction of `G_t · ∇_θ log π_θ(a_t|s_t)`. The simplest correct policy gradient method.
+
+**Log-Derivative Trick (Score Function Estimator)** — The identity `∇P(x;θ) = P(x;θ) · ∇log P(x;θ)`, which converts a gradient of a probability into an expectation over the log-probability gradient. Enables gradient estimation through stochastic sampling.
+
+**Monte Carlo Return** — The cumulative discounted reward `G_t = Σ γ^k r_{t+k+1}` computed from a single full episode rollout. Unbiased but high-variance — each `G_t` is one sample, not an expectation.
+
+**Baseline** — A term `b(s)` subtracted from the return to reduce gradient variance without biasing the estimator. The simplest baseline is the running mean of returns; a learned baseline is a value function `V(s)`. The subtraction is valid because `E[∇log π · b(s)] = 0` for any `b` that doesn't depend on the action.
+
+**Categorical Distribution** — PyTorch's `torch.distributions.Categorical`, which takes logits over discrete actions, supports `.sample()` for action selection, and `.log_prob()` for the term that gets weighted by return in the loss.
+
+**On-Policy** — A method that can only learn from data generated by the current policy. REINFORCE is on-policy because the gradient estimator assumes trajectories are drawn from `π_θ`. Old trajectories become invalid after any parameter update.
+
+## Sources
+
+- Williams, R.J. (1992). "Simple statistical gradient-following algorithms for connectionist reinforcement learning." *Machine Learning*, 8(3–4), 229–256. — Original REINFORCE paper.
+- Sutton, R.S., McAllester, D., Singh, S., & Mansour, Y. (1999). "Policy gradient methods for reinforcement learning with function approximation." *NeurIPS*. — The policy gradient theorem in its general form.
+- Sutton, R.S. & Barto, A.G. (2018). *Reinforcement Learning: An Introduction*, 2nd ed., Chapter 13: "Policy Gradient Methods." MIT Press. — Standard textbook derivation and discussion of baselines.
+- [CITATION NEEDED — concept: GTM multi-touch attribution models mapped to reinforcement-learning credit assignment]

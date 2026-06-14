@@ -303,186 +303,78 @@ The parameter count should land near 671B total and 37B active. Small discrepanc
 
 ## Use It
 
-The MoE routing pattern — one router dispatching tokens to specialized experts based on learned affinities with load balancing — maps directly to the **agent squad pattern** in Zone 10 of the GTM stack. The domain is multi-agent orchestration for go-to-market systems: enrichment pipelines, outbound sequencing, champion tracking, job-change signal processing. The mechanism transfer is structural. In DeepSeek-V3, a single router network scores each token against 256 expert affinities, selects the top-8, and dispatches. In a GTM agent squad, an orchestrator scores each task against agent capabilities (or more practically, against rule-based routing logic), selects the appropriate agent, and dispatches. The shared expert in DeepSeek-V3 — the one expert that always fires regardless of routing — is the equivalent of a base processing agent that handles every task (data validation, logging, error handling) while specialized agents handle domain-specific work.
-
-The auxiliary-loss-free balancing mechanism is the relevant lesson for GTM pipeline design. Standard load balancing in agent systems uses feedback loops that interfere with the primary task: you add a retry queue, a rate-limit token bucket, a circuit breaker. Each of these is an "auxiliary loss" — it consumes system resources to maintain balance instead of doing useful work. The DeepSeek-V3 approach — a bias term adjusted heuristically without touching the gradient path — translates to a simpler pattern: each agent maintains a dynamic priority offset that the orchestrator reads when routing. If agent A is overloaded (its queue depth exceeds a threshold), the orchestrator decrements its priority offset. No retry queue, no circuit breaker, no separate monitoring loop. The routing decision itself carries the balancing signal.
-
-Here is a minimal agent squad router that implements the bias-adjustment pattern from DeepSeek-V3's MoE layer:
+The auxiliary-loss-free MoE routing mechanism — a single router scoring candidates by affinity and balancing load through a dynamically adjusted per-expert bias term rather than a gradient-carrying auxiliary loss — maps directly to the GTM agent squad pattern in Zone 10 (Multi-Agent Orchestration). In DeepSeek-V3, the router dispatches tokens to specialized experts; in a GTM pipeline, an orchestrator dispatches tasks to specialized agents. The bias-adjustment pattern replaces retry queues and circuit breakers with a single priority offset per agent that the routing decision reads and updates in one pass.
 
 ```python
-import time
 import random
-from dataclasses import dataclass, field
-from collections import defaultdict
+from dataclasses import dataclass
+
+random.seed(42)
 
 @dataclass
 class Agent:
-    name: str
-    capability: str
-    queue_depth: int = 0
-    tasks_completed: int = 0
-    bias: float = 0.0
+    name: str; capability: str; queue: int = 0; completed: int = 0; bias: float = 0.0
 
-@dataclass
-class Task:
-    id: int
-    type: str
-    payload: str
+def route(agents, capability, bias_speed=0.5):
+    pool = [a for a in agents if a.capability == capability]
+    if not pool:
+        return None
+    scored = sorted(pool, key=lambda a: -(1.0 / (1 + a.queue) + a.bias))
+    selected = scored[0]
+    selected.queue += 1
+    mean_q = sum(a.queue for a in pool) / len(pool)
+    for a in pool:
+        a.bias += -bias_speed if a.queue > mean_q else (bias_speed if a.queue < mean_q else 0)
+    return selected
 
-class AgentSquadRouter:
-    def __init__(self, agents, bias_speed=0.5, cooldown=0.01):
-        self.agents = agents
-        self.capability_index = defaultdict(list)
-        for agent in agents:
-            self.capability_index[agent.capability].append(agent)
-        self.bias_speed = bias_speed
-        self.cooldown = cooldown
-        self.routing_log = []
+agents = [Agent(f"enricher-{i}", "enrichment") for i in range(4)]
+agents += [Agent(f"scorer-{i}", "scoring") for i in range(3)]
 
-    def route(self, task):
-        candidates = self.capability_index.get(task.type, [])
-        if not candidates:
-            return None
+for cap, n in [("enrichment", 60), ("scoring", 30)]:
+    for _ in range(n):
+        a = route(agents, cap)
+        if a and random.random() > 0.2:
+            a.queue = max(0, a.queue - 1)
+            a.completed += 1
 
-        scores = []
-        for agent in candidates:
-            score = (1.0 / (1 + agent.queue_depth)) + agent.bias
-            scores.append((agent, score))
-
-        scores.sort(key=lambda x: -x[1])
-        selected = scores[0][0]
-        selected.queue_depth += 1
-
-        self._adjust_biases(candidates)
-        self.routing_log.append((task.id, task.type, selected.name, selected.queue_depth))
-        return selected
-
-    def _adjust_biases(self, agents):
-        if len(agents) < 2:
-            return
-        loads = [a.queue_depth for a in agents]
-        mean_load = sum(loads) / len(loads)
-        for agent in agents:
-            if agent.queue_depth > mean_load:
-                agent.bias -= self.bias_speed
-            elif agent.queue_depth < mean_load:
-                agent.bias += self.bias_speed
-
-    def complete_task(self, agent):
-        agent.queue_depth = max(0, agent.queue_depth - 1)
-        agent.tasks_completed += 1
-
-agents = [
-    Agent("enricher-1", "enrichment"),
-    Agent("enricher-2", "enrichment"),
-    Agent("enricher-3", "enrichment"),
-    Agent("scorer-1", "scoring"),
-    Agent("scorer-2", "scoring"),
-    Agent("writer-1", "outbound"),
-    Agent("writer-2", "outbound"),
-    Agent("writer-3", "outbound"),
-    Agent("validator", "validation"),
-    Agent("validator-backup", "validation"),
-]
-
-router = AgentSquadRouter(agents)
-
-task_types = ["enrichment"] * 50 + ["scoring"] * 20 + ["outbound"] * 30 + ["validation"] * 15
-random.shuffle(task_types)
-
-for i, ttype in enumerate(task_types):
-    task = Task(id=i, type=ttype, payload=f"data-{i}")
-    selected = router.route(task)
-    if selected and random.random() > 0.3:
-        time.sleep(router.cooldown)
-        router.complete_task(selected)
-
-print("=== Agent Squad Router Report ===")
-print(f"Total tasks routed: {len(task_types)}")
-print()
-print(f"{'Agent':<22} {'Capability':<14} {'Completed':<12} {'Queue':<8} {'Bias':<8}")
-print("-" * 64)
-for agent in agents:
-    print(f"{agent.name:<22} {agent.capability:<14} {agent.tasks_completed:<12} {agent.queue_depth:<8} {agent.bias:<8.2f}")
-
-print()
-print("Balancing check (CoV per capability group):")
-for cap, agent_list in router.capability_index.items():
-    loads = [a.tasks_completed for a in agent_list]
-    mean_l = sum(loads) / len(loads)
-    if mean_l > 0:
-        std_l = (sum((l - mean_l)**2 for l in loads) / len(loads)) ** 0.5
-        cov = std_l / mean_l
-        print(f"  {cap:<14} mean={mean_l:.1f} std={std_l:.1f} CoV={cov:.3f}")
+for cap in sorted(set(a.capability for a in agents)):
+    group = [a for a in agents if a.capability == cap]
+    loads = [a.completed for a in group]
+    mean = sum(loads) / len(loads)
+    cov = (sum((l - mean) ** 2 for l in loads) / len(loads)) ** 0.5 / mean if mean else 0
+    print(f"{cap:<14} agents={len(group)} mean={mean:.1f} CoV={cov:.3f}")
 ```
 
-The output shows the CoV per capability group. A well-balanced squad approaches CoV = 0 (equal load distribution). The bias adjustment should push CoV down over time, just as DeepSeek-V3's bias adjustment pushes expert load variance toward zero during training.
+The output reports CoV per capability group. Lower CoV means more even load distribution — the bias term nudges overloaded agents down and underloaded agents up on each routing decision, just as DeepSeek-V3's per-expert bias does during training. No separate retry loop or monitoring thread exists; the balancing signal is embedded in the routing itself.
 
-The mailbox architecture constraint — one domain supports a maximum of 15 mailboxes for outbound — [CITATION NEEDED — concept: exact mailbox-per-domain limit and source] is a capacity ceiling that functions identically to expert queue depth in the MoE analogy. When a domain approaches its 15-mailbox limit, the router should decrement that domain's bias, directing new mailbox allocation to other domains. This is the same mechanism, different domain.
+## Exercises
 
-## Ship It
+**Exercise 1 (Medium) — MLA Break-Even Analysis.** Modify Demo B's configuration: change `latent_dim_mla` from 512 to 256, then to 1024. Record the KV cache size at 128k context for each. Now compute the parameter cost of the MLA projection matrices at each setting: down-projection = `hidden_dim × latent_dim` (7168 × latent), up-projection = `latent_dim × (qk_dim + v_dim)` (latent × 2816). Multiply by 61 layers. At what `latent_dim` does the per-layer projection parameter cost exceed the KV cache savings of going from 1024 to 512 at a batch size of 32 concurrent requests at 128k context? This tells you the floor on KV compression before the projection weights become the memory bottleneck instead of the cache.
 
-To deploy DeepSeek-V3 in a production GTM inference pipeline, you need to make three architecture decisions that map directly to the four mechanisms we just traced.
+**Exercise 2 (Hard) — Scoring Function Comparison for Agent Router.** The Use It router scores agents with `1 / (1 + queue) + bias`. Replace this with a softmax-based score: `exp(-queue / tau) + bias`, where `tau` is a temperature parameter. Run the simulation at `tau = 0.5`, `tau = 1.0`, and `tau = 2.0`, recording the final CoV per capability group at each temperature. Plot or print a comparison table: which temperature produces the lowest CoV? Compare all three against the reciprocal scoring from the lesson. Then explain: why does high temperature (tau = 2.0) behave more like random routing, and why does low temperature (tau = 0.5) create "winner-take-all" patterns where one agent dominates until its bias drops far enough to flip? Connect this to the softmax temperature in DeepSeek-V3's actual MoE router and explain why the paper does not report temperature as a tunable hyperparameter.
 
-First, decide on the quantization strategy. DeepSeek-V3 was trained in FP8, but inference quantization is a separate decision. The FP8 weights from training can be served directly on H100/H200 GPUs, but most production deployments targeting cost efficiency will use INT4 or INT8 weight quantization. The MLA key/value projections should stay in higher precision (FP16 or BF16) regardless of the overall quantization scheme — they are small matrices, and quantizing them introduces measurable quality degradation in long-context retrieval. This mirrors the training-time decision: keep sensitive projections in higher precision, quantize the heavy matmuls. If you are serving DeepSeek-V3 through vLLM or SGLang, both support FP8 inference with configurable precision per layer type.
+## Key Terms
 
-Second, decide on the KV cache budget. MLA reduces the per-token KV cache by roughly 20x compared to MHA, but at 128k context across a batch of 32 concurrent requests, the cache still consumes significant memory. The formula from Demo B gives you the number: at 128k context, MLA stores approximately 61 × 512 × 131072 × 2 bytes = 8.1GB per request. For 32 concurrent requests, that is 260GB of KV cache alone. You need GPUs with enough HBM to hold the model weights (~671B × 1 byte in FP8 = ~671GB across the cluster) plus the KV cache plus activation memory. This is why MoE models are typically served on multi-GPU setups with tensor parallelism — the expert weights are distributed across GPUs, and the KV cache is replicated or sharded depending on the attention implementation.
+- **Multi-head Latent Attention (MLA):** Attention mechanism that compresses the KV cache into a low-dimensional latent vector (~512-dim in DeepSeek-V3) via a learned down-projection, then reconstructs full key/value tensors at attention time via up-projection. Reduces per-token KV cache by ~20x vs standard MHA.
 
-Third, decide whether to use the MTP head for speculative decoding. At inference time, the MTP head can propose candidate tokens that the main model verifies, reducing the number of forward passes for autoregressive generation. This is particularly valuable for GTM use cases that generate long outputs: email drafting, enrichment summaries, structured data extraction. The speedup depends on the acceptance rate of proposed tokens, which is typically 50-70% for a well-trained MTP head. The tradeoff: the MTP head adds computation per step (a second small forward pass) but reduces the total number of steps. For sequences longer than ~100 tokens, speculative decoding with MTP is a net win.
+- **Auxiliary-Loss-Free Load Balancing:** MoE routing strategy that replaces the auxiliary balancing loss with a dynamically adjusted per-expert bias term. The bias is updated heuristically based on expert load relative to the mean — not via gradient descent — so no interference with the primary training objective occurs.
 
-Here is a cost calculator for deciding whether DeepSeek-V3 or a smaller dense model is the right choice for a GTM inference workload:
+- **Multi-Token Prediction (MTP):** Training objective that augments standard next-token prediction with one or more additional prediction heads targeting tokens further ahead. DeepSeek-V3 uses depth-2 (predict t+1 and t+2). Produces denser gradient signal and can serve as a speculative-decoding proposer at inference time.
 
-```python
-import math
+- **DualPipe:** Pipeline parallelism schedule that interleaves forward and backward passes across pipeline stages to minimize idle bubbles, co-designed with MoE expert placement so expert all-to-all communication overlaps with pipeline gaps.
 
-DEEPSEEK_V3 = {
-    "name": "DeepSeek-V3",
-    "total_params_b": 671,
-    "active_params_b": 37,
-    "kv_cache_gb_128k": 8.1,
-    "fp8_weights_gb": 671,
-    "tokens_per_second_per_gpu": 1800,
-    "gpus_needed": 8,
-    "cost_per_gpu_hour": 2.50,
-    "mtp_speedup": 1.6,
-}
+- **Active Parameter Ratio:** The fraction of total parameters that process any given token. DeepSeek-V3: 37B active / 671B total ≈ 5.5%, meaning 94.5% of weights are dormant per forward pass.
 
-LLAMA_70B = {
-    "name": "Llama-3.1-70B (dense)",
-    "total_params_b": 70,
-    "active_params_b": 70,
-    "kv_cache_gb_128k": 33.6,
-    "fp8_weights_gb": 70,
-    "tokens_per_second_per_gpu": 3500,
-    "gpus_needed": 1,
-    "cost_per_gpu_hour": 2.50,
-    "mtp_speedup": 1.0,
-}
+- **Coefficient of Variation (CoV):** Standard deviation divided by mean. Used as the load-balance metric for MoE routers and agent squads alike. CoV approaching zero indicates uniform distribution; high CoV indicates hotspots.
 
-def compute_inference_cost(config, daily_tokens_millions, context_length=8192):
-    effective_tps = config["tokens_per_second_per_gpu"] * config["mtp_speedup"]
-    daily_tokens = daily_tokens_millions * 1e6
-    seconds_per_day = 86400
-    throughput_needed = daily_tokens / seconds_per_day
-    gpu_hours_per_day = (throughput_needed / effective_tps) * 24 * config["gpus_needed"]
-    gpu_hours_per_day = max(gpu_hours_per_day, config["gpus_needed"] * 24)
+- **FP8 Mixed Precision:** Training regime where forward and backward matrix multiplications use 8-bit floating-point tensors while sensitive components (KV projections, optimizer states, accumulation) remain in BF16/FP32.
 
-    kv_per_request = config["kv_cache_gb_128k"] * (context_length / 131072)
-    max_batch = math.floor((80 - config["fp8_weights_gb"] / config["gpus_needed"]) / max(kv_per_request, 0.1))
-    max_batch = max(max_batch, 1)
+## Sources
 
-    daily_cost = gpu_hours_per_day * config["cost_per_gpu_hour"]
-    cost_per_million = daily_cost / daily_tokens_millions
-
-    return {
-        "model": config["name"],
-        "effective_tps": effective_tps,
-        "gpu_hours_day": gpu_hours_per_day,
-        "daily_cost": daily_cost,
-        "cost_per_1m_tokens": cost_per_million,
-        "max_concurrent_batch": max_batch,
-        "kv_per_request_gb": kv_per_request,
-    }
-
-print("=== GTM Inference Cost Comparison ===\n")
-print(f"{'Metric':<30} {'DeepSeek-V3':<20} {'Llama-3.1-70B':<20}")
+- DeepSeek-AI. "DeepSeek-V3 Technical Report." arXiv:2412.19437, December 2024. — Primary source for all architectural specifications: MLA (Section 2.1.1), auxiliary-loss-free MoE routing (Section 2.2.1), MTP (Section 2.3), FP8 mixed precision (Section 3.1), DualPipe (Section 3.4), training cost of $5.576M / 2.788M H800 GPU-hours (Section 3.4.1), and parameter counts (Section 1).
+- DeepSeek-AI. "DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model." arXiv:2405.04434, June 2024. — MLA was introduced in V2; V3 inherits and refines the compression dimensions.
+- Shazeer, N. et al. "Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer." ICLR 2017. — Foundational MoE routing with auxiliary loss; DeepSeek-V3's auxiliary-loss-free approach is a direct response to this design.
+- Fedus, W. et al. "Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity." JMLR, 2022. — Top-1 routing with auxiliary loss; the load-balancing failure modes this paper documents are the ones DeepSeek-V3's bias mechanism eliminates.
+- Lepikhin, D. et al. "GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding." ICLR 2021. — Expert parallelism and all-to-all communication patterns that DualPipe's scheduling overlaps.
+- For GTM agent squad routing patterns and Zone 10 multi-agent orchestration taxonomy: [CITATION NEEDED — concept: GTM agent squad routing patterns and Zone 10 taxonomy in the curriculum topic map]
+- For H800/H100 GPU spot pricing used in inference cost estimates: [CITATION NEEDED — concept: current GPU spot pricing, 2024-2025]

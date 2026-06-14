@@ -1,0 +1,11 @@
+## Ship It
+
+In production, the graph representations from this lesson connect directly to your GTM stack. The Python environment running these scripts is the same one that handles Clay webhook payloads, Apollo API responses, and enrichment pipeline logic. Here's how the pieces connect.
+
+**Account scoring pipeline.** The company-technology bipartite graph from "Use It" becomes a pre-processing step in your scoring model. Instead of one-hot encoding "uses Slack: yes/no," you compute graph-derived features: eigenvector centrality in the tech-adoption graph, community membership labels from spectral clustering, shortest-path distance to your top 10 customers. These features feed into whatever classifier you use for ICP scoring — XGBoost, logistic regression, or a neural network. The graph features capture relational signal that firmographic columns cannot.
+
+**Enrichment optimization.** The waterfall-as-graph model lets you optimize provider order by cost and coverage. Instead of hardcoding "try Apollo first, then ZoomInfo," you compute the minimum-cost path through the provider graph that covers all required attributes. When a provider changes pricing or adds new attribute coverage, you update the edge weights and recompute — the traversal logic stays the same. This is a direct application of shortest-path algorithms to enrichment cost optimization. [CITATION NEEDED — concept: dynamic enrichment provider ordering based on graph traversal cost optimization]
+
+**Org chart routing.** When a Clay enrichment webhook returns a contact's title and company, you query your org chart graph to find their reporting chain. If the contact is an IC at depth 3, you traverse upward to find the VP at depth 1 and the manager at depth 2. This determines your multi-threaded outreach sequence: contact the IC, CC the manager, reference the VP's priorities in the email. The graph traversal happens in the webhook handler — same Python environment, same NetworkX objects, production data.
+
+The Zone 1 (TAM Mapping) and Zone 2 (Enrichment) workflows assume you can represent relationships as graphs, traverse them efficiently, and extract features from their structure. That's what this lesson provides. The next step is wiring these graph operations into actual Clay tables, Apollo lookups, and CRM sync — but the mathematical foundation is here.

@@ -230,4 +230,38 @@ for i in range(len(prompts)):
     print(f"  P{i} → P{nn} (cosine={similarities[i,nn]:.3f})  [{prompts[nn][:40]}]")
 ```
 
-This output shows the embedding structure that conditions both music generation and GTM signal routing. The two lo-fi prompts (P0, P1) cluster together with high cosine similarity (~0.7+). The metal and ambient prompts sit far apart. If these were inbound signals rather than music prompts — say, P0 = "SaaS company viewed pricing page 3x" and P1 = "SaaS company viewed pricing + case studies" — the same embedding similarity would route both to the same outbound sequence, while P2 ("enterprise viewed security docs") would route elsewhere. The embedding model is the routing
+This output shows the embedding structure that conditions both music generation and GTM signal routing. The two lo-fi prompts (P0, P1) cluster together with high cosine similarity (~0.7+). The metal and ambient prompts sit far apart. If these were inbound signals rather than music prompts — say, P0 = "SaaS company viewed pricing page 3x" and P1 = "SaaS company viewed pricing + case studies" — the same embedding similarity would route both to the same outbound sequence, while P2 ("enterprise viewed security docs") would route elsewhere. The embedding model is the routing layer — and embedding quality, not prompt length or model size, determines whether the right lead lands in the right sequence. This is the Signal Machine pattern (Zone 06): inbound signals encode into the same vector space as your ICP archetypes, and cosine similarity gates routing before a human ever reviews the lead.
+
+## Exercises
+
+**Exercise 1 (Easy):** Modify the MusicGen prompt set in the Build It section to include two acoustically opposite genres (e.g., classical orchestral vs. industrial noise). Generate the clips and re-encode through EnCodec. Compare the token distributions — print the number of unique tokens per codebook for each genre. Question: does the more structured genre (classical) produce more or fewer unique tokens than the noise-based genre? What does this tell you about how the codec represents predictability?
+
+**Exercise 2 (Hard):** Build a prototype signal router using the same embedding mechanism. Create 10 synthetic inbound signals as text strings (e.g., "Series B fintech, 200 employees, viewed pricing 3x, downloaded security whitepaper"). Define 3 ICP archetype descriptions as anchor embeddings. For each signal, compute cosine similarity against all three archetypes, assign the signal to its nearest archetype, and print the routing table. Then introduce a threshold (0.65 cosine minimum) below which the signal is held for human review rather than auto-routed. Observe which signals fall below threshold — these are your edge cases, and they are the GTM equivalent of MusicGen's segment-boundary artifacts: the places where the model is least confident and most likely to produce garbage.
+
+## Key Terms
+
+**EnCodec** — Neural audio codec that compresses raw waveform audio into discrete integer tokens at ~50 frames/second across multiple codebooks. Enables autoregressive transformers to predict audio as a sequence of integers rather than raw samples.
+
+**Autoregressive Token Prediction** — Generation method where each output token is predicted one at a time, conditioned on all previously generated tokens. Errors compound sequentially — a wrong prediction at step 100 influences steps 101 through N.
+
+**Latent Diffusion** — Generation method that starts with Gaussian noise in a compressed latent space and iteratively denoises toward the target distribution. Processes the entire output globally at each step, enabling better long-range coherence than left-to-right autoregression.
+
+**Mel-Spectrogram** — Time-frequency representation of audio that compresses waveform data into a 2D image-like format (frequency bins × time frames). The intermediate representation used by Stable Audio's VAE before diffusion.
+
+**Text Conditioning Embedding** — A vector produced by encoding a text prompt through a language model (T5, CLAP, etc.) that steers the generation process. The same embedding mechanism powers both audio generation steering and GTM signal routing.
+
+**Composition Rights vs. Sound Recording Rights** — Composition rights cover the underlying musical work (melody, lyrics, harmony), typically held by a publisher. Sound recording rights cover the specific audio recording, typically held by a label. AI music generation potentially infringes both independently.
+
+**Composite Pipeline** — A multi-stage generation system where separate models handle lyrics, instrumental audio, and vocal synthesis, then combine into a final track. Suno and Udio are presumed composite pipelines, though their architectures are undocumented.
+
+## Sources
+
+- Copet, J., et al. "Simple and Controllable Music Generation." Meta AI, 2023. (MusicGen paper and `audiocraft` library)
+- Défossez, A., et al. "High Fidelity Neural Audio Compression." Meta AI, 2022. (EnCodec)
+- Evans, Z., et al. "Stable Audio Open." Stability AI, 2024. (Stable Audio Open model and paper)
+- [CITATION NEEDED — concept: RIAA v. Suno and Udio filing details, case number, and 2024 complaint text]
+- [CITATION NEEDED — concept: Warner Music reported $500M AI settlement, exact date and terms]
+- [CITATION NEEDED — concept: UMG AI platform settlement details, 2025–2026]
+- [CITATION NEEDED — concept: Suno v5 and Udio v4 release dates and documented feature set, 2026]
+- [CITATION NEEDED — concept: ACE-Step 4B XL architecture and April 2026 release details]
+- [CITATION NEEDED — concept: sync licensing market size estimate, 2025–2026]

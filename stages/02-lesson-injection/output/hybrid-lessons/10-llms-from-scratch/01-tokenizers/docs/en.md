@@ -130,4 +130,88 @@ def install_if_needed(package):
 
 install_if_needed("tiktoken")
 install_if_needed("transformers")
-install_if
+install_if_needed("sentencepiece")
+
+from tiktoken import get_encoding
+from transformers import AutoTokenizer
+
+gpt4 = get_encoding("cl100k_base")
+bert = AutoTokenizer.from_pretrained("bert-base-uncased")
+llama = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer")
+
+gtm_strings = [
+    "B2B SaaS revenue",
+    "Zuora Clari Gong Outreach",
+    "https://app.clay.com/companies/123",
+    "ARR MRR churn",
+    "한국어 고객 지원",
+]
+
+print(f"\n{'Text':<40} {'GPT-4':>6} {'BERT':>6} {'LLaMA':>6}")
+print("-" * 62)
+for text in gtm_strings:
+    g4 = len(gpt4.encode(text))
+    bt = len(bert.encode(text, add_special_tokens=False))
+    ll = len(llama.encode(text))
+    print(f"{text:<40} {g4:>6} {bt:>6} {ll:>6}")
+
+print("\n--- Token breakdown: 'Zuora Clari Gong Outreach' ---")
+text = "Zuora Clari Gong Outreach"
+print(f"GPT-4:   {[gpt4.decode([t]) for t in gpt4.encode(text)]}")
+print(f"BERT:    {bert.tokenize(text)}")
+print(f"LLaMA:   {llama.tokenize(text)}")
+```
+
+The token breakdown shows the core tradeoff. BERT fragments "Zuora" into `["zu", "##ora"]` — the `##` prefix marks a non-initial subword, meaning the fragment only appears attached to something before it. GPT-4 and LLaMA handle the same string with different merge histories because their training corpora differ. The Korean string (`한국어 고객 지원`) will fail or fragment heavily under BERT's WordPiece because its vocabulary is English-only. SentencePiece handles it because it operates at the byte level. This is why multilingual models switched to SentencePiece — it removes the language dependency from the tokenizer layer.
+
+## Use It
+
+Byte Pair Encoding via tiktoken determines your per-call GPT-4 cost for every GTM prompt — the same enrichment payload or outbound sequence may cost meaningfully different amounts depending on whether your string fragments into common subwords or rare character sequences.
+
+```python
+import tiktoken
+
+enc = tiktoken.get_encoding("cl100k_base")
+
+prompts = {
+    "Cold email": "Hi {first_name}, noticed {company} just raised Series B. Our platform helps B2B SaaS teams automate revenue operations and reduce churn by 30%. Worth a 15-minute call next week?",
+    "ICP payload": '{"company":"Clari","industry":"SaaS","arr_estimate":"$50M-100M","employees":500,"tech_stack":["Salesforce","Gong","Clay","Outreach"]}',
+    "Discovery notes": "QBR recap: Pipeline coverage at 3.2x. Deal slippage in enterprise segment driven by procurement delays. Champion at Zuora left for competitor. Expansion path: multi-product bundle.",
+    "Website scrape": "Clari | Revenue Platform | Run RevOps like never before. AI-powered forecasting, pipeline management, and revenue intelligence for modern B2B teams.",
+}
+
+rate_input = 0.03
+rate_output = 0.06
+
+print(f"{'Prompt type':<18} {'Tokens':>7} {'In/1k':>8} {'Out/1k':>8}")
+print("-" * 45)
+for label, text in prompts.items():
+    n = len(enc.encode(text))
+    print(f"{label:<18} {n:>7} ${n*rate_input:>6.2f} ${n*rate_output:>6.2f}")
+```
+
+This is foundational for prompt cost management across every GTM AI workflow — the tokenizer determines how much of your context window each ICP profile, enrichment payload, or outbound sequence actually consumes. When a vendor claims "our model handles 128K tokens," what matters is how many *of your tokens* fit in that window. A tokenizer that shreds SaaS jargon into fragments effectively gives you a smaller window than the number suggests. [CITATION NEEDED — concept: GTM token budget benchmarks across common enrichment payloads]
+
+## Exercises
+
+**Exercise 1 (Easy):** Add a `tokenize(text)` function to the BPE implementation in Build It. The function should take a new string, apply the learned merges in order, and return the token list. Test it on `"SaaS revenue churn"` — a string that shares vocabulary with the training corpus — and on `"enterprise onboarding"` — a string that does not. Print both results. Observe that words unseen during training cannot be merged beyond what the learned pairs happen to cover.
+
+**Exercise 2 (Hard):** Build a token-cost comparison tool for a GTM engineering workflow. Collect 20 strings that represent real GTM payloads: five outbound email bodies, five ICP enrichment JSON objects, five LinkedIn profile scrapes, and five meeting transcript excerpts. Run all 20 through `tiktoken` (GPT-4), a WordPiece tokenizer (BERT), and a SentencePiece tokenizer (LLaMA). Compute the average tokens-per-string for each tokenizer. Identify the three strings with the largest token-count variance across tokenizers. Write a one-paragraph diagnosis for each: what in the string (company name, URL, notation, multilingual content) causes the tokenizer to fragment it? This builds the intuition you need to design prompts that stay under context limits across model providers.
+
+## Key Terms
+
+- **BPE (Byte Pair Encoding):** Subword tokenization algorithm that starts from individual characters and iteratively merges the most frequent adjacent pair until vocabulary size is reached. Used by GPT-2, GPT-4, Claude.
+- **WordPiece:** Subword tokenization that selects merges by maximum likelihood increase rather than raw frequency. Non-initial subwords are prefixed with `##`. Used by BERT, DistilBERT.
+- **SentencePiece:** Tokenization framework that treats input as raw UTF-8 bytes without pre-tokenizing into words. Whitespace becomes `▁`. Supports BPE or Unigram algorithms. Used by T5, LLaMA, Mistral.
+- **Pre-tokenization:** The step of splitting raw text into words before subword tokenization begins. BPE and WordPiece pre-tokenize on whitespace and punctuation. SentencePiece skips this step entirely.
+- **Vocabulary size:** The number of unique tokens the tokenizer can produce. Larger vocabularies produce shorter sequences but require larger embedding matrices. GPT-4 uses ~100K; LLaMA uses 32K; BERT uses 30K.
+- **Token ID:** The integer assigned to a token in the vocabulary. This is what the model actually processes — the tokenizer is the bridge between human-readable text and model-readable integers.
+- **Merge rule:** A learned operation (`A + B → AB`) that BPE or WordPiece applies during tokenization. The order of merge rules matters — they are applied greedily in training order.
+
+## Sources
+
+- Sennrich, R., Haddow, B., & Birch, A. (2016). "Neural Machine Translation of Rare Words with Subword Units." *ACL 2016.* — Original BPE paper for NMT.
+- Schuster, M. & Nakajima, K. (2012). "Japanese and Korean Voice Search." *ICASSP 2012.* — WordPiece algorithm origin.
+- Kudo, T. & Richardson, J. (2018). "SentencePiece: A simple and language independent subword tokenizer and detokenizer for Neural Text Processing." *EMNLP 2018 Demo.* — SentencePiece framework.
+- OpenAI. `tiktoken` library. GitHub: openai/tiktoken. — Production BPE encoder for GPT-3.5/GPT-4 (`cl100k_base`, `o200k_base`).
+- Devlin, J. et al. (2019). "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding." *NAACL 2019.* — WordPiece tokenization in BERT.

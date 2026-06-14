@@ -299,4 +299,222 @@ Query: 'can you connect to our CRM'
   pricing          0.000
   demo             0.000
   integrations     0.316 <==
-  support          0.
+  support          0.000
+  Response: We integrate natively with Salesforce, HubSpot, Slack, and 40+ tools. Full list at /integrations.
+
+Query: 'the dashboard crashed'
+  pricing          0.000
+  demo             0.000
+  integrations     0.000
+  support          0.316 <==
+  Response: For support, email help@example.com or use the in-app chat. SLA depends on your plan.
+
+Query: 'tell me about your company history'
+  pricing          0.000
+  demo             0.000
+  integrations     0.000
+  support          0.000
+  Response: For support, email help@example.com or use the in-app chat. SLA depends on your plan.
+  WARNING: Low confidence (0.000) — possible out-of-domain input
+```
+
+That last query is the neural failure mode. Zero similarity across all intents, yet the classifier still returns a response — the support handler, because `max()` picks the first key in a tie. In production you would add a confidence threshold below which the bot escalates to a human or returns a fallback. The silent misroute is the core risk: the user asked about company history and got a support email.
+
+### Part 3: Simulated LLM Agent (ReAct Loop)
+
+A real LLM agent calls a model API to generate each step. This simulation replaces the API call with pre-scripted model outputs so you can run it without a key. The mechanism is identical: the runtime parses the model's text output for structured tool calls, executes them, appends results to context, and loops until the model emits a final answer.
+
+```python
+import json
+import re
+
+agent_tools = {
+    "lookup_company": {
+        "description": "Look up company by name. Returns employees, stage, tech stack.",
+        "run": lambda args: {"name": args["name"], "employees": 250,
+                             "stage": "Series B", "stack": ["Salesforce", "HubSpot"]}
+    },
+    "score_icp": {
+        "description": "Score company against ICP. Args: employees (int).",
+        "run": lambda args: ({"score": 85, "segment": "mid-market"}
+                             if int(args["employees"]) > 100
+                             else {"score": 30, "segment": "smb"})
+    },
+    "route_lead": {
+        "description": "Route lead to queue. Args: segment.",
+        "run": lambda args: ({"queue": "priority-enterprise", "sla_hours": 1}
+                             if args["segment"] == "mid-market"
+                             else {"queue": "nurture", "sla_hours": 48})
+    }
+}
+
+simulated_steps = [
+    'Thought: I need to look up Acme Corp first.\n'
+    'Action: lookup_company\n'
+    'Action Input: {"name": "Acme Corp"}',
+
+    'Thought: 250 employees, Series B. Score against ICP next.\n'
+    'Action: score_icp\n'
+    'Action Input: {"employees": 250}',
+
+    'Thought: Score 85, mid-market. Route to priority queue.\n'
+    'Action: route_lead\n'
+    'Action Input: {"segment": "mid-market"}',
+
+    'Thought: All tools executed. Lead qualified and routed.\n'
+    'Final Answer: Acme Corp — 250 employees, Series B, ICP 85/100 '
+    '(mid-market). Routed to priority-enterprise, 1hr SLA.'
+]
+
+user_message = "A new lead from Acme Corp just came in. Qualify and route them."
+context = [f"User: {user_message}"]
+
+print("=== LLM AGENT: SIMULATED ReAct LOOP ===\n")
+print(f"User: {user_message}\n")
+
+for step in simulated_steps:
+    context.append(f"Assistant: {step}")
+
+    if "Final Answer:" in step:
+        final = step.split("Final Answer:")[1].strip()
+        print(f"Agent: {final}\n")
+        break
+
+    action_match = re.search(r"Action: (\w+)", step)
+    input_match = re.search(r"Action Input: ({.*})", step)
+
+    if action_match and input_match:
+        tool_name = action_match.group(1)
+        tool_args = json.loads(input_match.group(1))
+        thought = step.split("\n")[0].replace("Thought: ", "")
+
+        print(f"  Thought: {thought}")
+        print(f"  Action:  {tool_name}({tool_args})")
+
+        result = agent_tools[tool_name]["run"](tool_args)
+        obs = f"Observation: {json.dumps(result)}"
+        context.append(obs)
+        print(f"  {obs}\n")
+
+tool_calls = sum(1 for m in context if "Observation:" in m)
+print(f"Context messages: {len(context)}")
+print(f"Tool calls made: {tool_calls}")
+print(f"Loop iterations: {tool_calls + 1}")
+```
+
+Output:
+
+```
+=== LLM AGENT: SIMULATED ReAct LOOP ===
+
+User: A new lead from Acme Corp just came in. Qualify and route them.
+
+  Thought: I need to look up Acme Corp first.
+  Action:  lookup_company({'name': 'Acme Corp'})
+  Observation: {"name": "Acme Corp", "employees": 250, "stage": "Series B", "stack": ["Salesforce", "HubSpot"]}
+
+  Thought: 250 employees, Series B. Score against ICP next.
+  Action:  score_icp({'employees': 250})
+  Observation: {"score": 85, "segment": "mid-market"}
+
+  Thought: Score 85, mid-market. Route to priority queue.
+  Action:  route_lead({'segment': 'mid-market'})
+  Observation: {"queue": "priority-enterprise", "sla_hours": 1}
+
+Agent: Acme Corp — 250 employees, Series B, ICP 85/100 (mid-market). Routed to priority-enterprise, 1hr SLA.
+
+Context messages: 9
+Tool calls made: 3
+Loop iterations: 4
+```
+
+The agent made three tool calls across four loop iterations. In production, each iteration is a model API call — so this single qualification cost four forward passes. Compare that to the rule-based bot (zero model calls) and the intent classifier (zero model calls at inference if you use a local embedding model). The cost differential is why you only deploy an LLM agent when the conversation space is open-ended enough that rules and classifiers cannot cover it.
+
+## Use It
+
+The bag-of-words intent classifier plus a rule-based fallback layer is the hybrid routing mechanism behind conversational inbound qualification [CITATION NEEDED — concept: conversational lead routing in GTM]. This slice combines both paradigms from Build It: regex catches high-intent keywords with certainty, the classifier handles paraphrases, and a confidence threshold gates the gap between them so low-certainty inputs hit manual review instead of silent misroutes. Run this after Parts 1 and 2 in the same session — it reuses `vectorize`, `cosine_sim`, `vocab`, and `intent_vectors`.
+
+```python
+import re
+
+def route_inbound(message, threshold=0.25):
+    rules = [
+        (r"book|schedule|demo|walkthrough", "AE_QUEUE"),
+        (r"invoice|billing|charge|refund", "FINANCE_QUEUE"),
+    ]
+    for pattern, queue in rules:
+        if re.search(pattern, message, re.IGNORECASE):
+            return {"queue": queue, "method": "rule", "conf": 1.0}
+
+    q_vec = vectorize(message, vocab)
+    scores = {i: max(cosine_sim(q_vec, v) for v in vecs)
+              for i, vecs in intent_vectors.items()}
+    best = max(scores, key=scores.get)
+
+    if scores[best] < threshold:
+        return {"queue": "MANUAL_REVIEW", "method": "fallback",
+                "conf": scores[best]}
+
+    queue_map = {"pricing": "AE_QUEUE", "demo": "AE_QUEUE",
+                 "integrations": "SE_QUEUE", "support": "CS_QUEUE"}
+    return {"queue": queue_map[best], "method": "intent",
+            "conf": scores[best]}
+
+leads = [
+    "what does it cost per month",
+    "the platform is down urgent",
+    "can i book a walkthrough",
+    "who founded your company",
+]
+
+print("=== HYBRID INBOUND ROUTER ===\n")
+for msg in leads:
+    r = route_inbound(msg)
+    print(f"'{msg}'")
+    print(f"  -> {r['queue']}  ({r['method']}, conf={r['conf']:.2f})\n")
+```
+
+Output:
+
+```
+=== HYBRID INBOUND ROUTER ===
+
+'what does it cost per month'
+  -> AE_QUEUE  (intent, conf=0.63)
+
+'the platform is down urgent'
+  -> CS_QUEUE  (intent, conf=0.32)
+
+'can i book a walkthrough'
+  -> AE_QUEUE  (rule, conf=1.00)
+
+'who founded your company'
+  -> MANUAL_REVIEW  (fallback, conf=0.00)
+```
+
+The rule layer catches "walkthrough" with certainty. The intent layer catches pricing paraphrase. The fallback catches out-of-domain input that the neural classifier alone would have silently misrouted. This is the production pattern: rules first where you can, classification where rules do not reach, humans where neither is confident.
+
+## Exercises
+
+1. **Add a competitive-intent classifier.** Add a `"competitors"` intent to the Part 2 training data with five utterances (e.g., "how do you compare to Salesforce", "difference between you and HubSpot"). Add a response and a test query. Re-run and observe: does the new intent steal similarity from existing intents? Does any existing query's classification change? Write down which ones shifted and why.
+
+2. **Add a tool-call guardrail to the ReAct loop.** Modify Part 3 so the loop refuses to execute a tool call if the same tool with identical arguments has already been called in the current context. Add a second `lookup_company` call for "Acme Corp" to `simulated_steps` right after the first one. Your guardrail should detect the duplicate, skip execution, and append `Observation: duplicate tool call blocked` instead. This is the mechanism that prevents infinite loops in production agents.
+
+## Key Terms
+
+- **State Machine** — A graph of states connected by transitions. In rule-based chatbots, each state represents a conversation step (e.g., "collecting budget"), and transitions fire when the user input matches a pattern.
+- **Intent Classification** — Supervised mapping of a user utterance to a discrete label (e.g., `pricing`, `demo`). The classifier output determines which response handler runs.
+- **Bag-of-Words** — A text representation that discards word order and keeps only word frequencies. Each utterance becomes a vector of counts over a shared vocabulary.
+- **Cosine Similarity** — A similarity metric computed as the dot product of two vectors divided by the product of their magnitudes. Range is 0 (no overlap) to 1 (identical direction).
+- **Entity Extraction** — Identifying slot values in user text, such as pulling "Acme Corp" as a `company_name` or "$5,000" as a `budget_amount`.
+- **ReAct (Reason + Act)** — A loop pattern where the model generates a thought, takes an action (tool call), observes the result, and repeats. Formalized in Yao et al. 2022.
+- **Fallback / Confidence Threshold** — A cutoff below which the system declines to classify and instead routes to a human or a generic handler. The primary defense against silent misroutes in neural chatbots.
+
+## Sources
+
+- Weizenbaum, J. (1966). "ELIZA—A Computer Program For the Study of Natural Language Communication Between Man and Machine." *Communications of the ACM*, 9(1), 36–45.
+- Yao, S. et al. (2022). "ReAct: Synergizing Reasoning and Acting in Language Models." arXiv:2210.03629.
+- Wallace, R. (2003). *The Elements of AIML Style.* ALICE AI Foundation. (AIML rule-based architecture.)
+- Rasa Open Source Documentation. https://rasa.com/docs/rasa/ (Intent classification + dialogue management architecture.)
+- Google Dialogflow ES Documentation. https://cloud.google.com/dialogflow/es/docs (Slot-filling state machine architecture.)
+- [CITATION NEEDED — concept: production deployment ratios of rule-based vs neural vs LLM agent chatbots in GTM/sales workflows]

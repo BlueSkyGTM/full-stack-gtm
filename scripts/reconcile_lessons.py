@@ -64,8 +64,9 @@ def main():
     harvested = 0
 
     for row in rows:
-        out = REPO / row["output_file"].replace("\\", "/")
-        if not out.exists():
+        rel = (row.get("output_file") or "").replace("\\", "/").strip()
+        out = REPO / rel if rel else None
+        if not rel or out is None or not out.is_file():
             counts["missing"] += 1
             row["status"] = "failed"
             row["bucket"] = "regen"

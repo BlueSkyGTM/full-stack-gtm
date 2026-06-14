@@ -367,196 +367,91 @@ The rank-deficient matrix has a singular value of exactly 0 — one direction in
 
 ## Use It
 
-This is where the math meets the pipeline. In Zone 01, your Python environment is where you will run Clay webhooks and Apollo API calls — and cosine similarity is the operation underneath most "AI scoring" features in GTM tools. When Clay's "Find Companies Similar To" enrichment returns ranked results, it is computing cosine similarity between your seed company's embedding and every candidate in its database [CITATION NEEDED — concept: Clay's similarity scoring mechanism uses cosine similarity on embeddings]. When you build an ICP vector — a numerical representation of your ideal customer profile — and score accounts against it, you are doing exactly what we built above: normalize, dot product, rank.
-
-The ICP vector itself is constructed by averaging or weighting the embeddings of companies you have identified as good fits. Each dimension of that vector represents some latent feature the embedding model learned — maybe industry, maybe company stage, maybe something uninterpretable. You do not need to know what each dimension means. You need to know that cosine similarity against this vector will surface companies pointing in the same direction in embedding space, which empirically correlates with fit.
-
-Let's wire it up. We will construct a simplified ICP vector from three seed companies, then score five candidate accounts against it.
+Cosine similarity on normalized embeddings is the scoring engine behind AI-powered ICP matching — when Clay's "Find Companies Similar To" enrichment ranks candidates, it is computing this same dot product against a seed company's embedding [CITATION NEEDED — concept: Clay's similarity scoring mechanism]. This is Cluster 1.2, TAM Refinement & ICP Scoring. You build an ICP vector by averaging the embeddings of your best-fit customers, then score every prospect against it.
 
 ```python
 import numpy as np
 
 def normalize(v):
     v = np.array(v, dtype=float)
-    norm = np.linalg.norm(v)
-    if norm == 0:
-        return v
-    return v / norm
+    return v / np.linalg.norm(v) if np.linalg.norm(v) > 0 else v
 
-def cosine_similarity(v1, v2):
-    return np.dot(normalize(v1), normalize(v2))
+def cosine_sim(a, b):
+    return float(np.dot(normalize(a), normalize(b)))
 
-np.random.seed(42)
+icp_seeds = [np.array([0.8,0.3,0.1,0.9,0.2,0.7,0.4,0.1]),
+             np.array([0.7,0.4,0.2,0.8,0.3,0.6,0.5,0.2]),
+             np.array([0.9,0.2,0.0,0.85,0.15,0.75,0.35,0.05])]
+icp = np.mean(icp_seeds, axis=0)
 
-dim = 8
+accounts = {
+    "Acme Logistics":   [0.82,0.28,0.05,0.91,0.18,0.73,0.38,0.08],
+    "Globex Pharma":    [0.10,0.90,0.70,0.20,0.80,0.10,0.60,0.85],
+    "Initech SaaS":     [0.75,0.35,0.15,0.78,0.25,0.65,0.48,0.18],
+    "Stark Industries": [0.85,0.25,0.10,0.88,0.20,0.70,0.42,0.12],
+}
 
-icp_seed_1 = np.array([0.8, 0.3, 0.1, 0.9, 0.2, 0.7, 0.4, 0.1])
-icp_seed_2 = np.array([0.7, 0.4, 0.2, 0.8, 0.3, 0.6, 0.5, 0.2])
-icp_seed_3 = np.array([0.9, 0.2, 0.0, 0.85, 0.15, 0.75, 0.35, 0.05])
-
-icp_vector = np.mean([icp_seed_1, icp_seed_2, icp_seed_3], axis=0)
-icp_normalized = normalize(icp_vector)
-
-print("=== ICP Vector Construction ===")
-print(f"Seed 1: {np.round(icp_seed_1, 2)}")
-print(f"Seed 2: {np.round(icp_seed_2, 2)}")
-print(f"Seed 3: {np.round(icp_seed_3, 2)}")
-print(f"ICP (mean): {np.round(icp_vector, 4)}")
-print(f"ICP (normalized): {np.round(icp_normalized, 4)}")
-
-accounts = [
-    ("Acme Logistics",   [0.82, 0.28, 0.05, 0.91, 0.18, 0.73, 0.38, 0.08]),
-    ("Globex Pharma",    [0.1, 0.9, 0.7, 0.2, 0.8, 0.1, 0.6, 0.85]),
-    ("Initech SaaS",     [0.75, 0.35, 0.15, 0.78, 0.25, 0.65, 0.48, 0.18]),
-    ("Umbrella Retail",  [0.3, 0.6, 0.5, 0.4, 0.7, 0.3, 0.8, 0.6]),
-    ("Stark Industries", [0.85, 0.25, 0.1, 0.88, 0.2, 0.7, 0.42, 0.12]),
-]
-
-print("\n=== Lead Scoring ===")
-print(f"{'Account':25s} {'Cosine Sim':>12s} {'Verdict':>12s}")
-print("-" * 52)
-
-scored = []
-for name, vec in accounts:
-    sim = cosine_similarity(icp_vector, vec)
-    scored.append((name, sim, vec))
-    verdict = "QUALIFIED" if sim > 0.95 else ("NURTURE" if sim > 0.80 else "DISQUALIFY")
-    print(f"{name:25s} {sim:>12.4f} {verdict:>12s}")
-
-print("\n=== Ranked ===")
-scored.sort(key=lambda x: x[1], reverse=True)
-for rank, (name, sim, _) in enumerate(scored, 1):
-    print(f"  {rank}. {name:25s}  {sim:.4f}")
-
-best_name, best_sim, best_vec = scored[0]
-worst_name, worst_sim, worst_vec = scored[-1]
-print(f"\nTop match:    {best_name} ({best_sim:.4f})")
-print(f"Worst match:  {worst_name} ({worst_sim:.4f})")
-print(f"Spread:       {best_sim - worst_sim:.4f}")
+scored = [(name, cosine_sim(icp, vec)) for name, vec in accounts.items()]
+for name, score in sorted(scored, key=lambda x: x[1], reverse=True):
+    verdict = "QUALIFY" if score > 0.95 else ("NURTURE" if score > 0.80 else "DISQUALIFY")
+    print(f"{name:20s} {score:.4f}  {verdict}")
 ```
 
 Output:
 ```
-=== ICP Vector Construction ===
-Seed 1: [0.8 0.3 0.1 0.9 0.2 0.7 0.4 0.1]
-Seed 2: [0.7 0.4 0.2 0.8 0.3 0.6 0.5 0.2]
-Seed 3: [0.9 0.2 0.  0.85 0.15 0.75 0.35 0.05]
-ICP (mean): [0.8   0.3   0.1   0.85  0.217 0.683 0.417 0.117]
-ICP (normalized): [0.546 0.205 0.068 0.58  0.148 0.466 0.285 0.08 ]
-
-=== Lead Scoring ===
-Account                    Cosine Sim      Verdict
-----------------------------------------------------
-Acme Logistics                0.9997     QUALIFIED
-Globex Pharma                 0.4219     DISQUALIFY
-Initech SaaS                  0.9886     QUALIFIED
-Umbrella Retail               0.7420     DISQUALIFY
-Stark Industries              0.9981     QUALIFIED
-
-=== Ranked ===
-  1. Acme Logistics              0.9997
-  2. Stark Industries            0.9981
-  3. Initech SaaS                0.9886
-  4. Umbrella Retail             0.7420
-  5. Globex Pharma               0.4219
-
-Top match:    Acme Logistics (0.9997)
-Worst match:  Globex Pharma (0.4219)
-Spread:       0.5778
+Acme Logistics         0.9997  QUALIFY
+Stark Industries       0.9981  QUALIFY
+Initech SaaS           0.9886  QUALIFY
+Globex Pharma          0.4219  DISQUALIFY
 ```
 
-Acme Logistics and Stark Industries score nearly 1.0 — their feature vectors point in almost the same direction as the ICP. Globex Pharma scores 0.42 — its vector points in a substantially different direction (high on dimensions the ICP is low on, and vice versa). The 0.95 threshold for "QUALIFIED" is arbitrary; in production, you would calibrate it against known conversion data. But the mechanism — directional alignment via cosine similarity — is exactly what drives the scoring.
+Acme Logistics points in almost the same direction as your ICP — 0.9997 cosine similarity. Globex Pharma's vector points somewhere entirely different in embedding space. The 0.95 and 0.80 thresholds are business decisions, not mathematical ones — you calibrate them against your conversion data. If your top-of-funnel is starved, lower the qualify threshold to 0.90. If your AEs are complaining about lead quality, raise it to 0.97. The ranking is fixed by the math; the cutoff is fixed by the business.
 
-The threshold question is where GTM engineering meets linear algebra. Set it too high and you miss viable accounts (false negatives). Set it too low and your sales team burns time on bad fits (false positives). The right threshold depends on your conversion economics, not on the math. The math gives you the ranking; the business context sets the cutoff.
+## Exercises
 
-## Ship It
+### Exercise 1 (Easy): Dot Product and Angle Verification
 
-Now let's make this production-shaped. In a real GTM pipeline, this cosine similarity function sits inside a webhook handler that receives account data from Clay, scores it against your ICP vector, and returns a qualification decision. The ICP vector itself is stored as a serialized artifact — not recomputed on every request. Here is a minimal but runnable version of that pipeline.
+Given vectors `a = [2, 1, -1]` and `b = [1, 3, 2]`, compute the dot product manually using the element-wise sum formula. Then compute `|a|`, `|b|`, and `cos(θ) = (a · b) / (|a| · |b|)`. Write code that confirms your manual result and prints the angle in degrees. Finally, verify the identity `a · b = |a||b|cos(θ)` holds numerically.
+
+**Deliverable:** A Python script that prints the dot product (computed two ways: manual sum and NumPy), both magnitudes, the cosine, and the angle in degrees.
+
+### Exercise 2 (Hard): Rank Deficiency in a Simulated Feature Matrix
+
+You are building a GTM feature matrix to predict deal size. You collect four features per account: employee count, revenue, number of offices, and revenue per employee. After collecting data for 5 accounts, you notice your linear regression model produces unstable coefficients. Construct the 5×4 matrix below, compute its singular values, identify any near-zero entries, and explain which feature is redundant and why:
 
 ```python
 import numpy as np
-import json
-
-ICP_VECTOR = np.array([0.8, 0.3, 0.1, 0.85, 0.217, 0.683, 0.417, 0.117])
-QUALIFY_THRESHOLD = 0.95
-NURTURE_THRESHOLD = 0.80
-
-def score_account(account_embedding):
-    v = np.array(account_embedding, dtype=float)
-    icp_norm = ICP_VECTOR / np.linalg.norm(ICP_VECTOR)
-    v_norm = v / np.linalg.norm(v) if np.linalg.norm(v) > 0 else v
-    return float(np.dot(icp_norm, v_norm))
-
-def classify(similarity):
-    if similarity >= QUALIFY_THRESHOLD:
-        return "qualified"
-    elif similarity >= NURTURE_THRESHOLD:
-        return "nurture"
-    else:
-        return "disqualified"
-
-def handle_clay_webhook(payload):
-    results = []
-    for account in payload["accounts"]:
-        sim = score_account(account["embedding"])
-        verdict = classify(sim)
-        results.append({
-            "account_id": account["id"],
-            "name": account["name"],
-            "icp_similarity": round(sim, 4),
-            "verdict": verdict,
-        })
-    results.sort(key=lambda x: x["icp_similarity"], reverse=True)
-    return {"scored_accounts": results, "count": len(results)}
-
-mock_payload = {
-    "accounts": [
-        {"id": "acc_001", "name": "Wayne Enterprises", "embedding": [0.82, 0.28, 0.05, 0.91, 0.18, 0.73, 0.38, 0.08]},
-        {"id": "acc_002", "name": "LexCorp", "embedding": [0.79, 0.32, 0.12, 0.80, 0.24, 0.66, 0.45, 0.15]},
-        {"id": "acc_003", "name": "Daily Planet", "embedding": [0.15, 0.85, 0.65, 0.25, 0.75, 0.15, 0.55, 0.70]},
-    ]
-}
-
-response = handle_clay_webhook(mock_payload)
-print(json.dumps(response, indent=2))
-
-qualified = [r for r in response["scored_accounts"] if r["verdict"] == "qualified"]
-nurture = [r for r in response["scored_accounts"] if r["verdict"] == "nurture"]
-disqualified = [r for r in response["scored_accounts"] if r["verdict"] == "disqualified"]
-print(f"\nSummary: {len(qualified)} qualified, {len(nurture)} nurture, {len(disqualified)} disqualified")
+X = np.array([
+    [100, 50, 5, 0.5],
+    [200, 100, 10, 0.5],
+    [50, 25, 2, 0.5],
+    [300, 150, 15, 0.5],
+    [150, 75, 8, 0.5],
+])
 ```
 
-Output:
-```
-{
-  "scored_accounts": [
-    {
-      "account_id": "acc_001",
-      "name": "Wayne Enterprises",
-      "icp_similarity": 0.9997,
-      "verdict": "qualified"
-    },
-    {
-      "account_id": "acc_002",
-      "name": "LexCorp",
-      "icp_similarity": 0.9905,
-      "verdict": "qualified"
-    },
-    {
-      "account_id": "acc_003",
-      "name": "Daily Planet",
-      "icp_similarity": 0.4486,
-      "verdict": "disqualified"
-    }
-  ],
-  "count": 3
-}
+**Deliverable:** A script that computes SVD, prints singular values, reports matrix rank, and prints a one-sentence diagnosis of the redundant feature. Then modify the matrix by replacing the redundant column with an independent feature (e.g., `years_since_founded`) and confirm the matrix becomes full rank.
 
-Summary: 2 qualified, 0 nurture, 0 disqualified
-```
+## Key Terms
 
-This is the shape of a Clay webhook handler. In production, the `score_account` function would receive real embeddings from an embedding API (OpenAI, Cohere, or a local model), the ICP vector would be loaded from a serialized file rather than hardcoded, and the thresholds would be tuned against historical conversion data. But the core computation — normalize, dot product, classify — is exactly what we built from scratch in the Build It section.
+**Vector** — An ordered list of numbers, interpreted either as an arrow in space (geometric) or a row of feature values (tabular). In embeddings, a vector with hundreds of dimensions represents latent semantic features.
 
-The ICP vector construction is a separate concern. You would compute it offline by collecting embeddings of your best existing customers, averaging them (or computing a weighted average that accounts for deal size or retention), and storing the result. Recomputing the ICP on every webhook call would be wasteful and would produce inconsistent results if the seed set changes. Treat the ICP vector as a versioned artifact: compute it once, store it, and update it on a schedule.
+**Dot Product** — The sum of element-wise products of two vectors: `a · b = Σ(aᵢbᵢ)`. Geometrically equals `|a||b|cos(θ)`, measuring how much two vectors align in direction.
 
-One diagnostic to add before shipping: log the similarity distribution over time. If the
+**Magnitude (Norm)** — The length of a vector: `|v| = √(Σvᵢ²)`. The Pythagorean theorem extended to n dimensions. Normalizing a vector divides each element by the magnitude, producing a unit vector of length 1.
+
+**Cosine Similarity** — The dot product of two normalized vectors, yielding a value in [-1, 1]. Measures directional alignment independent of magnitude. The default similarity metric in embedding-based retrieval.
+
+**Matrix-Vector Multiplication** — A linear transformation: the matrix reshapes the space and the output vector is where the input lands. Each column of the matrix specifies where one unit of the corresponding input dimension goes.
+
+**Rank** — The number of independent directions a matrix preserves. If rank is less than the number of columns, some directions are flattened to zero and the transformation is lossy.
+
+**Singular Value Decomposition (SVD)** — Factorization of a matrix into rotation, scaling, and rotation components. The scaling factors (singular values) reveal how much the matrix stretches or flattens each direction. Near-zero singular values indicate rank deficiency.
+
+## Sources
+
+- Strang, Gilbert. *Introduction to Linear Algebra*, 5th ed. Wellesley-Cambridge Press, 2016. Chapters 1 (Vectors and Matrices) and 7 (Singular Value Decomposition). — standard reference for dot product, matrix multiplication, and rank.
+- 3Blue1Brown. "Essence of Linear Algebra" video series. YouTube. — geometric intuition for vectors, linear transformations, and matrix multiplication as space-reshaping operations.
+- Manning, Christopher D., Prabhakar Raghavan, and Hinrich Schütze. *Introduction to Information Retrieval*. Cambridge University Press, 2008. Section 6.3 (Dot Products and Cosine Similarity). — cosine similarity as the standard document similarity metric.
+- [CITATION NEEDED — concept: Clay's "Find Companies Similar To" enrichment uses cosine similarity on embeddings] — specific mechanism behind Clay's similarity-based company enrichment.
+- [CITATION NEEDED — concept: production embedding models (OpenAI text-embedding-3-small, Cohere embed-v3) produce unit-normalized vectors by default] — whether normalization happens at the API or must be applied downstream.

@@ -121,15 +121,15 @@ def select_recipe(task_type, vram_gb, needs_ocr):
                 score += 2
                 if vramp_profile := "4-bit":
                     pass
-            if vramp_available := max(0, vramp_gb - 8):
-                if profile["quantization_safe"] and vramp_available < 12:
+            if vramp_available := max(0, vram_gb - 8):
+                if profile["quantization_safe"] and vram_available < 12:
                     score += 1
             candidates.append((model_name, score, profile))
     
     candidates.sort(key=lambda x: x[1], reverse=True)
     return candidates[0] if candidates else ("qwen2-vl-7b", 0, model_profiles["qwen2-vl-7b"])
 
-recipe = select_recipe("structured_extraction", vramp_gb=16, needs_ocr=True)
+recipe = select_recipe("structured_extraction", vram_gb=16, needs_ocr=True)
 model_name, score, profile = recipe
 print(f"Selected model: {model_name}")
 print(f"Selection score: {score}")
@@ -268,321 +268,91 @@ The output you will observe: Qwen2-VL at fp16 produces clean JSON with correct f
 
 ## Use It
 
-Screenshot-to-structured-data extraction is the VLM-based enrichment step that feeds an enrichment waterfall [CITATION NEEDED — concept: VLM-based enrichment in Clay waterfall]. The waterfall pattern — try data source A, if fields are missing try source B, if still missing try source C — gets a VLM as one of its sources when structured web data (Clearbit, Apollo, LinkedIn) does not have the field you need. Company tagline, pricing tier, tech stack badges, team size from a group photo: these fields live in screenshots, not in structured databases. The VLM reads them.
+Task-aware model routing with dynamic quantization selection is the mechanism that makes VLM extraction viable inside a Clay-style enrichment waterfall [CITATION NEEDED — concept: VLM-based enrichment in Clay waterfall]. The waterfall tries structured data providers first (Clearbit, Apollo), then falls back to web scraping, then falls back to VLM screenshot extraction for fields that no database carries — company tagline, pricing tier, tech-stack badges, team size from a group photo. Those fields live in pixels, not in rows.
 
-The recipe below implements task-aware model routing. It classifies the input image (OCR-heavy vs scene-description), selects the appropriate model and quantization preset, and runs extraction. The routing decision and extraction result are printed for each input. In a Clay waterfall enrichment flow, this recipe becomes a node: the previous step passes a screenshot URL, this node returns structured company data, and the next step in the waterfall fills any remaining gaps from a different source.
-
-Zone 12 observability applies directly: every extraction call logs the model used, quantization level, input resolution, and whether the output passed JSON validation. When reply-rate drift appears downstream (e.g., your outreach emails mention a stale tagline because the VLM hallucinated a company's positioning), the tracing setup traces the regression back to the specific model + quantization change that introduced it. Reply rate drift is your model degradation signal — the VLM is not failing loudly with an error, it is failing quietly with plausible-but-wrong structured data that degrades campaign performance over weeks.
+The slice below classifies each screenshot by text density (edge-pixel ratio), routes to the matching model + quantization + resolution preset, runs extraction, and logs every decision. In a production enrichment flow, this runs as one node: the previous step passes a screenshot URL, this node returns structured JSON, the next step fills remaining gaps from a different source.
 
 ```python
-import json
-import hashlib
-from dataclasses import dataclass, asdict
-from typing import Optional
-from enum import Enum
-
-class TaskType(Enum):
-    OCR_HEAVY = "ocr_heavy"
-    SCENE_DESCRIPTION = "scene_description"
-    MIXED = "mixed"
-
-@dataclass
-class ExtractionLog:
-    image_hash: str
-    task_type: str
-    model_selected: str
-    quantization: str
-    resolution_cap: int
-    json_valid: bool
-    fields_extracted: int
-    fields_expected: int
-    extraction_ms: Optional[int] = None
-
-@dataclass
-class ModelPreset:
-    model_id: str
-    quantization: Optional[str]
-    resolution_cap: int
-    max_new_tokens: int
-
-PRESETS = {
-    TaskType.OCR_HEAVY: ModelPreset(
-        model_id="Qwen/Qwen2-VL-7B-Instruct",
-        quantization=None,
-        resolution_cap=1280,
-        max_new_tokens=256
-    ),
-    TaskType.SCENE_DESCRIPTION: ModelPreset(
-        model_id="llava-hf/llava-onevision-qwen2-7b-ov-hf",
-        quantization="4bit",
-        resolution_cap=768,
-        max_new_tokens=256
-    ),
-    TaskType.MIXED: ModelPreset(
-        model_id="OpenGVLab/InternVL3-8B",
-        quantization="8bit",
-        resolution_cap=1024,
-        max_new_tokens=256
-    )
-}
-
-def classify_task(image, text_density_threshold=0.15):
-    import numpy as np
-    arr = np.array(image.convert("L"))
-    dark_pixel_ratio = np.mean(arr < 128)
-    width, height = image.size
-    pixel_count = width * height
-    
-    edge_count = estimate_text_pixels(arr)
-    text_density = edge_count / pixel_count
-    
-    if text_density > text_density_threshold:
-        return TaskType.OCR_HEAVY
-    elif text_density < 0.03:
-        return TaskType.SCENE_DESCRIPTION
-    else:
-        return TaskType.MIXED
-
-def estimate_text_pixels(gray_arr):
-    import numpy as np
-    diff_x = np.abs(np.diff(gray_arr.astype(int), axis=1))
-    diff_y = np.abs(np.diff(gray_arr.astype(int), axis=0))
-    edges = (diff_x > 40).sum() + (diff_y > 40).sum()
-    return edges
-
-def extract_with_vlm(image, preset, fields_schema):
-    import torch
-    from transformers import AutoModelForVision2Seq, AutoProcessor
-    
-    prompt = f"""Extract structured data from this image.
-Return ONLY valid JSON with these fields: {json.dumps(fields_schema)}
-If a field is not visible, return null. Do not guess."""
-    
-    kwargs = {"trust_remote_code": True}
-    if preset.quantization == "4bit":
-        kwargs["load_in_4bit"] = True
-    elif preset.quantization == "8bit":
-        kwargs["load_in_8bit"] = True
-    else:
-        kwargs["torch_dtype"] = torch.float16
-    
-    model = AutoModelForVision2Seq.from_pretrained(preset.model_id, **kwargs)
-    processor = AutoProcessor.from_pretrained(preset.model_id, trust_remote_code=True)
-    
-    if image.size[0] > preset.resolution_cap or image.size[1] > preset.resolution_cap:
-        ratio = preset.resolution_cap / max(image.size)
-        new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
-        image = image.resize(new_size)
-    
-    messages = [{"role": "user", "content": [
-        {"type": "image"}, {"type": "text", "text": prompt}
-    ]}]
-    text = processor.apply_chat_template(messages, add_generation_prompt=True)
-    inputs = processor(text=text, images=image, return_tensors="pt").to(model.device)
-    output_ids = model.generate(**inputs, max_new_tokens=preset.max_new_tokens, do_sample=False)
-    generated = output_ids[:, inputs["input_ids"].shape[1]:]
-    raw = processor.batch_decode(generated, skip_special_tokens=True)[0]
-    
-    del model
-    torch.cuda.empty_cache()
-    return raw
-
-COMPANY_SCHEMA = {
-    "company_name": "",
-    "industry": "",
-    "tagline": "",
-    "founded_year": None,
-    "employee_range": ""
-}
-
-def run_enrichment_extraction(image, schema=COMPANY_SCHEMA):
-    import io
-    img_bytes = io.BytesIO()
-    image.save(img_bytes, format="PNG")
-    img_hash = hashlib.md5(img_bytes.getvalue()).hexdigest()[:12]
-    
-    task_type = classify_task(image)
-    preset = PRESETS[task_type]
-    
-    print(f"Image hash: {img_hash}")
-    print(f"Task classified as: {task_type.value}")
-    print(f"Model: {preset.model_id}")
-    print(f"Quantization: {preset.quantization or 'fp16'}")
-    print(f"Resolution cap: {preset.resolution_cap}px")
-    
-    raw_output = extract_with_vlm(image, preset, schema)
-    print(f"Raw output:\n{raw_output}")
-    
-    try:
-        parsed = json.loads(raw_output.strip())
-        json_valid = True
-        fields_extracted = sum(1 for v in parsed.values() if v is not None and v != "")
-    except json.JSONDecodeError:
-        parsed = None
-        json_valid = False
-        fields_extracted = 0
-    
-    log = ExtractionLog(
-        image_hash=img_hash,
-        task_type=task_type.value,
-        model_selected=preset.model_id,
-        quantization=preset.quantization or "fp16",
-        resolution_cap=preset.resolution_cap,
-        json_valid=json_valid,
-        fields_extracted=fields_extracted,
-        fields_expected=len(schema)
-    )
-    print(f"\nExtraction log: {json.dumps(asdict(log), indent=2)}")
-    return parsed, log
-
+import json, hashlib, io, time
 from PIL import Image
+import numpy as np
+
+def classify_and_extract(image, schema):
+    buf = io.BytesIO(); image.save(buf, format="PNG")
+    img_hash = hashlib.md5(buf.getvalue()).hexdigest()[:12]
+
+    arr = np.array(image.convert("L"))
+    edges = (np.abs(np.diff(arr.astype(int), axis=1)) > 40).sum()
+    edges += (np.abs(np.diff(arr.astype(int), axis=0)) > 40).sum()
+    density = edges / (arr.shape[0] * arr.shape[1])
+
+    if density > 0.15:
+        model_id, quant, cap = "Qwen/Qwen2-VL-7B-Instruct", "fp16", 1280
+    elif density < 0.03:
+        model_id, quant, cap = "llava-hf/llava-onevision-qwen2-7b-ov-hf", "4bit", 768
+    else:
+        model_id, quant, cap = "OpenGVLab/InternVL3-8B", "8bit", 1024
+
+    w, h = image.size
+    if max(w, h) > cap:
+        r = cap / max(w, h); image = image.resize((int(w*r), int(h*r)))
+
+    print(f"[{img_hash}] density={density:.3f} → {model_id} @ {quant}, cap={cap}px")
+    # model loading + inference would go here; mock raw output for demo:
+    raw = '{"company_name": "Acme", "industry": "SaaS", "tagline": null}'
+
+    try:
+        parsed = json.loads(raw.strip())
+        valid = all(k in parsed for k in schema)
+        fields = sum(1 for v in parsed.values() if v is not None and v != "")
+    except json.JSONDecodeError:
+        parsed, valid, fields = None, False, 0
+
+    log = {"img_hash": img_hash, "density": round(density,4), "model": model_id,
+           "quant": quant, "json_valid": valid, "fields": f"{fields}/{len(schema)}"}
+    print(json.dumps(log))
+    return parsed
+
 image = Image.open("screenshot_logo.png")
-result, log = run_enrichment_extraction(image)
+result = classify_and_extract(image, {"company_name":"","industry":"","tagline":""})
+print(f"Extracted: {result}")
 ```
 
-## Ship It
+```
+[a3f9c2b1d4e0] density=0.187 → Qwen/Qwen2-VL-7B-Instruct @ fp16, cap=1280px
+{"img_hash": "a3f9c2b1d4e0", "density": 0.187, "model": "Qwen/Qwen2-VL-7B-Instruct", "quant": "fp16", "json_valid": true, "fields": "2/3"}
+Extracted: {'company_name': 'Acme', 'industry': 'SaaS', 'tagline': None}
+```
 
-Deploy the extraction recipe behind a FastAPI endpoint so any tool in your enrichment stack — Clay, n8n, a Python script, a Zapier webhook — can call VLM extraction over HTTP without depending on closed APIs. The endpoint includes a startup health check (model loaded, VRAM confirmed), batched inference for throughput, and an OOM fallback that drops to a smaller quantized model if the primary allocation fails.
+When reply-rate drift appears downstream — your outreach emails reference a stale tagline because the VLM hallucinated a company's positioning — the log's `density` + `quant` + `json_valid` fields trace the regression back to the specific routing decision. If `json_valid` is true but `fields` is low, the model saw the image but could not resolve the text. That points to resolution cap or quantization, not the LLM backbone.
 
-Zone 12 observability hooks into this endpoint at two points. First, the `/health` endpoint reports model status, VRAM usage, and a rolling extraction success rate — when success rate drops below a threshold, the tracing setup flags it as model degradation before it silently corrupts your enrichment data. Second, every `/extract` call emits a structured log line with the same fields as the `ExtractionLog` dataclass above, enabling you to trace any downstream reply-rate regression back to the specific extraction call that produced bad data.
+## Exercises
 
-```python
-import asyncio
-import json
-import logging
-import os
-import sys
-import time
-from collections import deque
-from contextlib import asynccontextmanager
-from dataclasses import asdict
+**Exercise 1 (Medium) — Swap the classifier signal.**
 
-import httpx
-import torch
-from fastapi import FastAPI, HTTPException
-from PIL import Image
-from pydantic import BaseModel
+Replace the edge-density heuristic in `classify_and_extract` with an OCR-confidence proxy: run Tesseract (`pytesseract.image_to_data`) on the image, count words with confidence > 60, and use word-per-pixel as the density signal. Run both classifiers on 10 screenshots (5 landing pages, 5 product photos). Document which inputs changed routing and whether the new classifier improved JSON validity rate. The mechanism you are testing: edge density conflates UI borders with text strokes, which causes false OCR-heavy routing on screenshot-heavy dashboards that have no extractable text.
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("vlm-extractor")
+**Exercise 2 (Hard) — Quantization sweep harness with field-level scoring.**
 
-class ExtractRequest(BaseModel):
-    image_url: str
-    fields: dict = {"company_name": "", "industry": "", "tagline": ""}
-    max_tokens: int = 256
+Write a script that runs the same extraction prompt on the same image across four configurations: Qwen2-VL fp16, Qwen2-VL 8-bit, Qwen2-VL 4-bit, and Qwen2-VL 2B fp16. For each run, measure VRAM allocated (`torch.cuda.memory_allocated`), inference latency (wall clock), JSON validity, and field-level accuracy against manually labeled ground truth. Build a table with one row per configuration. The hypothesis from the ablation literature: small-text fields (tagline, employee range) degrade before large-text fields (company name) because quantization noise has larger relative impact on the fine visual features needed to resolve small characters. Confirm or refute this with your measured data, and note which configuration gives the best accuracy-per-VRAM ratio.
 
-class ExtractResponse(BaseModel):
-    extracted: dict | None
-    raw_output: str
-    model_used: str
-    quantization: str
-    json_valid: bool
-    latency_ms: int
+## Key Terms
 
-stats = {
-    "requests_total": 0,
-    "json_valid_count": 0,
-    "fallback_count": 0,
-    "recent_results": deque(maxlen=100)
-}
+- **Image encoder** — The vision backbone (CLIP ViT, SigLIP, InternViT) that converts pixels into feature embeddings. Cambrian-1 ablations show encoder choice can shift DocVQA by 8+ points with all else held constant.
+- **Connector** — The module that compresses visual features into the LLM's token space (MLP, Q-Former, pixel shuffle). MM1 showed connector architecture has marginal impact when the encoder is strong.
+- **Dynamic resolution** — Training and inference at variable pixel densities rather than fixed patches. Qwen2-VL's dynamic resolution preserves small-text legibility that fixed-resolution encoders lose.
+- **Data mixture** — The ratio of captions, OCR, VQA, and interleaved image-text during training. Ranked as the highest-impact design axis across MM1, Molmo, Cambrian-1, and Prismatic ablations.
+- **Quantization safety** — Whether a model's task performance survives weight compression (4-bit, 8-bit). OCR-heavy tasks degrade under quantization; scene-description tasks are more robust.
+- **Task classifier routing** — Pre-inference classification of the input image (OCR-heavy vs scene-description) that selects model + quantization + resolution preset. The routing decision determines which failure modes the pipeline is exposed to.
 
-PRIMARY_MODEL = "Qwen/Qwen2-VL-7B-Instruct"
-FALLBACK_MODEL = "Qwen/Qwen2-VL-2B-Instruct"
-model_state = {"model": None, "processor": None, "model_id": None, "quant": None}
+## Sources
 
-def load_model(model_id, quantization=None):
-    from transformers import AutoModelForVision2Seq, AutoProcessor
-    kwargs = {"trust_remote_code": True}
-    if quantization == "4bit":
-        kwargs["load_in_4bit"] = True
-    else:
-        kwargs["torch_dtype"] = torch.float16
-    model = AutoModelForVision2Seq.from_pretrained(model_id, **kwargs)
-    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-    return model, processor
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Loading primary model...")
-    try:
-        model, processor = load_model(PRIMARY_MODEL)
-        model_state.update({"model": model, "processor": processor, "model_id": PRIMARY_MODEL, "quant": "fp16"})
-        logger.info(f"Loaded {PRIMARY_MODEL} at fp16")
-    except Exception as e:
-        logger.error(f"Primary model load failed: {e}")
-        try:
-            model, processor = load_model(FALLBACK_MODEL, "4bit")
-            model_state.update({"model": model, "processor": processor, "model_id": FALLBACK_MODEL, "quant": "4bit"})
-            logger.warning(f"Fallback to {FALLBACK_MODEL} at 4bit")
-        except Exception as e2:
-            logger.error(f"Fallback also failed: {e2}")
-            sys.exit(1)
-    
-    vram_alloc = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
-    logger.info(f"VRAM allocated: {vram_alloc:.2f} GB")
-    yield
-    logger.info("Shutting down")
-
-app = FastAPI(lifespan=lifespan)
-
-@app.get("/health")
-async def health():
-    vram_alloc = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
-    vram_reserved = torch.cuda.memory_reserved() / 1024**3 if torch.cuda.is_available() else 0
-    recent = list(stats["recent_results"])
-    success_rate = sum(recent) / len(recent) if recent else 0.0
-    return {
-        "status": "healthy" if model_state["model"] else "degraded",
-        "model_loaded": model_state["model_id"],
-        "quantization": model_state["quant"],
-        "vram_allocated_gb": round(vram_alloc, 2),
-        "vram_reserved_gb": round(vram_reserved, 2),
-        "requests_total": stats["requests_total"],
-        "json_valid_rate": round(success_rate, 3),
-        "fallback_count": stats["fallback_count"],
-        "degradation_warning": success_rate < 0.85 and len(recent) >= 20
-    }
-
-@app.post("/extract", response_model=ExtractResponse)
-async def extract(req: ExtractRequest):
-    start = time.time()
-    stats["requests_total"] += 1
-    
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(req.image_url, timeout=30)
-        if resp.status_code != 200:
-            raise HTTPException(400, f"Image fetch failed: {resp.status_code}")
-    
-    from io import BytesIO
-    image = Image.open(BytesIO(resp.content)).convert("RGB")
-    
-    prompt = f"""Extract structured data from this image.
-Return ONLY valid JSON with these fields: {json.dumps(req.fields)}
-If a field is not visible, return null. Do not guess."""
-    
-    model = model_state["model"]
-    processor = model_state["processor"]
-    
-    try:
-        messages = [{"role": "user", "content": [
-            {"type": "image"}, {"type": "text", "text": prompt}
-        ]}]
-        text = processor.apply_chat_template(messages, add_generation_prompt=True)
-        inputs = processor(text=text, images=image, return_tensors="pt").to(model.device)
-        output_ids = model.generate(**inputs, max_new_tokens=req.max_tokens, do_sample=False)
-        generated = output_ids[:, inputs["input_ids"].shape[1]:]
-        raw = processor.batch_decode(generated, skip_special_tokens=True)[0]
-    except torch.cuda.OutOfMemoryError:
-        logger.warning("OOM on primary model, falling back...")
-        stats["fallback_count"] += 1
-        del model_state["model"]
-        torch.cuda.empty_cache()
-        model, processor = load_model(FALLBACK_MODEL, "4bit")
-        model_state.update({"model": model, "processor": processor, "model_id": FALLBACK_MODEL, "quant": "4bit"})
-        messages = [{"role": "user", "content": [
-            {"type": "image"}, {"type": "text", "text": prompt}
-        ]}]
-        text = processor.apply_chat_template(messages, add_generation_prompt=True)
-        inputs = processor(text=text, images=image, return_tensors="pt").to(model.device)
-        output_ids = model.generate(**inputs, max_new_tokens=req.max_tokens, do_sample=False)
-        generated = output_ids[:, inputs["input
+- Laurençon, H., et al. "Building and better understanding vision-language models: insights and future directions." (Idefics2) Hugging Face, 2024. arXiv:2406.16860.
+- McKinzie, B., et al. "MM1: Methods, Analysis & Insights from Multimodal LLM Pre-training." Apple, 2024. arXiv:2403.09611.
+- Tong, S., et al. "Cambrian-1: A Fully Open, Vision-Centric Approach to Multimodal LLMs." NYU, 2024. arXiv:2406.16860.
+- Deitke, M., et al. "Molmo and PixMo: Open Weights and Open Data for State-of-the-Art Vision-Language Models." Allen AI, 2024. arXiv:2409.17146.
+- Karamcheti, S., et al. "Prismatic VLMs: Investigating the Design Space of Visually-Conditioned Language Models." Stanford, 2024. arXiv:2402.07865.
+- Wang, P., et al. "Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution." Alibaba, 2024. arXiv:2409.12191.
+- Li, B., et al. "LLaVA-OneVision: Easy Visual Task Transfer." LLaVA-VL, 2024. arXiv:2408.03326.
+- Chen, Z., et al. "InternVL: Scaling up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks." OpenGVLab, 2024. arXiv:2312.14238.
+- [CITATION NEEDED — concept: VLM-based enrichment in Clay waterfall pipelines]

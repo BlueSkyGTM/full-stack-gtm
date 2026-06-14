@@ -179,35 +179,66 @@ The `in_axes=(None, 0)` argument tells `vmap` to hold `query` fixed (no batch di
 
 ## Use It
 
-JAX's functional transforms — `grad`, `jit`, `vmap`, `pmap` — are the compute substrate beneath any custom ML model you build for GTM workflows. This lesson sits in Zone 1 (Infrastructure), the foundational layer. If you are building a bespoke lead-scoring model that learns from historical win/loss data, you need `jax.grad` to compute parameter updates. If you are training a custom embeddings model for account matching — where you embed company descriptions and retrieve lookalikes — you need `jax.vmap` to batch the similarity computation across thousands of accounts. If you are running inference on a large feature matrix, you need `jax.jit` to fuse the computation into a single compiled kernel.
+`jax.vmap` (automatic vectorization) and `jax.jit` (XLA compilation) compose into a single transform that scores every lead in a batch with one fused kernel call — no Python loop, no per-row dispatch. This is the compute pattern behind any custom lead-scoring or account-matching system you build when no SaaS tool fits your domain.
 
-No GTM SaaS tool maps directly to JAX. Clay, Apollo, Salesforce — these are application-layer tools that consume predictions. JAX is the layer where the predictions are computed. The connection is not "JAX helps you do outbound." The connection is "if you need a custom model that no SaaS tool provides — a domain-specific classifier for signal detection, a custom embeddings space for niche account matching — JAX is the substrate that lets you write the math without writing the differentiation." Most GTM engineers will never touch JAX directly. The ones who build proprietary scoring or matching systems will. [CITATION NEEDED — concept: JAX usage in production GTM ML pipelines]
+```python
+import jax
+import jax.numpy as jnp
 
-The composability of JAX transforms maps directly to the structure of a scoring pipeline. You write a loss function that compares a predicted score to an actual conversion outcome. You wrap it in `jax.grad` to get parameter gradients. You wrap the gradient computation in `jax.jit` to compile it. You wrap the forward pass in `jax.vmap` to score a batch of leads simultaneously. The entire pipeline — forward pass, loss, gradient, update — becomes a single compiled function. This is what it means to treat your training loop as a compilable program rather than a sequence of Python calls.
+def score_lead(features, weights):
+    return jax.nn.sigmoid(jnp.dot(features, weights))
 
-## Ship It
+leads = jnp.array([
+    [50,  3, 0.8, 12],
+    [200, 8, 0.3, 48],
+    [15,  1, 0.9, 2],
+    [500, 12, 0.6, 24],
+    [80,  5, 0.7, 8],
+], dtype=jnp.float32)
 
-**Easy — MSE loss with gradients.** Write a pure function that computes mean squared error between predictions and targets. Use `jax.grad()` to obtain the gradient with respect to the predictions. Print both the loss value and the gradient for a concrete input. The function signature should be `def mse(preds, targets):` and the gradient call should differentiate with respect to `preds` only — use `jax.grad(mse, argnums=0)` to specify which argument to differentiate.
+weights = jnp.array([0.02, 0.3, 2.0, -0.01])
 
-**Medium — Batched account matching with vmap.** Implement cosine similarity between a single query vector and a matrix of account embeddings. Use `jax.vmap` to batch the computation. Generate synthetic embeddings for 50 accounts (each a 128-dimensional vector). Compute similarities for all 50 accounts in one call. Print the top 3 matches by similarity score, including the account index and score. This is the core operation in an account-matching system — the same pattern you would use to find lookalike companies in a TAM expansion workflow.
+batched_score = jax.jit(jax.vmap(score_lead, in_axes=(0, None)))
+scores = batched_score(leads, weights)
 
-**Hard — Gradient descent with jit and scan.** Write a single-step gradient descent update function. Use `jax.jit` to compile it. Use `jax.lax.scan` (JAX's functional loop primitive) to run 200 training steps on synthetic linear regression data. `lax.scan` takes a function `(carry, x) -> (carry, y)` and scans it over a sequence — the carry holds your model parameters across iterations. Generate 1000 synthetic data points from `y = 2.5x + noise`. Start with parameters initialized to zero. Print the loss every 50 steps to confirm convergence. The final parameters should approximate the true slope of 2.5.
+for i, s in enumerate(scores):
+    print(f"Lead {i+1}: score = {float(s):.4f}")
+
+ranked = jnp.argsort(scores)[::-1]
+print(f"\nPriority order: {[int(i)+1 for i in ranked]}")
+```
+
+```
+Lead 1: score = 0.9673
+Lead 2: score = 0.9985
+Lead 3: score = 0.9154
+Lead 4: score = 1.0000
+Lead 5: score = 0.9882
+
+Priority order: [4, 2, 5, 1, 3]
+```
+
+The function body handles one lead. `vmap` maps it over axis 0 of the batch. `jit` fuses the dot product, sigmoid, and argmax into a single compiled kernel. You wrote four lines of math; JAX produced a batched, compiled scorer. Swap the hardcoded weights for trained parameters (updated via `jax.grad`), and this becomes a learning lead-scoring model — the foundation of a proprietary ICP-scoring pipeline. [CITATION NEEDED — concept: JAX usage in production GTM ML pipelines]
 
 ## Exercises
 
-1. **Trace the compilation pipeline.** Given the function `def f(x): return jnp.sum(jnp.sin(x) ** 2)`, use `jax.make_jaxpr(f)(jnp.array([1.0, 2.0]))` to print the traced intermediate representation. Identify the operations in the jaxpr and explain how they map to the original Python code. Compare this to what PyTape or `tf.GradientTape` would record for the same computation.
+1. **Gradient descent on a lead-scoring loss.** Write a pure function `def mseloss(preds, labels):` that computes mean squared error. Generate 20 synthetic leads (4-feature vectors) and binary labels (0 or 1). Create a `weights` parameter vector. Use `jax.grad(mseloss, argnums=0)` to compute the gradient with respect to predictions. Then write a training loop: compute scores via `sigmoid(dot(features, weights))`, compute loss, compute gradient with respect to `weights` via `jax.grad`, update `weights = weights - 0.01 * grad`. Run 100 iterations and print the loss every 25 steps. Confirm the loss decreases monotonically. Wrap the entire step function in `jax.jit` and measure the speedup versus the unjitted version.
 
-2. **Predict side-effect behavior under jit.** Write a function that contains a `print("inside function")` statement and a `jax.numpy` computation. Call it once without `jit` and observe the output. Then wrap it in `jax.jit` and call it three times. Count how many times the print appears in each case and explain why, referencing the tracing model.
-
-3. **Explain the scalar-output constraint on grad.** Write a function that returns a vector (e.g., `def f(x): return x ** 2` where x is a 3-element array). Call `jax.grad(f)` on it and observe the error. Then rewrite using `jnp.sum` to produce a scalar output and confirm `grad` works. Explain in your own words why reverse-mode autodiff requires a scalar output.
-
-4. **Replace an explicit batch loop with vmap.** Write a Python `for` loop that computes the dot product of a fixed query vector against each row of a matrix, storing results in a list. Then rewrite the same computation using `jax.vmap`. Time both versions on a 5000-row matrix and report the speedup ratio.
-
-5. **Demonstrate immutability.** Create a JAX array and attempt an in-place update with `x[0] = 5`. Observe the error. Then use the `x.at[0].set(5)` pattern and confirm it returns a new array. Explain why JAX enforces immutability and how this property enables the composition of function transforms.
+2. **Batched account matching with vmap + jit.** Use `jax.random.PRNGKey(42)` to generate a 32-dimensional embedding for one query account and 100 candidate accounts. Write `cosine_similarity(query, candidate)` as a pure function. Compose `jax.jit(jax.vmap(cosine_similarity, in_axes=(None, 0)))` to score all 100 candidates in one call. Print the top 5 matches (index + similarity score). This is the retrieval operation in a TAM lookalike pipeline — you embed company descriptions, compute similarity against your entire account database, and rank by closeness to your ICP. The same pattern scales to 100,000 accounts with no code change; only the array size grows.
 
 ## Key Terms
 
 - **jaxpr** — JAX's intermediate representation. When JAX traces a Python function, it produces a jaxpr: a typed, functional description of the computation that contains no Python, only mathematical operations. XLA consumes this to generate compiled code.
 - **XLA (Accelerated Linear Algebra)** — Google's compiler for linear algebra operations. JAX lowers jaxpr to XLA's High-Level Optimizer (HLO) format, which performs operator fusion, memory layout optimization, and device-specific code generation.
 - **Reverse-mode autodiff** — The algorithm behind `jax.grad`. It computes the gradient of a scalar-valued function by traversing the computation graph backward from output to inputs, accumulating partial derivatives via the chain rule. Efficient when the output is scalar and the input is high-dimensional (the common case in ML loss functions).
-- **Pure function** — A function whose output depends only on its inputs and that produces no side effects. Same input always yields same
+- **Pure function** — A function whose output depends only on its inputs and that produces no side effects. Same input always yields same output. Purity is what makes `grad`, `jit`, `vmap`, and `pmap` composable: any transform of a pure function is also pure, and any composition of transforms is well-defined. Impurity breaks the entire stack.
+- **Tracing** — The process by which JAX intercepts `jax.numpy` calls during function execution, recording them as operations in a jaxpr instead of executing them eagerly. Tracing happens once per unique input shape signature; subsequent calls with matching shapes skip Python entirely and execute the compiled kernel.
+- **Function transform** — A higher-order function that takes a Python function as input and returns a new function as output. `grad`, `jit`, `vmap`, and `pmap` are all function transforms. Their composability — `jit(vmap(grad(f)))` — is the defining property of JAX's design.
+
+## Sources
+
+- JAX documentation — https://jax.readthedocs.io/en/latest/
+- JAX Autodiff Cookbook — https://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html
+- XLA Architecture — https://www.tensorflow.org/xla/architecture
+- JAX Sharp Bits (purity, tracing, in-place updates) — https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html
+- [CITATION NEEDED — concept: JAX usage in production GTM ML pipelines]

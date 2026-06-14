@@ -5,8 +5,6 @@
 - State the three NSA attention branches (compression, selection, sliding window) and identify what information each one captures.
 - Explain why natively trainable sparsity outperforms post-hoc sparse masking applied at inference time.
 - Compute NSA attention density as a function of block size, top-k selection budget, and sliding window width versus dense baseline.
-- Implement a three-branch sparse attention simulator in stdlib Python and verify that gating produces the expected active-token counts.
-- Evaluate which branch handles local token dependencies versus global information routing in long-context scenarios.
 
 ## The Problem
 
@@ -157,130 +155,116 @@ Run it. The output shows density dropping as sequence length grows — the compr
 
 ## Use It
 
-The three-branch sparse attention pattern directly determines whether a model can process a 50-page account research dossier or a full earnings transcript coherently. The compression branch gives the model a global view across the entire document — every section, even ones distant from the current generation point. The selection branch identifies which specific paragraphs carry the signal (financial metrics, executive quotes, risk factors) and attends to their exact tokens. The sliding window handles local coherence within sentences and paragraphs. When a model uses full dense attention up to its training limit and then chunks beyond it, the cross-section references break — a revenue figure on page 3 cannot ground a sentence being generated on page 47 because they live in separate attention windows.
+Native Sparse Attention's three-branch routing — compression for global skim, selection for targeted deep-read, sliding window for local context — directly governs whether a model can ground output across a 40-page account dossier or silently loses cross-section references. When you compile firmographic dumps, 10-K filings, or RFP responses for ICP scoring (Cluster 1.2, TAM Refinement & ICP Scoring), the model's attention architecture determines whether enrichment runs over the full context or over lossy chunks. The code below simulates the three branches routing over a GTM research dossier.
 
-This maps to Zone 1 (Intelligence Foundation). When practitioners compile multi-source firmographic dumps, 10-K filings, or technical RFPs for ICP scoring, the choice of model architecture dictates whether enrichment happens over the full context or over lossy chunks. A model trained with native sparse attention can route through all three branches on a 64K-token input without degradation; a model with full attention truncated to 8K will silently lose references across sections. The practical test: paste a 40-page document and ask for a cross-referencing question (e.g., "Which risk factors mentioned on page 12 relate to the revenue recognition change described on page 38?"). Models with effective long-context attention answer correctly; models that chunk internally will hallucinate the connection.
+```python
+import random
+random.seed(42)
+
+dossier_sections = [
+    ("ICP Fit Summary", 0.95),
+    ("Firmographics", 0.40),
+    ("Tech Stack Signals", 0.88),
+    ("Recent Funding", 0.72),
+    ("Competitor Landscape", 0.15),
+    ("Earnings Highlights", 0.65),
+    ("Leadership Bios", 0.10),
+    ("Risk Factors", 0.30),
+]
+
+block_size = 64
+top_k = 3
+window = 128
+total_tokens = len(dossier_sections) * block_size
+
+scored = sorted(dossier_sections, key=lambda x: -x[1])
+selected = scored[:top_k]
+
+comp_keys = len(dossier_sections)
+sel_keys = top_k * block_size
+win_keys = window
+density = (comp_keys + sel_keys + win_keys) / total_tokens
+
+print("GTM Account Dossier — NSA Three-Branch Routing")
+print(f"Density: {density:.1%} of dense attention ({total_tokens} tokens)")
+print(f"Compression: skimmed {comp_keys} section summaries")
+print(f"Selection: deep-read top-{top_k} sections = {sel_keys} tokens")
+for name, score in selected:
+    print(f"  [{score:.2f}] {name}")
+```
+
+The selection branch picks "ICP Fit Summary," "Tech Stack Signals," and "Recent Funding" — the sections with the highest learned importance scores. The model allocates fine-grained token-level attention only to those three, while still maintaining a compressed view of every other section and local context for sentence-level coherence. Structuring research documents so decision-relevant information lands in distinct, high-signal blocks (not buried mid-paragraph) improves the probability that the selection gate scores them highly. That is not prompt engineering folklore — it is the mechanism by which the gate computes per-block logits over aggregated representations.
 
 [CITATION NEEDED — concept: empirical comparison of long-context model performance on cross-section retrieval tasks. Public benchmarks like Needle-in-a-Haystack and RULER measure this, but specific claims about commercial model behavior should cite the benchmark results.]
 
-For GTM teams building enrichment pipelines, the three branches translate to a mental model of how the model reads a dossier. Compression is the skimming pass — the model gets a blurred summary of every section. Selection is the targeted deep-read — the gate identifies which sections deserve token-level attention. The sliding window is the local reading buffer that keeps the last few paragraphs in working memory. When you structure a research document, putting the most decision-relevant information in positions that the selection gate is likely to score highly (distinct sections with clear signal, not buried mid-paragraph) improves grounding quality. This is not prompt engineering folklore — it is the mechanism by which the selection branch computes its importance scores over block-aggregated representations.
+## Exercises
 
-## Ship It
-
-**Easy.** Modify the simulator's `block_size` parameter from 64 to 32, then to 128. Observe how density changes. With block_size=32, compression produces twice as many blocks (more compression compute) but selection covers fewer tokens per selected block (less selection compute). Print a comparison table showing density at each block size for a fixed 16K sequence.
+**1. Parameter sweep — block size vs. top-k trade-off.** Fix sequence length at 16,384 and window at 512. Sweep block_size across [32, 64, 128] and top_k across [16, 32, 64]. Print a density comparison table. Identify which (block_size, top_k) pair achieves the lowest density while still covering at least 3,000 tokens in the selection branch.
 
 ```python
 import random
-
 random.seed(42)
 
-def nsa_density(seq_len, block_size, top_k, window):
-    blocks = seq_len // block_size
-    comp = blocks
-    sel = top_k * block_size
-    win = window
-    total = comp + sel + win
-    return total / seq_len, total
-
-seq_len = 16_384
+seq_len = 16384
 window = 512
-top_k = 32
 
-print(f"{'Block Size':>12} {'Blocks':>8} {'Comp':>8} {'Sel':>8} {'Win':>8} {'Total/Q':>8} {'Density':>10}")
-print("-" * 70)
-for bs in [32, 64, 128, 256]:
-    d, t = nsa_density(seq_len, bs, top_k, window)
-    nb = seq_len // bs
-    print(f"{bs:>12} {nb:>8} {nb:>8,} {top_k*bs:>8,} {window:>8,} {t:>8,} {d:>10.4f}")
+print(f"{'Block Size':>12} {'Top-k':>6} {'Comp':>8} {'Sel':>8} {'Win':>8} {'Total':>8} {'Density':>10}")
+print("-" * 64)
+for bs in [32, 64, 128]:
+    for tk in [16, 32, 64]:
+        nb = seq_len // bs
+        comp = nb
+        sel = tk * bs
+        win = window
+        total = comp + sel + win
+        density = total / seq_len
+        print(f"{bs:>12} {tk:>6} {comp:>8,} {sel:>8,} {win:>8,} {total:>8,} {density:>10.4f}")
 ```
 
-**Medium.** Replace the hardcoded top-k magnitude score with a learnable linear gate. Initialize a weight vector of shape `(num_blocks,)` with random values, compute logits = weights · compressed_block_values, select top-k blocks by logit, and print both the gate weights and the selected indices. Run it three times with different random seeds to see how different gates select different blocks.
+**2. Learnable selection gate on a GTM dossier.** Replace the fixed importance scores with a simulated learnable linear gate (random weights per section). Run with three different seeds and observe how different gate weights route attention to different sections, even with identical input signals.
 
 ```python
 import random
 
-random.seed(7)
+dossier = [
+    ("Revenue & Growth", 0.92),
+    ("Product Architecture", 0.85),
+    ("Market Position", 0.60),
+    ("Org Chart", 0.08),
+    ("Patent Portfolio", 0.45),
+    ("Customer Logos", 0.78),
+    ("Compliance History", 0.20),
+    ("Strategic Roadmap", 0.70),
+]
 
-seq_len = 2048
 block_size = 64
-top_k = 4
+top_k = 3
 
-num_blocks = seq_len // block_size
-
-sequence = [random.gauss(0, 1) for _ in range(seq_len)]
-compressed = []
-for i in range(num_blocks):
-    block = sequence[i * block_size : (i + 1) * block_size]
-    compressed.append(sum(block) / len(block))
-
-gate_weights = [random.gauss(0, 0.1) for _ in range(num_blocks)]
-
-gate_logits = [gate_weights[i] * compressed[i] for i in range(num_blocks)]
-scored = sorted(range(num_blocks), key=lambda i: -gate_logits[i])
-selected = sorted(scored[:top_k])
-
-print("Learnable Linear Selection Gate")
-print(f"Sequence: {seq_len} tokens, {num_blocks} blocks, top-{top_k}")
-print()
-print(f"{'Block':>6} {'Compressed':>12} {'Gate Weight':>12} {'Logit':>12} {'Selected':>10}")
-print("-" * 56)
-for i in range(num_blocks):
-    sel = "YES" if i in selected else ""
-    print(f"{i:>6} {compressed[i]:>12.4f} {gate_weights[i]:>12.4f} {gate_logits[i]:>12.4f} {sel:>10}")
-
-print(f"\nSelected blocks: {selected}")
-print("Selected token ranges:")
-for sb in selected:
-    print(f"  Block {sb}: tokens [{sb*block_size}:{(sb+1)*block_size}]")
+for seed in [11, 22, 33]:
+    random.seed(seed)
+    gate_weights = [random.gauss(0, 0.3) for _ in dossier]
+    logits = [gate_weights[i] * dossier[i][1] for i in range(len(dossier))]
+    scored = sorted(range(len(dossier)), key=lambda i: -logits[i])
+    selected = sorted(scored[:top_k])
+    print(f"Seed {seed} — gate selects blocks: {selected}")
+    for idx in selected:
+        print(f"  Block {idx}: {dossier[idx][0]} (signal={dossier[idx][1]:.2f}, logit={logits[idx]:.4f})")
+    print()
 ```
 
-**Hard.** Fetch a real SEC 10-K filing in plaintext, chunk it into blocks of 64 sentences (or ~512 tokens each), run all three branches, and print which document sections receive the highest selection scores. Then ask a model to summarize the same filing and compare whether the model's stated key points correspond to the high-scoring blocks.
+## Key Terms
 
-```python
-import urllib.request
-import random
+- **Native Sparse Attention (NSA):** A three-branch attention architecture (compression, selection, sliding window) trained from the first optimization step, eliminating train-time/inference-time sparsity mismatch.
+- **Compression branch:** Aggregates non-overlapping blocks of `l` tokens into single compressed representations, giving each query a coarse global view at `1/l` the cost of full attention.
+- **Selection branch:** Scores each block via a learned gate, attends to raw tokens within the top-k highest-scoring blocks for fine-grained detail where the model deems it relevant.
+- **Sliding window branch:** Fixed-width local attention (typically 512 tokens) handling sentence-level and clause-level dependencies without global routing.
+- **Attention density:** The ratio of active key positions per query (summed across all three branches) to total sequence length; measures effective sparsity versus dense baseline.
+- **Straight-through estimator:** A gradient approximation technique that allows the non-differentiable top-k selection operation to receive gradients during backpropagation.
+- **Native trainability:** The principle that the sparse attention pattern used during pre-training is identical to the pattern used at inference, preventing distribution shift in information routing.
 
-random.seed(42)
+## Sources
 
-url = "https://www.sec.gov/Archives/edgar/data/320193/000032019324000006/aapl-20230930.htm"
-
-req = urllib.request.Request(url, headers={"User-Agent": "Lesson Demo lesson@example.com"})
-response = urllib.request.urlopen(req, timeout=15)
-raw = response.read().decode("utf-8", errors="ignore")
-
-import re
-text = re.sub(r"<[^>]+>", " ", raw)
-text = re.sub(r"\s+", " ", text).strip()
-
-sentences = re.split(r"(?<=[.!?])\s+", text)
-sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
-
-block_size = 64
-num_blocks = len(sentences) // block_size
-sentences = sentences[: num_blocks * block_size]
-
-print(f"Fetched: Apple 10-K (FY2023)")
-print(f"Total sentences: {len(sentences)}")
-print(f"Blocks: {num_blocks} (block_size={block_size} sentences)")
-print()
-
-block_word_counts = []
-for i in range(num_blocks):
-    block = sentences[i * block_size : (i + 1) * block_size]
-    wc = sum(len(s.split()) for s in block)
-    block_word_counts.append(wc)
-
-block_signals = [wc / max(block_word_counts) for wc in block_word_counts]
-
-top_k = min(8, num_blocks)
-scored = sorted(range(num_blocks), key=lambda i: -block_signals[i])
-selected = sorted(scored[:top_k])
-
-print(f"Top-{top_k} blocks by signal density:")
-print(f"{'Block':>6} {'Sent Range':>14} {'Words':>8} {'Signal':>8} {'Preview':>40}")
-print("-" * 80)
-for idx in selected:
-    start_sent = idx * block_size
-    end_sent = (idx + 1) * block_size
-    preview = sentences[start_sent][:50]
-    print(f"{idx:>6} [{start_sent:>4}:{end_sent:>4}] {block_word_counts
+- Yuan, J. et al. "Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention." DeepSeek-AI, 2025. arXiv:2502.11089.
+- [CITATION NEEDED — concept: NSA reported attention latency figures (70–80% at 64K context). Verify against primary source benchmark tables.]
+- [CITATION NEEDED — concept: Empirical long-context benchmark comparisons (Needle-in-a-Haystack, RULER) for NSA-equipped models versus dense-attention baselines.]
+- [CITATION NEEDED — concept: DeepSeek NSA gating initialization and training schedule details. Verify against ACL 2025 camera-ready version.]

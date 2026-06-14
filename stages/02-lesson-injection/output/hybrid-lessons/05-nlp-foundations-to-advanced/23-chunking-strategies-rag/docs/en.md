@@ -336,6 +336,84 @@ Run this and inspect the similarity array. You should see dips where the topic s
 
 ## Use It
 
-Chunking strategy is the difference between a sales rep retrieving the exact pricing tier for a competitor and retrieving a paragraph about the competitor's funding history. In GTM engineering, RAG systems power knowledge bases that reps query live during deals: "What does DataSync Pro charge at enterprise scale?" "Does Competitor X support streaming data?" "What's our win rate against them when they discount?" The chunking pipeline determines whether the retrieved context answers the question or wastes the rep's time with adjacent-but-irrelevant text.
+Structure-aware chunking with embedding-based cosine similarity retrieval is the mechanism that powers a competitive intelligence knowledge base — the kind a sales rep queries mid-call when a prospect mentions a competitor by name. This is foundational for Zone 2 (Account Intelligence & Enrichment), where the quality of retrieved competitive context directly determines whether your battlecard surfaced in the rep's Slack prompt contains the pricing objection handler or a paragraph about the competitor's board composition.
 
-Consider the account intelligence aggregation workflow, which is foundational for Zone 1. When you ingest a competitor's publicly available product documentation, pricing pages, and analyst reports into a vector store, the chunking algorithm you select determines what the enrichment system retrieves when building account profiles or surfacing battlecard context. Structure-aware chunking on Markdown documentation preserves the connection between a product name and its feature list — the header stays attached to the content. Fixed-size
+Here is a runnable GTM slice that chunks a competitive intelligence dossier using Markdown-header-aware splitting, embeds each chunk with `all-MiniLM-L6-v2`, and retrieves the most relevant chunk for a live sales query:
+
+```python
+from sentence_transformers import SentenceTransformer
+import tiktoken, re, numpy as np
+
+encoding = tiktoken.encoding_for_model("gpt-4")
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+dossier = """## Pricing
+DataSync Pro charges per connector per month. Starter: $499/month for 10 connectors. Growth: $1,499/month for 50 connectors. Enterprise: custom, typically $5,000/month with annual contracts.
+
+## Weaknesses
+No streaming data support. Competitors have a 2-year head start. Limited SOC 2 Type II compliance — audit in progress, expected Q3.
+
+## Integrations
+300+ pre-built connectors. Visual pipeline builder. Real-time monitoring dashboards launched Q1 2025."""
+
+def chunk_by_header(text, max_tokens=80):
+    sections = re.split(r'(^##\s+.+$)', text, flags=re.MULTILINE)
+    chunks = []
+    for i in range(1, len(sections), 2):
+        header, body = sections[i], sections[i+1].strip()
+        if len(encoding.encode(body)) <= max_tokens:
+            chunks.append(f"{header}\n{body}")
+        else:
+            chunks.append(f"{header}\n{body[:200]}...")
+    return chunks
+
+chunks = chunk_by_header(dossier)
+chunk_embeddings = model.encode(chunks, normalize_embeddings=True)
+
+queries = [
+    "What does DataSync Pro charge at enterprise scale?",
+    "What are DataSync Pro's security weaknesses?",
+    "Does DataSync Pro have streaming data support?"
+]
+
+for query in queries:
+    q_emb = model.encode([query], normalize_embeddings=True)
+    scores = np.dot(chunk_embeddings, q_emb.T).flatten()
+    best_idx = np.argmax(scores)
+    print(f"QUERY: {query}")
+    print(f"TOP CHUNK (score {scores[best_idx]:.3f}):\n{chunks[best_idx]}\n")
+```
+
+Run this and observe: the pricing query retrieves the pricing chunk, not the weaknesses chunk. That is correct chunking doing its job. If you re-run with fixed-size chunking at 60 tokens, the pricing section splits mid-sentence — the enterprise pricing detail ends up in a chunk that also contains integration text, diluting the embedding signal and lowering the retrieval score. The rep gets a vaguer answer.
+
+This is the competitive intelligence enrichment workflow that sits underneath dynamic battlecard generation, account research automation, and deal-room summarization tools. The chunking strategy is not visible to the end user — they just see "DataSync Pro enterprise starts at $5K/month" versus "DataSync Pro has various pricing options." That difference is whether the deal advances or stalls.
+
+## Exercises
+
+**Exercise 1 (Easy): Diagnose a chunk boundary failure.**
+
+Take the `sample_text` from Build It and run it through `fixed_size_chunk` with `chunk_size=50` and `overlap=0`. Write a query string: "What does DataSync Pro charge for enterprise?" Embed the query and all chunks with `all-MiniLM-L6-v2`, compute cosine similarities, and print the top result. Then re-run with `recursive_split` at `chunk_size=100`. Compare the top-retrieved chunk for each strategy. Which chunk boundary produces the correct answer, and which produces a fragmented or irrelevant chunk? Write a two-sentence diagnostic statement explaining why the fixed-size boundary failed on this specific query.
+
+**Exercise 2 (Hard): Build a multi-strategy chunking evaluator.**
+
+Build a function called `evaluate_chunking_strategies(documents, queries, ground_truth)` that accepts a list of Markdown documents, a list of query strings, and a list of ground-truth chunk indices (which chunk *should* be retrieved for each query). The function should run all four chunking strategies from this lesson on the document set, embed all chunks with `all-MiniLM-L6-v2`, retrieve the top-1 chunk for each query under each strategy, and compute accuracy as: percentage of queries where the retrieved chunk index matches the ground truth. Test it on a corpus of 5 competitor analysis docs with 10 queries. Which strategy wins? Does the winner change if you add overlap? Report your findings as a printed summary table.
+
+## Key Terms
+
+- **Chunk**: A contiguous unit of text extracted from a larger document, embedded as a single vector, and stored as one retrievable record in a vector database.
+- **Fixed-size chunking**: An algorithm that splits text at every N tokens regardless of semantic or structural boundaries, producing uniform chunk sizes.
+- **Recursive character splitting**: An algorithm that attempts to split text using a hierarchy of separators (paragraph breaks, then line breaks, then sentences, then words), descending the hierarchy only when a segment exceeds the target chunk size.
+- **Structure-aware chunking**: An algorithm that parses document structure (Markdown headers, HTML tags) and aligns chunk boundaries with the author's intended sections, preserving header context within each chunk.
+- **Semantic chunking**: An algorithm that embeds each sentence independently, computes pairwise similarity between adjacent sentences, and splits at similarity dips to approximate topic boundaries.
+- **Overlap**: The number of tokens duplicated between consecutive chunks to preserve partial context at boundaries; a lossy compensation for information destroyed during splitting.
+- **Token**: The unit of text that embedding models and LLMs process; approximately 4 characters of English text for OpenAI tokenizers. Chunking by tokens rather than characters ensures compatibility with the embedding model's input limit.
+
+## Sources
+
+- Vectara. "Chunking Strategies for RAG: A Benchmark Analysis." NAACL 2025. [CITATION NEEDED — concept: Vectara NAACL 2025 chunking benchmark paper, specific title and authors]
+- Vectara. "Chunking and Retrieval Quality: 2026 Follow-Up Benchmark." [CITATION NEEDED — concept: Vectara 2026 follow-up showing recursive 512-token chunking at 69% accuracy vs. semantic chunking at 54%]
+- [CITATION NEEDED — concept: SPLADE + Mistral-8x benchmark on Natural Questions showing zero measurable benefit from chunk overlap]
+- LangChain. "RecursiveCharacterTextSplitter Documentation." [CITATION NEEDED — concept: LangChain RecursiveCharacterTextSplitter official documentation URL]
+- OpenAI. "Embeddings Guide — text-embedding-3-small model specifications." [CITATION NEEDED — concept: OpenAI text-embedding-3-small 8,191 token input limit]
+- Hugging Face / Sentence Transformers. "all-MiniLM-L6-v2 Model Card." [CITATION NEEDED — concept: all-MiniLM-L6-v2 256 token input limit]
+- [CITATION NEEDED — concept: benchmark showing response quality cliff at ~2,500 tokens of retrieved context]

@@ -1,0 +1,11 @@
+## Ship It
+
+In production, three concerns dominate: guardrail latency, trace export, and handoff failures.
+
+Guardrails run synchronously in the default configuration. If your output guardrail calls an external API—a moderation endpoint, a data validation service—that call blocks the entire pipeline. For a 500-row enrichment batch, a 200ms guardrail adds 100 seconds of wall time. The SDK supports async guardrails via `run_in_parallel`, but parallel guardrails mean a tripwire on one does not necessarily prevent the other from executing. If you have ordering dependencies between guardrails—check for PII before checking for fabricated data—keep them synchronous.
+
+Trace export matters for debugging. The SDK emits traces to OpenAI's dashboard by default, but you will likely want them in your own system for longer retention and correlation with CRM records. The SDK exposes `trace.process_span` as a hook—you register a function that receives each span as it closes. In production, that function should batch spans and ship them to your observability backend (Langfuse, Arize, or a simple Postgres table). Do not emit one network call per span; batch them at the end of each pipeline run.
+
+Handoff failures are the hardest to debug. If Agent A calls `transfer_to_evaluation_agent` but the evaluation agent was misconfigured—wrong model, missing tools, malformed instructions—the error surfaces inside the target agent's execution, not at the handoff point. The trace shows the handoff span completing successfully, then the target agent span failing. Always log the full trace on error, not just the exception message. The span tree tells you where execution diverged from the expected path.
+
+For the GTM use case specifically: if you are replacing a Clay waterfall with an agent pipeline, start with tracing enabled on every run for the first two weeks. You need the baseline data—how long each agent takes, how often guardrails trip, which handoffs succeed—before you can optimize. The cost optimization framing from Zone 14 applies: every agent invocation is a token spend, and tracing is how you measure that spend per step [CITATION NEEDED — concept: Zone 14 cost optimization applied to agent pipelines].

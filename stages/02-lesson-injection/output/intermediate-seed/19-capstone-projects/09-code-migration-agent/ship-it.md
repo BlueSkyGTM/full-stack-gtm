@@ -1,0 +1,11 @@
+## Ship It
+
+Production deployment of a migration agent requires three infrastructure components that the demo omits: isolated execution environments, a persistent job queue, and cost tracking.
+
+Isolated execution means each migration runs in its own container or VM. The verification gate runs `pytest` or `mvn test` against untrusted code — code that an LLM may have modified in unexpected ways. Running this in the same environment as your production services is a supply-chain risk. The container runs the target repo's test suite with no network access (the tests should not need it), a memory limit, and a CPU timeout. If a test hangs, the timeout kills the container and the file goes to the failure queue.
+
+Cost tracking is where the LLM-assisted rule's budget becomes real. A 200-file repo where 60 files need LLM assistance, each consuming 2,000 input tokens and 500 output tokens, costs roughly 60 × 2,500 = 150,000 tokens per migration run. At Claude Sonnet pricing that is under a dollar per repo — negligible for a one-time migration. But if you are running MigrationBench at scale (50+ repos, multiple iterations for failure analysis), costs compound. Track per-file LLM cost in the migration report and set a budget ceiling that aborts LLM processing when exceeded.
+
+The git-based rollback strategy scales to production by using branches. Each migration run creates a branch named `migrate/py38-to-py312-{timestamp}`. Passing files are committed to the branch. Failing files are committed to a separate branch `migrate/py38-to-py312-{timestamp}-failures` with the failing test output in the commit message. This gives you a clean PR for the passing files and a separate, reviewable record of what failed and why. The failure branch is where you build your taxonomy: group failures by rule (deterministic miss, LLM hallucination, test incompatibility, behavioral change) and measure which categories dominate.
+
+In a Clay enrichment context, the production pattern is the same. Each enrichment batch runs as an isolated job. Records that pass all validation gates are written to the destination table. Records that fail are routed to a review table with the failure reason. Cost tracking monitors API spend per provider in the waterfall. The batch does not abort on individual failures — it processes every record and reports the distribution.

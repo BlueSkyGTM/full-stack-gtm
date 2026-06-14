@@ -160,131 +160,56 @@ else:
 
 ## Use It
 
-Mel-spectrogram prediction — the core of the vocoder pipeline architecture — maps directly to personalized outbound at scale. When you generate a unique audio file per account, you are running the mel-spectrogram prediction stage thousands of times with different text conditioning. The speaker embedding stays constant (your chosen voice), the text input changes (the prospect's name, company, trigger event), and the vocoder synthesizes each file independently. This is Zone 2 (Enrichment & Personalization) territory: the pipeline takes structured account data as input and produces a personalized asset as output.
-
-The batch pattern is straightforward but has real engineering constraints. API rate limits determine throughput — OpenAI's TTS API and ElevenLabs both throttle requests per minute. File storage grows linearly with personalization depth: 1,000 prospects × 15-second clips at 24 kHz mono ≈ 720 MB of WAV files or ~150 MB as MP3. Filename conventions matter because these files need to map back to CRM records. Naming by account ID rather than company name avoids collisions and encoding issues.
-
-The script below creates a CSV of account data, generates personalized audio for each account, and writes the files to disk with CRM-compatible filenames. Each file's properties are printed for verification — you can extend this to write results back to the CSV as a new column for CRM import.
+Mel-spectrogram prediction — the second stage of the vocoder pipeline — is the AI mechanism that turns a prospect's trigger event into a voice clip a human will actually listen to. Each personalization field (name, company, trigger) becomes part of the text conditioning that shifts the predicted spectrogram. The speaker embedding stays constant; the mel-spectrogram changes per account. This is Zone 2 (Enrichment & Personalization): structured CRM data flows in, audio assets flow out, and each file is unique to one prospect's context.
 
 ```python
-import csv
-import os
+import csv, os
 from gtts import gTTS
-import time
 
 accounts = [
-    {"account_id": "001", "first_name": "Sarah", "company": "Acme", "trigger": "Series B announcement"},
-    {"account_id": "002", "first_name": "James", "company": "Globex", "trigger": "new EU expansion"},
-    {"account_id": "003", "first_name": "Priya", "company": "Initech", "trigger": "founding engineer hire"},
+    {"id": "001", "name": "Sarah", "company": "Acme", "trigger": "Series B"},
+    {"id": "002", "name": "James", "company": "Globex", "trigger": "EU expansion"},
+    {"id": "003", "name": "Priya", "company": "Initech", "trigger": "founding hire"},
 ]
 
-csv_path = "accounts_outbound.csv"
-with open(csv_path, 'w', newline='') as f:
-    writer = csv.DictWriter(f, fieldnames=["account_id", "first_name", "company", "trigger"])
-    writer.writeheader()
-    writer.writerows(accounts)
+os.makedirs("outbound_audio", exist_ok=True)
 
-output_dir = "outbound_audio"
-os.makedirs(output_dir, exist_ok=True)
-
-generated = []
-with open(csv_path, 'r') as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        text = f"Hi {row['first_name']}, saw the {row['trigger']} at {row['company']}. Worth a quick call this week?"
-
-        filename = f"{output_dir}/acct_{row['account_id']}_{row['company']}.mp3"
-        tts = gTTS(text=text, lang='en', slow=False)
-        tts.save(filename)
-
-        file_size = os.path.getsize(filename)
-        generated.append({
-            "account_id": row["account_id"],
-            "company": row["company"],
-            "filename": filename,
-            "size_bytes": file_size,
-        })
-
-        print(f"[{row['account_id']}] {row['company']}: {filename} ({file_size} bytes)")
-        time.sleep(0.5)
-
-print(f"\n=== Batch Summary ===")
-print(f"Files generated: {len(generated)}")
-print(f"Total size: {sum(g['size_bytes'] for g in generated)} bytes")
-print(f"Avg size: {sum(g['size_bytes'] for g in generated) // len(generated)} bytes")
+for acct in accounts:
+    text = f"Hi {acct['name']}, saw the {acct['trigger']} at {acct['company']}. Worth a call this week?"
+    path = f"outbound_audio/acct_{acct['id']}_{acct['company']}.mp3"
+    gTTS(text=text, lang='en').save(path)
+    size = os.path.getsize(path)
+    print(f"[{acct['id']}] {acct['company']}: {size} bytes → {path}")
 ```
 
-The personalization depth is bounded by the data you have. A first name plus a trigger event produces a clip that sounds tailored. Adding a specific metric from the prospect's industry ("your CAC is probably 2.3× what it was pre-2023") increases relevance but requires enrichment data upstream — which is why this pipeline sits downstream of a data enrichment step, not as a standalone tool. The audio file is the output of a chain that starts with firmographic data, passes through intent signals, and ends with a mel-spectrogram decoded into someone's ear.
+Filename convention uses `acct_{id}_{company}.mp3` so files map back to CRM records without name collisions. Personalization depth is bounded by upstream enrichment: a first name plus a trigger event produces a clip that sounds tailored. Adding a specific metric — "your CAC is probably 2.3× pre-2023" — requires intent or firmographic data piped in before generation. Rate limits govern throughput; OpenAI TTS and ElevenLabs both throttle per-minute requests. At scale, wrap each call in a retry with exponential backoff and log character counts for cost auditing.
 
-## Ship It
+## Exercises
 
-Deploying voice generation to production requires guardrails that don't exist in a single API call. The most critical is **voice cloning consent**. Extracting a speaker embedding from someone's voice and using it to generate speech they never spoke is regulated in several jurisdictions. The EU AI Act (Article 50) requires disclosure of AI-generated content in interactions with people. The FTC has taken enforcement action under Section 5 against deceptive uses of cloned voices. State-level biometric laws (Illinois BIPA, Texas CIRA) cover voiceprints in some interpretations. ElevenLabs requires explicit consent confirmation before cloning a voice through their API. If your pipeline uses a cloned voice — not a pretrained one — you need a consent record tied to that voice ID.
+**1. (Easy) Multi-voice comparison.** Generate the same outbound script using three gTTS accent variants (`tld='com'`, `tld='co.uk'`, `tld='com.au'`). Save each file, then load all three with `librosa` and print a table comparing duration, RMS energy, and spectral centroid. Which accent produces the longest clip? Which has the highest centroid? Report whether all three pass the silence and frequency checks from the Build It section.
 
-The second production concern is **quality validation at scale**. When generating hundreds or thousands of files, you cannot listen to each one. The spectral analysis from the Build It section becomes a CI step: every generated file is checked for silence (RMS energy below threshold), excessive noise (spectral centroid outside speech range), and duration constraints (too short means truncated text, too long means the model rambled). Files that fail are flagged for human review or regenerated.
+**2. (Hard) Batch generation with inline validation.** Build a script that reads a CSV of 10 accounts (you create the CSV inline), generates an MP3 for each, then immediately validates each file using `librosa` — checking RMS > 0.005, spectral centroid between 300–4000 Hz, and duration between 2–30 seconds. Write results to a second CSV (`outbound_results.csv`) with columns: `account_id`, `filename`, `status` (PASS/FAIL), `fail_reason`. The script should produce zero files that silently fail — any file that doesn't pass validation gets flagged, not sent.
 
-The third concern is **cost monitoring**. TTS APIs charge per character or per minute of generated audio. A batch run of 5,000 personalized clips at 150 characters each is 750,000 characters — at OpenAI TTS pricing ($15/1M characters for the standard model), that's $11.25 per batch. ElevenLabs charges per character with tier-dependent limits. Neither is expensive in absolute terms, but unmonitored retries on failures can multiply costs. Logging character counts and API response times per file makes the cost auditable.
+## Key Terms
 
-This script implements the quality validation layer. Run it over a directory of generated audio files before they enter your outbound sequence. Files that fail any check are excluded — better to send no audio than to send a prospect a silent file or, worse, a glitch that sounds like a malfunction.
+**Mel-spectrogram** — A time-frequency representation of audio computed via short-time Fourier transform, mapped to the mel scale (approximating human pitch perception), and converted to log magnitude. Compresses 24,000 samples/second to ~75–100 frames/second. The core intermediate representation in vocoder-pipeline TTS.
 
-```python
-import os
-import librosa
-import numpy as np
+**Neural vocoder** — A model (typically GAN-based, e.g. HiFi-GAN) that synthesizes a raw PCM waveform from a mel-spectrogram. Replaces the older Griffin-Lim algorithm, which estimated phase iteratively and produced audible artifacts. Production TTS systems universally use neural vocoders.
 
-audio_dir = "outbound_audio"
+**Neural codec** — A model (e.g., EnCodec, SoundStream) that compresses raw audio into discrete tokens at 50–75 Hz with a quantized encoder-decoder. Enables autoregressive transformers to operate on audio by reducing sequence length from 24,000 tokens/second to ~600.
 
-SILENCE_THRESHOLD = 0.005
-CENTROID_MIN = 300
-CENTROID_MAX = 4000
-DURATION_MIN = 2.0
-DURATION_MAX = 60.0
+**Speaker embedding (x-vector)** — A fixed-dimensional vector (192–256 dims) extracted from reference audio by a speaker verification network. Encodes vocal-tract characteristics (F0 range, formants, speaking rate). Injected into decoders as conditioning; switching embeddings switches the output voice. Cloning a voice means extracting someone's embedding from their audio.
 
-results = []
-for filename in sorted(os.listdir(audio_dir)):
-    if not filename.endswith('.mp3'):
-        continue
+**Autoregressive token prediction** — A generation strategy where the model predicts one codec token at a time, each conditioned on all previous tokens plus text/speaker conditioning. Yields the highest speaker-cloning fidelity but the highest latency (thousands of sequential forward passes per clip).
 
-    filepath = os.path.join(audio_dir, filename)
-    y, sr = librosa.load(filepath, sr=22050)
+**Spectral centroid** — The weighted mean frequency of a spectrum, computed per frame. Indicates where the "center of mass" of the frequency distribution lies. Speech typically falls in 300–4000 Hz; values far outside that range suggest noise, hum, or silence rather than intelligible speech.
 
-    rms = librosa.feature.rms(y=y)
-    centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
-    duration = len(y) / sr
+## Sources
 
-    rms_mean = float(np.mean(rms))
-    centroid_mean = float(np.mean(centroid))
-
-    issues = []
-    if rms_mean < SILENCE_THRESHOLD:
-        issues.append("SILENCE")
-    if centroid_mean < CENTROID_MIN or centroid_mean > CENTROID_MAX:
-        issues.append("FREQUENCY_ANOMALY")
-    if duration < DURATION_MIN:
-        issues.append("TOO_SHORT")
-    if duration > DURATION_MAX:
-        issues.append("TOO_LONG")
-
-    status = "PASS" if not issues else "FAIL:" + ",".join(issues)
-
-    results.append({
-        "filename": filename,
-        "duration": duration,
-        "rms": rms_mean,
-        "centroid_hz": centroid_mean,
-        "status": status,
-    })
-
-    print(f"[{status:<25}] {filename}")
-    print(f"  Duration: {duration:.1f}s | RMS: {rms_mean:.6f} | Centroid: {centroid_mean:.1f}Hz")
-
-passed = sum(1 for r in results if r["status"] == "PASS")
-failed = len(results) - passed
-print(f"\n=== Validation Report ===")
-print(f"Total files: {len(results)}")
-print(f"Passed: {passed}")
-print(f"Failed: {failed}")
-if failed > 0:
-    print("Failed files:")
-    for r in results:
-        if r["status"] != "PASS":
-            print(f"
+1. van den Oord, A. et al. (2016). "WaveNet: A Generative Model for Raw Audio." arXiv:1609.03499 — pioneered autoregressive waveform generation; foundational for modern codec-token approaches.
+2. Ren, Y. et al. (2019). "FastSpeech: Fast, Robust and Controllable Text to Speech." arXiv:1905.09263 — established the text-to-mel-spectrogram predictor as a parallel (non-autoregressive) stage in vocoder pipelines.
+3. Kong, J. et al. (2020). "HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis." arXiv:2010.05646 — the dominant neural vocoder architecture in production TTS systems.
+4. Wang, C. et al. (2023). "Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers." (VALL-E) arXiv:2301.02111 — demonstrated autoregressive generation over EnCodec tokens with 3-second speaker cloning.
+5. Copet, J. et al. (2023). "MusicGen: Simple and Controllable Music Generation." arXiv:2306.05284 — representative diffusion/transformer music generation system over codec tokens.
+6. McFee, B. et al. (2015). "librosa: Audio and Music Signal Analysis in Python." SciPy Proceedings — the spectral-analysis library used throughout this lesson for RMS, centroid, and mel-spectrogram computation.
+7. gTTS (Google Text-to-Speech). Documentation: https://gtts.readthedocs.io — the API wrapper used for runnable examples; interfaces with Google Translate's TTS endpoint.

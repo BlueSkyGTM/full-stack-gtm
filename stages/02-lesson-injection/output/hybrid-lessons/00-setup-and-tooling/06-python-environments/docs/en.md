@@ -144,20 +144,68 @@ pip freeze > requirements.txt
 
 ## Use It
 
-Dependency isolation through virtual environments is what makes a multi-source GTM enrichment pipeline operable on a single developer machine. A typical signal-capture workflow — pulling contact data from Apollo, enriching it through a Clay waterfall, and writing results to a CRM — involves multiple Python scripts, each depending on a different API client library with its own transitive dependency tree [CITATION NEEDED — concept: Signal Machine pipeline as multi-script GTM system]. Without per-script venvs, a `pip install` for one integration silently overwrites a shared dependency and breaks another integration's authentication flow.
+The `sys.prefix` redirection that `venv` implements is the isolation mechanism that lets a multi-provider GTM enrichment pipeline run on a single machine without dependency collisions [CITATION NEEDED — concept: multi-provider GTM enrichment pipeline as standard RevOps pattern]. Here is a runnable Apollo contact enrichment script — the venv you built above is its runtime, and the `.env` file is its secret store.
 
-The specific failure mode looks like this: your Apollo script uses `requests` 2.31 for its HTTP client. Your Clay webhook receiver also uses `requests`, but the Clay SDK pins `requests>=2.25,<2.29`. You install the Clay SDK globally. `pip` downgrades `requests` to 2.28 to satisfy the constraint. Your Apollo script still imports successfully — `requests` 2.28 has the same public API — but a TLS edge case that was fixed in 2.30 now causes intermittent `SSLError` on Apollo's endpoint. The error message says nothing about version conflicts. You spend two hours reading Apollo's API docs before checking `pip freeze` and noticing the version drift.
+```python
+import os, requests
+from dotenv import load_dotenv
 
-A venv per pipeline stage prevents this. The Apollo script runs in `.venv-apollo/` with `requests==2.31.0`. The Clay script runs in `.venv-clay/` with `requests==2.28.0`. They never interact. When you update the Clay SDK to a version that supports `requests>=2.31`, you test it in `.venv-clay/`, confirm the webhook receiver still processes payloads correctly, and only then update that project's `requirements.txt`. The Apollo venv is untouched throughout.
+load_dotenv()
 
-The `.env` pattern maps directly to multi-provider API key management. A GTM stack might include Apollo, Clay, Clearbit, Hunter, and ZoomInfo — each issuing its own API key. Storing these in `.env` files (which you add to `.gitignore`) means your scripts reference `os.getenv("APOLLO_API_KEY")` or `os.getenv("CLAY_API_KEY")` without hardcoding secrets. When you hand the project to a teammate, you include a `.env.example` file with key names and placeholder values. They copy it to `.env`, paste their own keys, and the script runs. No secrets travel through Slack, Git, or email.
+APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
+APOLLO_BASE_URL = "https://api.apollo.io/v1"
 
-## Ship It
+def enrich_contact(email):
+    resp = requests.post(
+        f"{APOLLO_BASE_URL}/people/match",
+        json={"email": email},
+        headers={"Cache-Control": "no-cache",
+                 "Content-Type": "application/json",
+                 "X-Api-Key": APOLLO_API_KEY},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    person = resp.json().get("person", {})
+    return {
+        "email": email,
+        "name": person.get("name"),
+        "title": person.get("title"),
+        "company": person.get("organization_name"),
+    }
 
-A reproducible Python environment with pinned dependencies and externalized secrets is the exact scaffold for any Clay webhook receiver or Apollo enrichment function you will build in later lessons. Your deliverable is a directory with this structure:
-
+if __name__ == "__main__":
+    leads = ["jane@example.com", "mark@acme.io"]
+    for email in leads:
+        try:
+            result = enrich_contact(email)
+            print(f"{result['name']} | {result['title']} @ {result['company']}")
+        except requests.RequestException as e:
+            print(f"{email}: FAILED — {e}")
 ```
-gtm-enrichment/
-├── .venv/                  (not committed)
-├── .env                    (not committed — real keys)
-├── .env.example            (
+
+Run this inside the venv with `python enrich.py`. The script resolves `requests` from `.venv/lib/.../site-packages/` and reads `APOLLO_API_KEY` from `.env` via `load_dotenv()`. If a teammate clones the repo, creates the venv from `requirements.txt`, copies `.env.example` to `.env`, and pastes their own key, the script runs identically on their machine. That is reproducibility — and it is the same pattern you will use for every Clay webhook, Apollo enrichment, and CRM write-back script in later lessons.
+
+## Exercises
+
+1. **Two venvs, one machine.** Create `.venv-apollo` and `.venv-clay` in the same project directory. Install `requests==2.31.0` in the first and `requests==2.28.1` in the second. Write a script that prints `requests.__version__` and the `site-packages` path it loaded from. Activate each venv, run the script, and confirm the versions and paths differ. Then explain in one sentence why the global interpreter cannot see either install.
+
+2. **Conflict diagnosis.** Create a fresh venv. Install `requests==2.31.0`. Then attempt to install a hypothetical package that pins `urllib3<2.0` (for example, `pip install requests==2.28.1` alongside the existing `urllib3==2.2.1`). Run `pip freeze` before and after. Document which packages changed version, which stayed the same, and what command you would use to restore the original state from `requirements.txt`. Write a one-paragraph diagnosis of what happened to `sys.path` and why the Apollo enrichment script in **Use It** would start failing.
+
+## Key Terms
+
+- **Virtual environment (venv)** — An isolated Python installation prefix with its own `site-packages` directory, created by copying or symlinking the base interpreter and redirecting `sys.prefix`.
+- **sys.path** — The ordered list of directories Python searches when resolving `import` statements. First match wins; no match raises `ModuleNotFoundError`.
+- **site-packages** — The directory where `pip install` writes third-party packages. Each venv has its own; the global interpreter has a shared one.
+- **sys.prefix** — The root directory Python uses to locate its standard library and `site-packages`. Venv activation repoints this to the `.venv/` directory.
+- **requirements.txt** — A pinned list of package names and exact versions, produced by `pip freeze`, that captures the full state of a venv for reproducible installation.
+- **python-dotenv** — A library that reads `.env` files at runtime and injects key-value pairs into `os.environ`, keeping secrets out of source code.
+- **Transitive dependency** — A package your project needs indirectly because a package you installed directly declares it as a dependency. Conflicts between transitive trees are the primary cause of dependency hell.
+
+## Sources
+
+- Python Software Foundation. "venv — Creation of virtual environments." *Python 3 documentation*. https://docs.python.org/3/library/venv.html
+- Python Software Foundation. "The sys module — sys.path." *Python 3 documentation*. https://docs.python.org/3/library/sys.html#sys.path
+- Python Software Foundation. "pip freeze — requirements file format." *Python Packaging User Guide*. https://pip.pypa.io/en/stable/cli/pip_freeze/
+- Smarkets / Saurabh Kumar. "python-dotenv: Read key-value pairs from a .env file." *GitHub repository*. https://github.com/theskumar/python-dotenv
+- Astral. "uv: An extremely fast Python package and project manager." *Documentation*. https://docs.astral.sh/uv/
+- Apollo API reference — `POST /v1/people/match`. [CITATION NEEDED — concept: Apollo People Match API request/response schema]

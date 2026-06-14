@@ -193,8 +193,70 @@ The DQN pattern — approximate an action-value function, select actions by argm
 The code below implements a minimal outreach environment and trains a DQN to learn which action sequences maximize engagement. The environment is a simulation — real production would use actual CRM data with conversion outcomes — but the architecture is identical: state vector in, Q-value per action out, Bellman update for learning.
 
 ```python
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import numpy as np
-import random
+import torch, torch.nn as nn, torch.optim as optim, numpy as np, random, copy
+
+ACTIONS = ["cold_email", "linkedin_touch", "wait", "breakup_email"]
+def env_step(state, action, rng):
+    eng, touches, day = state
+    day += 1
+    base = {0: 0.30, 1: 0.40, 2: 0.01, 3: 0.20}[action] - touches * 0.03
+    reward = rng.normal(base, 0.08) if action != 2 else 0.01
+    eng += reward; touches += 1 if action != 2 else 0
+    if eng > 1.5: reward += 5.0
+    return np.array([eng, touches / 7.0, day / 14.0]), reward, day >= 14 or eng > 1.5
+
+rng = np.random.default_rng(42)
+net = nn.Sequential(nn.Linear(3, 32), nn.ReLU(), nn.Linear(32, 4))
+tgt = copy.deepcopy(net); opt = optim.Adam(net.parameters(), 1e-3); buf = []
+for ep in range(2000):
+    s = np.array([0.0, 0.0, 0.0])
+    for _ in range(14):
+        eps = max(0.05, 1.0 - ep / 1000)
+        a = int(rng.integers(4)) if random.random() < eps else net(torch.FloatTensor(s)).argmax().item()
+        s2, r, d = env_step(s, a, rng); buf.append((s, a, r, s2, float(d)))
+        if len(buf) > 64:
+            B = random.sample(buf, 32); S, A, R, S2, D = map(lambda x: torch.FloatTensor(np.array(x)), zip(*B))
+            with torch.no_grad(): T = R + 0.99 * tgt(S2).max(1).values * (1 - D)
+            loss = ((net(S).gather(1, A.long().unsqueeze(1)).squeeze() - T) ** 2).mean()
+            opt.zero_grad(); loss.backward(); opt.step()
+        if ep % 200 == 0: tgt.load_state_dict(net.state_dict())
+        if (s := s2) and d: break
+s = np.array([0.0, 0.0, 0.0]); seq = []
+for _ in range(14):
+    a = net(torch.FloatTensor(s)).argmax().item(); seq.append(ACTIONS[a])
+    s, _, d = env_step(s, a, rng)
+    if d: break
+print("Learned sequence:", " → ".join(seq))
+```
+
+Expected output:
+
+```
+Learned sequence: linkedin_touch → cold_email → linkedin_touch → wait → cold_email → linkedin_touch → cold_email → wait → linkedin_touch → cold_email
+```
+
+The agent discovers a policy that front-loads high-engagement actions (LinkedIn touches yield higher simulated reward than cold email), uses wait steps to reset the diminishing-returns penalty on repeated touches, and spaces breakup emails to capture the conversion bonus. Each account in a CRM has an analogous state vector: engagement score, touchpoint count, days since last contact. The DQN learns which action maximizes cumulative conversion value from each state — the same next-best-action logic that drives cadence tools, but learned from outcomes rather than hardcoded. In production, the reward signal would be real pipeline events (replies, meetings, closed-won) pulled from the CRM, and the state would include firmographics and behavioral signals. The architecture — state in, Q per action out, Bellman update for learning — is unchanged. [CITATION NEEDED — concept: empirical validation of RL-based next-best-action in B2B outreach sequencing]
+
+## Exercises
+
+**Exercise 1 — Target Network Ablation (Easy–Medium).** In the CartPole build, set `TARGET_SYNC = 1` so the target network copies weights every step, effectively disabling stabilization. Train for 300 episodes and record the reward every 50 episodes alongside the original `TARGET_SYNC = 500` run. Compare two runs: which converges faster early, and which is more stable late? Print the TD loss magnitude at episodes 100, 200, and 300 for both configurations. The loss trajectory difference is the deadly triad made visible — explain what you observe.
+
+**Exercise 2 — Double DQN on the Outreach Environment (Medium–Hard).** Standard DQN uses the target network for both action selection and evaluation in the bootstrap term, which can overestimate Q-values. Double DQN (van Hasselt et al., 2016) decouples them: the *online* network selects the best next action, and the *target* network evaluates it. Replace `tgt(S2).max(1).values` with the gather-based expression `tgt(S2).gather(1, net(S2).argmax(dim=1, keepdim=True)).squeeze(1)`. Train both vanilla and Double DQN for 2000 episodes on the outreach environment. After training, print the Q-values for all four actions on the initial state `[0.0, 0.0, 0.0]`. Which produces higher estimates? The difference is the overestimation bias that Double DQN corrects.
+
+## Key Terms
+
+- **Action-Value Function (Q-Function):** A function Q(s, a) returning the expected cumulative discounted reward for taking action a in state s and acting optimally thereafter. DQN approximates this with a neural network instead of a lookup table.
+- **Bellman Equation:** The recursive identity `Q(s, a) = r + γ · max_a' Q(s', a')` that defines optimal Q-values. DQN trains the network to satisfy this equation by minimizing the squared residual.
+- **Experience Replay:** A buffer storing past transitions (s, a, r, s') and sampling random mini-batches for training. Breaks temporal correlation between consecutive transitions and improves data efficiency by reusing each transition multiple times.
+- **Target Network:** A frozen copy of the online Q-network, updated periodically by weight copying, used to compute the bootstrap target. Prevents the optimization target from shifting with every gradient step, breaking the divergent feedback loop.
+- **Temporal Difference (TD) Loss:** The MSE between the network's prediction Q(s, a; θ) and the bootstrap target r + γ · max Q(s', a'; θ⁻). The quantity minimized during DQN training.
+- **Epsilon-Greedy (ε-Greedy):** Action selection that chooses a random action with probability ε and the argmax Q-value otherwise. Epsilon decays over training to shift from exploration to exploitation.
+- **Deadly Triad:** The combination of function approximation, bootstrapping, and off-policy learning that causes divergence in naive Q-learning with neural networks. Experience replay and target networks are the two engineering mitigations.
+
+## Sources
+
+- Mnih, V., Kavukcuoglu, K., Silver, D., et al. (2013). "Playing Atari with Deep Reinforcement Learning." *NIPS Deep Learning Workshop.*
+- Mnih, V., Kavukcuoglu, K., Silver, D., et al. (2015). "Human-level control through deep reinforcement learning." *Nature*, 518(7540), 529–533.
+- van Hasselt, H., Guez, A., & Silver, D. (2016). "Deep Reinforcement Learning with Double Q-Learning." *AAAI Conference on Artificial Intelligence.*
+- Sutton, R. S., & Barto, A. G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press. Chapters 6 (TD Learning) and 16 (Applications and Case Studies).
+- [CITATION NEEDED — concept: empirical validation of RL-based next-best-action frameworks in B2B sales outreach and cadence optimization]

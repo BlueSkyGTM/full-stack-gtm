@@ -200,252 +200,45 @@ The normals output confirms whether the depth map has geometric structure. A fla
 
 ## Use It
 
-Now we lift 2D detections into 3D using depth and camera intrinsics. This is the operation that bridges detection and spatial reasoning. The pinhole camera model is the mechanism: given a pixel coordinate (u, v), a depth value d at that pixel, and camera intrinsics (focal length fx, fy and principal point cx, cy), the 3D point is computed as X = (u - cx) * d / fx, Y = (v - cy) * d / fy, Z = d. Without a metric depth value, you get relative 3D positions — the shape is right but the scale is unknown.
-
-This lifting operation maps directly to the enrichment waterfall pattern in GTM Zone 04. In an enrichment waterfall, you start with a sparse identifier (a domain name) and sequentially attempt to recover missing attributes (email, phone, title, intent signals) by routing through multiple data providers in priority order. Each provider either fills in the missing field or returns nothing, and you fall through to the next. The waterfall is a depth map for your ICP: you start with 2D knowledge (company exists, has a website) and progressively recover the depth axis — how engaged are they, how big is the team, what tools do they use, when was the last funding round.
+Monocular depth estimation paired with pinhole camera back-projection lifts 2D pixel detections into 3D spatial coordinates — a mechanism that maps directly to the Clay enrichment waterfall in GTM Zone 04 (TAM Refinement & ICP Scoring). In an enrichment waterfall, you start with a sparse 2D identifier (a domain) and sequentially recover the depth axis: company size, tech stack, funding stage, intent signals. Each provider either fills the missing field or returns null, and you fall through. The depth map is your enriched record: the shape is right, but without a scale reference (a verified behavioral signal), the units are relative.
 
 ```python
-import torch
 import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw
-from transformers import pipeline
-
-pipe = pipeline(
-    task="depth-estimation",
-    model="depth-anything/Depth-Anything-V2-Small-hf"
-)
-
-image_size = 480
-image_array = np.zeros((image_size, image_size, 3), dtype=np.uint8)
-image_array[:, :] = [60, 60, 80]
-
-center_x, center_y = 240, 240
-y_coords, x_coords = np.ogrid[:image_size, :image_size]
-dist_from_center = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
-circle_mask = dist_from_center < 80
-image_array[circle_mask] = [200, 180, 160]
-
-rect_mask = (x_coords > 320) & (x_coords < 420) & (y_coords > 300) & (y_coords < 420)
-image_array[rect_mask] = [120, 140, 100]
-
-image = Image.fromarray(image_array).convert("RGB")
-
-draw = ImageDraw.Draw(image)
-boxes = [
-    {"label": "object_circle", "box": [160, 160, 320, 320]},
-    {"label": "object_rect", "box": [320, 300, 420, 420]},
-]
-for det in boxes:
-    x1, y1, x2, y2 = det["box"]
-    draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
-    draw.text((x1 + 5, y1 - 15), det["label"], fill=(255, 0, 0))
-
-result = pipe(image)
-depth = result["predicted_depth"].squeeze().detach().cpu().numpy().astype(np.float64)
-
-fx = 525.0
-fy = 525.0
-cx = image_size / 2.0
-cy = image_size / 2.0
-
-print("=== 2D-to-3D Lift via Depth + Pinhole Intrinsics ===\n")
-
-for det in boxes:
-    x1, y1, x2, y2 = det["box"]
-    x1c, y1c, x2c, y2c = int(x1), int(y1), int(x2), int(y2)
-    
-    depth_region = depth[y1c:y2c, x1c:x2c]
-    median_depth = np.median(depth_region)
-    mean_depth = np.mean(depth_region)
-    
-    u_center = (x1 + x2) / 2.0
-    v_center = (y1 + y2) / 2.0
-    
-    X = (u_center - cx) * median_depth / fx
-    Y = (v_center - cy) * median_depth / fy
-    Z = median_depth
-    
-    width_3d = (x2 - x1) * median_depth / fx
-    height_3d = (y2 - y1) * median_depth / fy
-    
-    print(f"Detection: {det['label']}")
-    print(f"  2D box: [{x1}, {y1}, {x2}, {y2}]")
-    print(f"  2D center: ({u_center:.1f}, {v_center:.1f})")
-    print(f"  Median depth (relative): {median_depth:.4f}")
-    print(f"  Mean depth (relative):   {mean_depth:.4f}")
-    print(f"  Std depth (surface roughness): {depth_region.std():.4f}")
-    print(f"  3D center (relative): X={X:.2f}, Y={Y:.2f}, Z={Z:.2f}")
-    print(f"  3D size (relative):   width={width_3d:.2f}, height={height_3d:.2f}")
-    print()
-
-print("=== Enrichment Waterfall Analogy ===")
-print("Depth lift:   2D pixel (u,v) + depth d -> 3D point (X,Y,Z)")
-print("Enrichment:   domain + provider_n -> (email, title, intent)")
-print()
-print("Depth without scale = relative geometry (shape correct, units unknown)")
-print("Enrichment without verification = inferred attributes (plausible, unconfirmed)")
-print()
-print("Scale reference (known door width) converts relative -> metric depth")
-print("Verification source (personal email reply) converts inferred -> confirmed attribute")
-
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-axes[0].imshow(image)
-axes[0].set_title("2D Detections")
-axes[0].axis("off")
-
-depth_vis = (depth - depth.min()) / (depth.max() - depth.min() + 1e-8)
-axes[1].imshow(depth_vis, cmap="inferno")
-axes[1].set_title("Depth with Detections")
-for det in boxes:
-    x1, y1, x2, y2 = det["box"]
-    rect = plt.Rectangle((x1, y1), x2-x1, y2-y1, linewidth=2, edgecolor='lime', facecolor='none')
-    axes[1].add_patch(rect)
-    d_val = np.median(depth[int(y1):int(y2), int(x1):int(x2)])
-    axes[1].text(x1, y1-5, f"d={d_val:.3f}", color='lime', fontsize=9, fontweight='bold')
-axes[1].axis("off")
-
-plt.tight_layout()
-plt.savefig("lift_output.png", dpi=150)
-print("\nSaved to lift_output.png")
-```
-
-The depth difference between the two detected objects tells you their relative spatial ordering. The circle and rectangle will have different median depths — whichever is lower in relative depth value is "closer" to the camera in the model's ordinal scale. You cannot say "this object is 2 meters away" without a metric model or a known scale reference, but you can say "object A is closer than object B" with reasonable confidence. That relative ordering — the shape of the scene without the scale — is what most downstream applications actually need.
-
-The enrichment waterfall operates on the same principle of relative confidence. When Clay implements a waterfall that routes through Find (identify the person) → Enrich (pull email, phone, title from Apollo, then Clearbit, then Nominode) → Transform (normalize and score) → Export, each stage either fills a field with a confidence level or falls through. [CITATION NEEDED — concept: specific provider routing order in Clay waterfalls] The first provider to return a value wins, and that value carries the confidence of its source. A verified email from a reply is metric depth. An inferred email from a pattern match is relative depth. Both place the contact in the right region of your funnel; only one lets you measure exact distance to conversion.
-
-## Ship It
-
-Putting depth estimation into production means handling the failure modes and providing scale references. Here is a complete pipeline that runs depth estimation, computes confidence via local variance, flags potential failures, and applies a scale reference to convert relative depth to approximate metric depth:
-
-```python
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
 from PIL import Image
 from transformers import pipeline
-from scipy.ndimage import uniform_filter
 
-pipe = pipeline(
-    task="depth-estimation",
-    model="depth-anything/Depth-Anything-V2-Small-hf"
-)
+pipe = pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf")
 
 image_size = 480
-image_array = np.full((image_size, image_size, 3), [80, 80, 100], dtype=np.uint8)
+img = np.full((image_size, image_size, 3), 80, dtype=np.uint8)
+y, x = np.ogrid[:image_size, :image_size]
+img[np.sqrt((x - 180)**2 + (y - 200)**2) < 70] = [200, 180, 160]
+img[(x > 300) & (x < 400) & (y > 280) & (y < 400)] = [120, 140, 100]
+image = Image.fromarray(img)
 
-y_coords, x_coords = np.ogrid[:image_size, :image_size]
+depth = pipe(image)["predicted_depth"].squeeze().detach().cpu().numpy()
 
-floor_mask = y_coords > 300
-image_array[floor_mask] = [100, 90, 70]
+fx, fy, cx, cy = 525.0, 525.0, 240.0, 240.0
+detections = [{"label": "obj_A", "box": [110, 130, 250, 270]},
+              {"label": "obj_B", "box": [300, 280, 400, 400]}]
 
-wall_mask = y_coords <= 300
-image_array[wall_mask] = [140, 140, 150]
+for det in detections:
+    x1, y1, x2, y2 = det["box"]
+    d = np.median(depth[y1:y2, x1:x2])
+    X = ((x1 + x2) / 2 - cx) * d / fx
+    Y = ((y1 + y2) / 2 - cy) * d / fy
+    print(f"{det['label']}: rel_depth={d:.4f}  3D=({X:.2f}, {Y:.2f}, {d:.2f})")
 
-rect_mask = (x_coords > 180) & (x_coords < 280) & (y_coords > 200) & (y_coords < 350)
-image_array[rect_mask] = [180, 100, 80]
-
-thin_mask = (x_coords > 350) & (x_coords < 355) & (y_coords > 150) & (y_coords < 400)
-image_array[thin_mask] = [200, 200, 50]
-
-noise = np.random.randint(-10, 10, (image_size, image_size, 3), dtype=np.int16)
-image_array = np.clip(image_array.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-
-image = Image.fromarray(image_array).convert("RGB")
-
-result = pipe(image)
-depth = result["predicted_depth"].squeeze().detach().cpu().numpy().astype(np.float64)
-
-local_mean = uniform_filter(depth, size=15)
-local_sqr_mean = uniform_filter(depth**2, size=15)
-local_var = local_sqr_mean - local_mean**2
-local_std = np.sqrt(np.maximum(local_var, 0))
-
-global_std = depth.std()
-confidence = 1.0 - np.clip(local_std / (global_std + 1e-8), 0, 1)
-
-low_conf_mask = confidence < 0.3
-low_conf_pct = (low_conf_mask.sum() / low_conf_mask.size) * 100
-
-print("=== Production Depth Pipeline ===\n")
-print(f"Depth map shape: {depth.shape}")
-print(f"Depth range: [{depth.min():.4f}, {depth.max():.4f}]")
-print(f"Global std: {global_std:.4f}")
-print(f"Low-confidence pixels (<0.3): {low_conf_mask.sum()} ({low_conf_pct:.1f}% of image)")
-print(f"Mean confidence: {confidence.mean():.4f}")
-
-thin_region_depth = depth[150:400, 350:355]
-surrounding_depth = depth[150:400, 340:365]
-print(f"\nThin structure region std: {thin_region_depth.std():.4f}")
-print(f"Surrounding region std:    {surrounding_depth.std():.4f}")
-print(f"Thin structure depth anomaly: {'YES - high variance near thin object' if thin_region_depth.std() > surrounding_depth.std() * 1.5 else 'NO'}")
-
-print("\n=== Scale Reference Application ===")
-known_object_pixels = 100
-known_object_meters = 0.5
-scale_factor = known_object_meters / known_object_pixels
-
-metric_depth = depth * scale_factor
-print(f"Known reference: {known_object_pixels} pixels = {known_object_meters} meters")
-print(f"Scale factor: {scale_factor:.6f} meters/pixel-depth-unit")
-print(f"Metric depth range: [{metric_depth.min():.4f}, {metric_depth.max():.4f}] meters")
-print(f"Relative depth was: [{depth.min():.4f}, {depth.max():.4f}]")
-print(f"Note: scale is approximate and assumes linear depth scale (valid near camera, degrades at distance)")
-
-print("\n=== Enrichment Waterfall: Confidence Tiers ===")
-tier1 = confidence[confidence >= 0.7]
-tier2 = confidence[(confidence >= 0.4) & (confidence < 0.7)]
-tier3 = confidence[confidence < 0.4]
-print(f"Tier 1 (high confidence, >=0.7):   {len(tier1)} pixels ({len(tier1)/confidence.size*100:.1f}%) -> verified attribute")
-print(f"Tier 2 (medium confidence, 0.4-0.7): {len(tier2)} pixels ({len(tier2)/confidence.size*100:.1f}%) -> inferred attribute")
-print(f"Tier 3 (low confidence, <0.4):     {len(tier3)} pixels ({len(tier3)/confidence.size*100:.1f}%) -> missing/handoff")
-
-print("\nWaterfall routing decision:")
-print(f"  Route Tier 1 directly to downstream (3D lift, navigation, export)")
-print(f"  Route Tier 2 to verification pass (second model, consistency check)")
-print(f"  Route Tier 3 to fallback (ignore, use prior, or flag for review)")
-
-fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-
-axes[0, 0].imshow(image)
-axes[0, 0].set_title("Input Image")
-axes[0, 0].axis("off")
-
-depth_vis = (depth - depth.min()) / (depth.max() - depth.min() + 1e-8)
-axes[0, 1].imshow(depth_vis, cmap="inferno")
-axes[0, 1].set_title("Relative Depth Map")
-axes[0, 1].axis("off")
-
-im_conf = axes[1, 0].imshow(confidence, cmap="RdYlGn", vmin=0, vmax=1)
-axes[1, 0].set_title("Per-Pixel Confidence")
-axes[1, 0].axis("off")
-plt.colorbar(im_conf, ax=axes[1, 0], label="Confidence")
-
-metric_vis = (metric_depth - metric_depth.min()) / (metric_depth.max() - metric_depth.min() + 1e-8)
-axes[1, 1].imshow(metric_vis, cmap="viridis")
-axes[1, 1].set_title("Approximate Metric Depth (scaled)")
-axes[1, 1].axis("off")
-
-plt.tight_layout()
-plt.savefig("production_depth.png", dpi=150)
-print("\nSaved to production_depth.png")
+print("\nWaterfall mapping: pixel(u,v)->domain  depth->provider_result  3D_pt->enriched_record")
 ```
 
-The confidence map uses local variance as a proxy for reliability. High local variance in depth means the model is producing inconsistent predictions across neighboring pixels — likely a thin structure, an edge artifact, or a transparent surface. Low local variance means the depth is smooth and internally consistent, which correlates with (but does not prove) correctness. This is the same logic as scoring enrichment records: a record where three providers agree on the same email is high-confidence; a record where providers disagree is routed to a second pass.
-
-In a production GTM pipeline, this confidence tiering maps directly to how Clay exports data. [CITATION NEEDED — concept: Clay's scoring and qualification routing thresholds] High-confidence depth pixels are like enriched records where behavioral signals (feature usage depth, session frequency, team size) align across sources — you route them directly to activation. Medium-confidence pixels get a second model pass, just as ambiguous enrichment records get a manual review or a verification email. Low-confidence pixels are flagged and ignored, like enrichment records that return no data from any provider in the waterfall.
-
-The scale reference application at the end is the most important production decision. If your downstream system needs metric depth (robotics, AR with physical placement, autonomous navigation), you must provide a known reference. In enrichment terms, this is the difference between knowing "this company seems engaged" (relative depth) and knowing "this company has 15 daily active users on our platform" (metric depth). The behavioral signals — feature usage depth, session frequency — are the known object width that converts relative intent into measured engagement. [CITATION NEEDED — concept: linking product behavioral signals to enrichment scoring in Clay]
+The depth difference between the two detected objects gives you their relative spatial ordering without metric units. Whichever has a lower relative depth value is "closer" in the model's ordinal scale. That relative ordering — the shape of the scene without the scale — is what most downstream applications need, and it mirrors how enrichment pipelines work before verification: the shape of an account's engagement is recoverable from provider data, but the exact distance to conversion is not, until a behavioral signal provides the scale reference.
 
 ## Exercises
 
-1. **Compare relative vs. metric models.** Run the same input image through both Depth Anything V2 (relative) and ZoeDepth (metric) if available. Print the depth statistics side by side. Compute the Pearson correlation between the two depth maps. Document whether the ordering is preserved and where the two models disagree most.
+1. **Stress-test failure modes.** Create three synthetic images: one with a large textureless region (solid color filling 60% of the frame), one with simulated thin structures (1-pixel-wide vertical lines spaced 10 pixels apart), and one with a bright vertical band mimicking a mirror reflection. Run Depth Anything V2 on each. For each output, compute a local variance map using a 15×15 uniform filter and report what percentage of pixels fall below a 0.3 confidence threshold. Document which failure modes produce high-confidence-but-wrong depth (silent failures) versus low-confidence depth (detectable failures).
 
-2. **Stress-test failure modes.** Create three synthetic images: one with a large textureless region (solid color wall), one with simulated thin structures (1-pixel-wide vertical lines), and one with a simulated reflective surface (bright vertical band that looks like a mirror reflection). Run depth estimation on each. Compute the local variance confidence map for all three. Report which failure modes produce high-confidence-but-wrong depth vs. low-confidence depth.
-
-3. **Lift a real detection to 3D.** Use an object detection model (YOLO via ultralytics, or a Hugging Face detection pipeline) to detect objects in a real photograph. For each detection, extract the median depth over the bounding box region and compute the 3D center point using the pinhole intrinsics from the Build It section. Print a table of detections sorted by depth (nearest to farthest). Then compute pairwise 3D distances between detected objects using the relative depth.
-
-4. **Build a confidence-gated export.** Extend the Ship It pipeline to produce a JSON output containing only objects whose depth confidence exceeds 0.6. For each exported object, include the 2D box, median depth, 3D center, confidence score, and a "tier" label (1, 2, or 3). Write the JSON to a file. This mirrors how a Clay waterfall export would gate records by enrichment confidence before pushing to the destination.
+2. **Build a confidence-gated 3D export.** Extend the Use It code to produce a JSON file containing only detections whose depth confidence exceeds 0.6. Compute confidence as `1.0 - clip(local_std / global_std, 0, 1)` over each bounding box region. For each exported detection, include the 2D box coordinates, median relative depth, 3D center point, confidence score, and a tier label (tier 1 for confidence ≥ 0.7, tier 2 for 0.4–0.7, tier 3 for < 0.4). Write the JSON to `detections_3d.json`. This mirrors how a Clay waterfall export gates records by enrichment confidence before pushing to a destination.
 
 ## Key Terms
 
@@ -456,4 +249,17 @@ The scale reference application at the end is the most important production deci
 - **Surface normals:** Per-pixel vectors perpendicular to the local surface. Computed from depth via finite differences (gradient in x and y). Used for plane detection, material estimation, and scene layout.
 - **Dense Prediction Transformer (DPT):** Architecture that uses a vision transformer encoder and reassembles token-level features into multi-resolution spatial maps for dense prediction tasks like depth and segmentation.
 - **Self-supervised stereo training:** Training depth networks on stereo pairs without ground-truth depth. The network learns by reconstructing one view from the other using predicted depth and minimizing photometric error.
-- **Pinhole camera model:** The mathematical projection relating
+- **Pinhole camera model:** The mathematical projection relating 3D world coordinates to 2D image coordinates via focal length (fx, fy) and principal point (cx, cy). The inverse operation — back-projection — recovers 3D coordinates from a pixel and its depth using X = (u − cx) · d / fx, Y = (v − cy) · d / fy, Z = d.
+
+## Sources
+
+- Yang, L., Kang, B., Huang, Z., Xu, X., Feng, J., & Zhao, H. (2024). *Depth Anything V2*. arXiv:2406.09414. — Architecture and training paradigm for Depth Anything V2 (relative depth, DPT head on DINOv2 backbone).
+- Yang, L., Kang, B., Huang, Z., Xu, X., Feng, J., & Zhao, H. (2024). *Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data*. arXiv:2401.10891. — Original Depth Anything paper (self-supervised teacher-student distillation on 62M unlabeled images).
+- Ranftl, R., Lasinger, K., Hafner, D., Torr, P., & Koltun, V. (2020). *Towards Robust Monocular Depth Estimation: Mixing Datasets for Zero-Shot Cross-Dataset Transfer* (MiDaS). IEEE TPAMI. — Relative (ordinal inverse) depth paradigm, mixture-of-datasets training.
+- Ranftl, R., Bochkovskiy, A., & Koltun, V. (2021). *Vision Transformers for Dense Prediction* (DPT). ICCV. — DPT architecture: ViT encoder reassembled into multi-resolution fusion modules.
+- Bhat, S. F., Birkl, R., Wofk, D., Wonka, M., & Müller, M. (2023). *ZoeDepth: Zero-shot Transfer by Combining Relative and Metric Depth*. arXiv:2302.12288. — Metric depth via stacking relative pre-training with metric fine-tuning.
+- Ke, B., Obukhov, A., Huang, S., Metzger, N., Daudt, R. C., & Schindler, K. (2024). *Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation* (Marigold). CVPR. — Depth estimation via fine-tuned Stable Diffusion.
+- Silberman, N., Hoiem, D., Kohli, P., & Fergus, R. (2012). *Indoor Segmentation and Support Inference from RGBD Images* (NYU Depth V2). ECCV. — Indoor depth benchmark dataset.
+- Geiger, A., Lenz, P., Stiller, C., & Urtasun, R. (2013). *Vision meets Robotics: The KITTI Dataset*. IJRR. — Outdoor autonomous driving depth benchmark.
+- Oquab, M., Darcet, T., Moutakanni, T., et al. (2023). *DINOv2: Learning Robust Visual Features without Supervision*. TMLR. — Self-supervised ViT backbone used by Depth Anything V2.
+- [CITATION NEEDED — concept: Clay enrichment waterfall provider routing order and confidence thresholds]

@@ -395,18 +395,59 @@ Run both scripts in sequence. The first establishes the memory state with tool c
 
 ## Use It
 
-The memory hierarchy pattern maps directly to persistent account intelligence in a multi-touch outbound workflow. When an agent researches an account across sessions — scraping a 10-K, monitoring LinkedIn activity, capturing technographic signals, logging email replies — memory blocks are how that accumulated intelligence persists in a queryable form. Sleep-time compute is how you prevent that intelligence from rotting between touches.
+The memory-block hierarchy with sleep-time compute (core/recall/archival tiers with background consolidation) maps to Cluster 3.1 — Account Intelligence & Enrichment. An enrichment agent accumulates intelligence across weekly runs; the sleep-time pass consolidates new signals between cycles so each run starts richer than the last. Run this after the Build It scripts — it reuses the same classes:
 
-Consider a Clay enrichment waterfall that runs weekly on a list of 500 target accounts. The naive approach: every run starts from scratch, re-scraping the same LinkedIn profiles, re-querying the same 10-K filings, re-enriching the same technographic data. This is the agent-without-memory pattern. Each enrichment run is a blank slate, burning credits and API calls on data you already collected. [CITATION NEEDED — concept: Clay enrichment workflows with persistent state across runs]
+```python
+enrichment_core = CoreMemory([
+    MemoryBlock("persona", "Account enrichment agent", "You enrich target accounts for outbound sequencing.", 1000),
+    MemoryBlock("human", "Current operator context", "GTM engineer running weekly enrichment on 500 accounts.", 1000),
+    MemoryBlock("account_notes", "Accumulated intelligence across enrichment cycles", "- Acme Corp: Salesforce, Snowflake stack\n", 3000),
+])
+enrichment_archival = ArchivalMemory()
+enrichment_recall = RecallMemory()
 
-The memory-block approach: core memory holds the current account summary — the facts the agent needs in-context for every interaction. The `account_notes` block contains the compressed intelligence: tech stack, hiring signals, recent funding, key decision-makers. Archival memory holds the source documents — the full 10-K text, the LinkedIn post history, the raw press release. When the agent needs detail, it queries archival. When it needs the summary, the core block is already in the prompt.
+weekly_signals = [
+    "Acme Corp CTO Sarah Chen published a post about completing their Snowflake migration from Redshift.",
+    "Acme Corp raised $50M Series C led by Sequoia. EMEA expansion planned, hiring 12 engineers.",
+    "Acme Corp acquired DataPipe Inc for $45M to add observability capabilities to their platform.",
+]
+for signal in weekly_signals:
+    enrichment_recall.log("agent", signal)
 
-Sleep-time compute handles the gap between enrichment runs. After a week of new signals — a funding announcement, a leadership change, a product launch — the sleep-time pass scans the recall buffer (recent interactions), extracts the new facts, reconciles them against existing core memory, and writes the updated summary. The next enrichment run starts with a richer core memory block, not a blank slate. This is the mechanism behind "account intelligence that improves with every touch" — the agent consolidates accumulated knowledge asynchronously rather than recomputing from scratch each cycle.
+enrichment_archival.insert("Acme Corp 10-K: revenue $120M, 34% YoY growth. Cloud spend is 18% of opex.", metadata={"source": "10-K"})
 
-The cost connection is direct. Every memory operation has a token cost. Core memory burns context tokens on every inference — if the block is oversized, you pay for it on every turn. Archival search adds a retrieval round-trip but keeps the prompt lean. Sleep-time compute lets you run consolidation on a cheaper schedule (off-peak, batch, with a stronger model that only runs once per cycle) rather than paying for consolidation tokens on every user-facing turn. This is Zone 14 cost optimization applied to agent memory: every token is a line item, and the memory hierarchy is how you route tokens to the cheapest tier that meets your latency requirement. [CITATION NEEDED — concept: GTM Stack Cost Management applied to agent memory tiers, 80/20 GTM Engineer Handbook]
+print(f"BEFORE: account_notes tokens = {enrichment_core.blocks['account_notes'].token_estimate()}")
+print(f"BEFORE: archival records = {enrichment_archival.count()}\n")
 
-## Ship It
+sleep_time_consolidation(enrichment_core, enrichment_archival, enrichment_recall, "account_notes")
 
-Four production concerns dominate once you deploy a Letta-style agent with memory blocks and sleep-time compute.
+print(f"\nAFTER: account_notes tokens = {enrichment_core.blocks['account_notes'].token_estimate()}")
+print(f"AFTER: archival records = {enrichment_archival.count()}")
+print(f"\nUpdated account_notes block ready for next enrichment run:")
+print(enrichment_core.blocks["account_notes"].value)
+```
 
-**Core memory sizing.** Every character in a core memory block is in the prompt on every inference call. A 3,000-character block costs roughly 750 tokens per turn. With four blocks at
+The sleep-time pass extracts Sarah Chen, Snowflake, Sequoia, $50M, $45M, and EMEA from the recall buffer, writes the compressed facts to `account_notes`, and archives the raw messages. The next enrichment run starts with those signals already in core memory — no re-scraping, no re-querying. [CITATION NEEDED — concept: Clay enrichment workflows with persistent account state across runs]
+
+## Exercises
+
+**Exercise 1 (Medium):** Add a `task_state` memory block to the enrichment agent with fields for `enrichment_step`, `last_run_date`, and `priority`. Modify `sleep_time_consolidation` to update `task_state` after each pass — increment the step counter and stamp the current timestamp. Print the block before and after to verify the agent tracks its own progress across cycles.
+
+**Exercise 2 (Hard):** Implement checkpointing for the sleep-time pass. Before the consolidation runs, serialize the full core memory state to a JSON snapshot. After the pass, validate: no block should be empty (unless it was empty before), no block should exceed its limit, and total token count should not increase by more than 50%. If validation fails, restore the snapshot and log the failure. Test this by injecting a malformed signal that would cause `account_notes` to overflow its limit.
+
+## Key Terms
+
+- **Memory Block** — A named, typed, editable segment of core memory with a character limit and description. The agent modifies blocks via tool calls (`core_memory_append`, `core_memory_replace`) during inference.
+- **Core Memory** — The always-resident tier of the memory hierarchy. Small, fast, present in every prompt. Analogous to CPU registers or L1 cache. Every token here costs on every inference call.
+- **Recall Memory** — The conversation history tier. Automatically logged per turn, searchable but not always in the prompt. Analogous to RAM.
+- **Archival Memory** — The persistent fact and document store. Backed by a vector store, KV store, or graph database. Queried on demand via `archival_memory_search`. Analogous to disk.
+- **Sleep-Time Compute** — A background consolidation pass that runs during agent idle periods to extract entities, summarize recall, reconcile contradictions, and migrate stale context to archival — without blocking user-facing inference.
+- **Memory Consolidation** — The process of scanning recent interactions, extracting durable facts, reconciling them against existing core memory, and pruning or archiving stale content. The core operation performed by sleep-time compute.
+
+## Sources
+
+- Packer, Wooders, Lin, Fang, Patil, Stoica, Gonzalez (2023). "MemGPT: Towards LLMs as Operating Systems." arXiv:2310.08560 — the original MemGPT paper introducing virtual memory management for LLM context.
+- Letta Documentation. https://docs.letta.com — the production rewrite of MemGPT with memory blocks and sleep-time compute APIs.
+- [CITATION NEEDED — concept: Letta sleep-time compute production deployment patterns and latency benchmarks]
+- [CITATION NEEDED — concept: Clay enrichment waterfall with persistent account state across runs]
+- [CITATION NEEDED — concept: GTM Stack cost optimization applied to agent memory tiers]

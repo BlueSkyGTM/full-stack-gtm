@@ -86,4 +86,196 @@ def recursive_chunks(text, max_size=150):
                 words = sent.split(' ')
                 current = ""
                 for word in words:
-                    test =
+                    test = (current + " " + word) if current else word
+                    if len(test) <= max_size:
+                        current = test
+                    else:
+                        if current:
+                            chunks.append(current)
+                        current = word
+    if current:
+        chunks.append(current)
+    return chunks
+
+def sentence_chunks(text, max_sentences=2):
+    sentences = [s.strip() + '.' for s in text.split('. ') if s.strip()]
+    chunks = []
+    for i in range(0, len(sentences), max_sentences):
+        chunks.append(' '.join(sentences[i:i+max_sentences]))
+    return chunks
+
+print("=== FIXED-SIZE (150 chars) ===")
+for i, c in enumerate(fixed_size_chunks(document)):
+    print(f"  [{i}] ...{c[-40:]}")
+    if '$' in c and 'Q3' not in c and 'earnings' in c:
+        print(f"      ⚠ FACT SEVERED: dollar amount split from quarter context")
+
+print("\n=== RECURSIVE (150 chars) ===")
+for i, c in enumerate(recursive_chunks(document)):
+    print(f"  [{i}] ({len(c)} chars) {c[:60]}...")
+
+print("\n=== SENTENCE-BASED (2 sentences) ===")
+for i, c in enumerate(sentence_chunks(document)):
+    print(f"  [{i}] {c[:60]}...")
+```
+
+Run it and observe: fixed-size splitting severs the Q3 earnings fact. Recursive splitting keeps sentences intact. Sentence-based chunking preserves every fact but produces more, smaller chunks — increasing retrieval cost and surface area.
+
+### Part 2: Hybrid Search with RRF
+
+```python
+import math
+from collections import Counter
+
+chunks = recursive_chunks(document, max_size=120)
+
+def bm25_score(query, docs, k1=1.5, b=0.75):
+    tokenized = [d.lower().split() for d in docs]
+    avgdl = sum(len(d) for d in tokenized) / len(tokenized)
+    df = Counter()
+    for doc in tokenized:
+        for term in set(doc):
+            df[term] += 1
+    scores = []
+    q_terms = query.lower().split()
+    for doc in tokenized:
+        tf = Counter(doc)
+        score = 0.0
+        for term in q_terms:
+            if term not in tf:
+                continue
+            idf = math.log((len(docs) - df[term] + 0.5) / (df[term] + 0.5) + 1)
+            numerator = tf[term] * (k1 + 1)
+            denominator = tf[term] + k1 * (1 - b + b * len(doc) / avgdl)
+            score += idf * numerator / denominator
+        scores.append(score)
+    return scores
+
+def dense_sim(query, docs):
+    def vec(text):
+        tokens = text.lower().split()
+        return Counter(tokens)
+    qv = vec(query)
+    results = []
+    for d in docs:
+        dv = vec(d)
+        dot = sum(qv[t] * dv[t] for t in qv)
+        mag = math.sqrt(sum(v**2 for v in qv.values())) * math.sqrt(sum(v**2 for v in dv.values()))
+        results.append(dot / mag if mag > 0 else 0.0)
+    return results
+
+def rrf_fuse(bm25_ranks, dense_ranks, k=60):
+    n = len(bm25_ranks)
+    scores = [0.0] * n
+    for rank, idx in enumerate(bm25_ranks):
+        scores[idx] += 1.0 / (k + rank + 1)
+    for rank, idx in enumerate(dense_ranks):
+        scores[idx] += 1.0 / (k + rank + 1)
+    return scores
+
+query_exact = "AC-7742-B"
+query_semantic = "European expansion strategy"
+
+for q in [query_exact, query_semantic]:
+    bm25 = bm25_score(q, chunks)
+    dense = dense_sim(q, chunks)
+    bm25_ranked = sorted(range(len(chunks)), key=lambda i: bm25[i], reverse=True)
+    dense_ranked = sorted(range(len(chunks)), key=lambda i: dense[i], reverse=True)
+    rrf = rrf_fuse(bm25_ranked, dense_ranked)
+    rrf_ranked = sorted(range(len(chunks)), key=lambda i: rrf[i], reverse=True)
+
+    print(f"\n=== QUERY: '{q}' ===")
+    print(f"  BM25 #1:    chunk[{bm25_ranked[0]}] = {chunks[bm25_ranked[0]][:50]}...")
+    print(f"  Dense #1:   chunk[{dense_ranked[0]}] = {chunks[dense_ranked[0]][:50]}...")
+    print(f"  RRF #1:     chunk[{rrf_ranked[0]}] = {chunks[rrf_ranked[0]][:50]}...")
+```
+
+The exact-match query for "AC-7742-B" should rank the part-number chunk first under BM25. Dense similarity alone may bury it because the token frequency of "AC-7742-B" is meaningless in a cosine space dominated by common words. RRF combines both signals.
+
+### Part 3: Cross-Encoder Reranking
+
+```python
+def cross_encoder_score(query, doc):
+    q_tokens = set(query.lower().split())
+    d_tokens = set(doc.lower().split())
+    overlap = q_tokens & d_tokens
+    coverage = len(overlap) / len(q_tokens) if q_tokens else 0
+    position_bonus = 0.0
+    doc_lower = doc.lower()
+    for qt in q_tokens:
+        idx = doc_lower.find(qt)
+        if idx >= 0:
+            position_bonus += 1.0 / (1 + idx / 100)
+    return coverage * 0.6 + (position_bonus / max(len(q_tokens), 1)) * 0.4
+
+query = "What were Q3 2025 earnings?"
+dense = dense_sim(query, chunks)
+dense_ranked = sorted(range(len(chunks)), key=lambda i: dense[i], reverse=True)[:5]
+
+print(f"\n=== RERANKING for '{query}' ===")
+print(f"{'Rank':<6}{'Bi-encoder':<40}{'Cross-encoder':<40}")
+print("-" * 86)
+reranked = sorted(dense_ranked, key=lambda i: cross_encoder_score(query, chunks[i]), reverse=True)
+for rank in range(5):
+    bi_idx = dense_ranked[rank]
+    ce_idx = reranked[rank]
+    bi_preview = chunks[bi_idx][:35].replace('\n', ' ')
+    ce_preview = chunks[ce_idx][:35].replace('\n', ' ')
+    moved = "" if bi_idx == ce_idx else f"  (was #{dense_ranked.index(ce_idx)+1})"
+    print(f"{rank+1:<6}{f'[{bi_idx}] {bi_preview}...':<40}{f'[{ce_idx}] {ce_preview}...{moved}':<40}")
+```
+
+The cross-encoder reorders candidates. A chunk that shares vocabulary but does not contain the earnings figure drops. The chunk with "$47.2M" and "Q3 2025" in close proximity rises.
+
+## Use It
+
+This cross-encoder reranking pipeline (BM25 sparse + dense cosine fused via RRF, then re-scored by pairwise query-document attention) maps directly to account research enrichment workflows where you query a corpus of 10-K filings, earnings transcripts, and press releases for specific account intelligence.
+
+```python
+account_corpus = [
+    "Globex Corp Q3 2025 revenue $41.1M down 4% YoY due to APAC contraction",
+    "Globex announced acquisition of DataFlow Systems for $89M cash October 2025",
+    "Globex CEO Mark Chen cited FX headwinds and deferred enterprise renewals",
+    "Initech LLC reported Q3 revenue $22.0M with 12% growth in mid-market segment",
+    "Globex Corp board authorized $30M buyback citing undervalued share price",
+]
+query = "Globex Corp revenue decline"
+
+bm25 = bm25_score(query, account_corpus)
+dense = dense_sim(query, account_corpus)
+bm25_r = sorted(range(len(account_corpus)), key=lambda i: bm25[i], reverse=True)
+dense_r = sorted(range(len(account_corpus)), key=lambda i: dense[i], reverse=True)
+rrf = rrf_fuse(bm25_r, dense_r)
+candidates = sorted(range(len(account_corpus)), key=lambda i: rrf[i], reverse=True)[:3]
+final = sorted(candidates, key=lambda i: cross_encoder_score(query, account_corpus[i]), reverse=True)
+
+print(f"Query: '{query}'\n")
+for rank, idx in enumerate(final):
+    print(f"  #{rank+1} (score={cross_encoder_score(query, account_corpus[idx]):.3f}) {account_corpus[idx]}")
+```
+
+For a GTM team building account intelligence enrichment, this pipeline retrieves the right context from filings for a specific named account [CITATION NEEDED — concept: GTM cluster mapping for account research RAG]. The hybrid search catches the exact company name ("Globex Corp") via BM25, and the cross-encoder prioritizes the chunk that actually discusses the revenue decline over the one that merely mentions the company name in a different context (the buyback announcement). In production, swap the toy `cross_encoder_score` for `cross-encoder/ms-marco-MiniLM-L-6-v2` from sentence-transformers and the BM25 implementation for `rank_bm25` or Elasticsearch.
+
+## Exercises
+
+**Exercise 1 (Easy):** Modify the fixed-size chunker to use a 300-character window instead of 150. Re-run Part 1. Does the Q3 earnings fact still get severed? At what window size does it stop? Document the threshold and explain why recursive chunking avoids the problem regardless of window size.
+
+**Exercise 2 (Hard):** Replace the toy `cross_encoder_score` function with a real cross-encoder from the `sentence-transformers` library (`CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')`). Run the Part 3 reranking on the same corpus and queries. Measure the Kendall rank correlation between the toy scorer's ranking and the real model's ranking. Where do they disagree, and which ranking is more correct for answer relevance? Write a one-paragraph diagnosis of what the real cross-encoder captures that the toy scorer cannot.
+
+## Key Terms
+
+- **BM25 (Best Match 25):** A sparse retrieval scoring function that ranks documents by term frequency, inverse document frequency, and document length normalization. Excels at exact keyword matching.
+- **Reciprocal Rank Fusion (RRF):** A score fusion method that combines multiple ranked lists by summing `1/(k + rank)` for each document across lists. Requires no score normalization between retrieval methods.
+- **Cross-encoder:** A model that encodes a query and document together in a single forward pass with full cross-attention. Slower than bi-encoder retrieval but produces more accurate relevance scores.
+- **Bi-encoder:** A model that encodes query and document independently into vectors, then compares via cosine similarity. Enables fast retrieval via approximate nearest neighbor search but misses query-document interaction.
+- **Recursive character splitting:** A chunking strategy that attempts splits at progressively smaller boundaries (paragraph → sentence → word) to keep related text in the same chunk while respecting a size limit.
+- **Chunk boundary severance:** The failure mode where a fact spanning two chunks becomes unretrievable because neither chunk contains enough context to be matched and used independently.
+
+## Sources
+
+- Robertson, S., & Zaragoza, H. (2009). *The Probabilistic Relevance Framework: BM25 and Beyond.* Foundations and Trends in Information Retrieval, 3(4), 333–389.
+- Cormack, G. V., Clarke, C. L. A., & Büttcher, S. (2009). *Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods.* SIGIR 2009.
+- Reimers, N., & Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks.* EMNLP 2019. (Bi-encoder architecture for efficient retrieval)
+- Nogueira, R., & Cho, K. (2019). *Passage Re-ranking with BERT.* arXiv:1901.04085. (Cross-encoder application for document reranking)
+- Karpukhin, V., et al. (2020). *Dense Passage Retrieval for Open-Domain Question Answering.* EMNLP 2020. (Retrieve-then-rerank pattern with dense and sparse retrieval)
+- [CITATION NEEDED — concept: GTM cluster mapping for account research RAG applications]

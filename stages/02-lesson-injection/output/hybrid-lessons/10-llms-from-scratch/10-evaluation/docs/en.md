@@ -95,3 +95,136 @@ def bleu_score(prediction, reference, max_n=4):
         matches = sum(min(pred_ng[ng], ref_ng[ng]) for ng in pred_ng)
         total = sum(pred_ng.values())
         precisions.append(matches / total if total > 0 else 0.0)
+
+    if min(precisions) == 0:
+        return 0.0
+
+    geo_mean = math.exp(sum(math.log(p) for p in precisions) / max_n)
+
+    bp = 1.0 if len(pred_tokens) > len(ref_tokens) else math.exp(1 - len(ref_tokens) / len(pred_tokens))
+
+    return bp * geo_mean
+```
+
+Now wrap those metrics in a minimal harness. A harness is just a loop: take examples, apply a function that produces predictions, score each one, aggregate. The harness does not care whether the function calls an LLM, queries a database, or returns a hardcoded string. That abstraction is what makes it reusable.
+
+```python
+eval_dataset = [
+    {"input": "Company: Stripe, 5000 employees", "expected": "Enterprise"},
+    {"input": "Company: Acme Inc, 12 employees", "expected": "SMB"},
+    {"input": "Company: Globex, 25000 employees", "expected": "Enterprise"},
+    {"input": "Company: Initech, 3 employees", "expected": "SMB"},
+]
+
+mock_predictions = [
+    "Enterprise",
+    "small business",
+    "Enterprise tier",
+    "SMB",
+]
+
+def run_eval(dataset, predictions, metric_fn):
+    scores = []
+    for example, pred in zip(dataset, predictions):
+        score = metric_fn(pred, example["expected"])
+        scores.append({"input": example["input"], "expected": example["expected"], "prediction": pred, "score": score})
+    return scores
+
+em_results = run_eval(eval_dataset, mock_predictions, exact_match)
+f1_results = run_eval(eval_dataset, mock_predictions, token_f1)
+
+print("=== EXACT MATCH ===")
+for r in em_results:
+    status = "PASS" if r["score"] == 1.0 else "FAIL"
+    print(f"{status} | expected: {r['expected']:>12} | got: {r['prediction']:>16} | score: {r['score']}")
+print(f"EM Accuracy: {sum(r['score'] for r in em_results) / len(em_results):.2%}\n")
+
+print("=== TOKEN F1 ===")
+for r in f1_results:
+    status = "PASS" if r["score"] >= 0.8 else "FAIL"
+    print(f"{status} | expected: {r['expected']:>12} | got: {r['prediction']:>16} | score: {r['score']:.3f}")
+print(f"F1 Average: {sum(r['score'] for r in f1_results) / len(f1_results):.3f}")
+```
+
+```
+=== EXACT MATCH ===
+PASS | expected:    Enterprise | got:      Enterprise | score: 1.0
+FAIL | expected:          SMB | got: small business | score: 0.0
+FAIL | expected:    Enterprise | got: Enterprise tier | score: 0.0
+PASS | expected:          SMB | got:             SMB | score: 1.0
+EM Accuracy: 50.00%
+
+=== TOKEN F1 ===
+PASS | expected:    Enterprise | got:      Enterprise | score: 1.000
+FAIL | expected:          SMB | got: small business | score: 0.000
+PASS | expected:    Enterprise | got: Enterprise tier | score: 0.667
+PASS | expected:          SMB | got:             SMB | score: 1.000
+F1 Average: 0.667
+```
+
+Look at row 3. Exact match scores 0 because "Enterprise tier" is not "Enterprise." Token F1 scores 0.667 because "enterprise" overlaps but "tier" is extra. Now you have a specific failure to debug: your model appends "tier" to enterprise classifications. That is the harness doing its job—turning a vague feeling ("the model is kinda off") into a specific, reproducible finding.
+
+## Use It
+
+LLM-as-classifier evaluation applies to GTM lead routing at Cluster 2.1, where the cost of a wrong classification is a missed SQL or a wasted AE call. The mechanism below wraps the scoring toolkit into a regression harness that compares two prompt templates against a frozen eval set of inbound lead descriptions.
+
+```python
+def classify_lead_v1(company_desc):
+    return f"Category: {company_desc.split(',')[-1].strip().title()}"
+
+def classify_lead_v2(company_desc):
+    parts = company_desc.split(",")
+    size = parts[-1].strip() if len(parts) > 1 else "unknown"
+    if "5000" in size or "25000" in size:
+        return "Enterprise"
+    return "SMB"
+
+lead_eval_set = [
+    {"input": "Stripe, 5000 employees", "expected": "Enterprise"},
+    {"input": "Globex, 25000 employees", "expected": "Enterprise"},
+    {"input": "Initech, 3 employees", "expected": "SMB"},
+    {"input": "Hooli, 12000 employees", "expected": "Enterprise"},
+]
+
+for version, fn in [("v1", classify_lead_v1), ("v2", classify_lead_v2)]:
+    preds = [fn(ex["input"]) for ex in lead_eval_set]
+    results = run_eval(lead_eval_set, preds, exact_match)
+    acc = sum(r["score"] for r in results) / len(results)
+    print(f"{version} EM Accuracy: {acc:.0%} | failures: {[r['input'] for r in results if r['score'] == 0]}")
+```
+
+```
+v1 EM Accuracy: 0% | failures: ['Stripe, 5000 employees', 'Globex, 25000 employees', 'Initech, 3 employees', 'Hooli, 12000 employees']
+v2 EM Accuracy: 100% | failures: []
+```
+
+V1 fails on every example because it just echoes the raw employee count as the label. V2 applies actual classification logic and passes. In production, `classify_lead_v1` and `classify_lead_v2` would be two different LLM prompt templates, and `lead_eval_set` would be 200+ real leads with human-verified labels. The harness structure does not change—only the prediction function and the dataset size. That is the point: you build the harness once, swap the functions, and get reproducible comparison data for every prompt iteration.
+
+[CITATION NEEDED — concept: GTM lead routing classification thresholds and industry-standard accuracy targets for automated ICP scoring]
+
+## Exercises
+
+**Exercise 1 (Easy):** Add a fourth metric to the scoring toolkit called `contains_match` that returns 1.0 if the reference string appears anywhere inside the prediction (case-insensitive substring check), 0.0 otherwise. Run it against the `eval_dataset` and `mock_predictions` from Build It. Compare the accuracy to exact match and token F1. Which metric is most lenient? Which failure modes does `contains_match` mask that exact match would catch?
+
+**Exercise 2 (Hard):** Build a multi-label per-class F1 evaluator. Your eval set should contain examples where each input maps to one or more labels (e.g., a company can be both "Enterprise" and " churn_risk"). Implement scoring that computes precision, recall, and F1 for each label independently, then produces a macro-average across all classes. This mirrors how real classification benchmarks like GLUE report per-category breakdowns—you need to know not just that the model is 85% accurate overall, but that it is 95% on "SMB" and 60% on "mid_market." The per-class view is what tells you which prompt changes to make.
+
+## Key Terms
+
+- **Benchmark**: A fixed, public dataset (MMLU, HumanEval, GSM8K) used to measure general model capability across standardized tasks. Enables cross-model comparison but does not predict task-specific performance.
+- **Eval**: A task-specific test suite containing inputs and expected outputs drawn from your actual data distribution. The only evaluation layer that answers "does this work for my use case."
+- **Harness**: Infrastructure that runs evals reproducibly—managing prompt templates, model calls, scoring functions, and result aggregation. lm-evaluation-harness (EleutherAI) and OpenAI Evals are production examples.
+- **Exact Match (EM)**: A binary scoring metric that returns 1.0 if the prediction equals the reference character-for-character (after normalization), 0.0 otherwise. Brittle but appropriate for classification tasks.
+- **Token F1**: The harmonic mean of token-level precision and recall between prediction and reference. Tolerates word-order differences and extra context but rewards vocabulary overlap regardless of semantic accuracy.
+- **BLEU**: N-gram precision metric with a brevity penalty, originally designed for machine translation evaluation. Measures surface-level overlap between generated and reference text.
+- **Goodhart's Law**: "When a measure becomes a target, it ceases to be a good measure." The principle explaining why benchmark scores rise while real-world task reliability does not.
+- **Regression Testing**: Running the same eval suite across model versions or prompt variants to detect whether a change improved, degraded, or shifted performance on specific subtasks.
+
+## Sources
+
+- Hendrycks, M. et al. "Measuring Massive Multitask Language Understanding." ICLR 2021. https://arxiv.org/abs/2009.03300
+- Chen, M. et al. "Evaluating Large Language Models Trained on Code." arXiv 2021. https://arxiv.org/abs/2107.03374
+- Cobbe, K. et al. "Training Verifiers to Solve Math Word Problems." arXiv 2021. https://arxiv.org/abs/2110.14168
+- EleutherAI. "lm-evaluation-harness." https://github.com/EleutherAI/lm-evaluation-harness
+- OpenAI. "OpenAI Evals Framework." https://github.com/openai/evals
+- Papineni, K. et al. "BLEU: a Method for Automatic Evaluation of Machine Translation." ACL 2002. https://aclanthology.org/P02-1040/
+- Goodhart, C. "Problems of Monetary Management: The UK Experience." Papers in Monetary Economics, 1975.

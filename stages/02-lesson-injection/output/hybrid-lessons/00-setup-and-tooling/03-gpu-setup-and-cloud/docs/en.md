@@ -189,23 +189,61 @@ else:
 
 ## Use It
 
-GPU provisioning is the infrastructure layer for Zone 1 (Prospect Intelligence). When you build a custom classifier that scores lead intent from LinkedIn profiles, support transcripts, or email bodies, that model needs to run somewhere. The provisioning decision determines whether the classifier can handle a batch of 10,000 prospects in one pass or whether it OOM-kills at row 3,000 and leaves your enrichment table half-populated.
-
-The GTM pricing context makes this concrete. Enterprise companies pay $5,000–$10,000 for a single playbook implementation, with $2,000–$3,000/month in maintenance that includes data refresh and scoring model maintenance. [CITATION NEEDED — concept: enterprise GTM playbook pricing benchmarks] If your scoring model is the differentiator, the GPU it runs on is part of the deliverable. A client who pays $8K for setup expects the inference endpoint to stay up during their enrichment runs, not crash because you sized the VRAM for the model weights alone and forgot the KV cache overhead during batched generation.
-
-The practical workflow: take the model you intend to serve (say, a fine-tuned DeBERTa classifier for ICP scoring), run the VRAM calculator from the Build It section, add headroom for concurrent requests (multiply by 1.5x for safety), then provision the cheapest instance that fits. If you are running inference inside a Clay waterfall enrichment step, batch size and concurrency matter — each concurrent request allocates its own KV cache. [CITATION NEEDED — concept: Clay waterfall batch inference concurrency] A model that fits 7B fp16 weights in 14 GB on a single request may need 24-30 GB under four concurrent requests. The RTX 4090 at 24 GB suddenly looks tight, and the Lambda A100 at 40 GB becomes the safer choice.
-
-## Ship It
-
-A provisioning setup that lives in your head is not shipped. The deliverable is a script that any teammate can run to verify their environment before they start a training run or deploy an inference endpoint. This script becomes step one in every deployment runbook.
-
-The following script checks four things in order: (1) is there an NVIDIA GPU visible to the OS, (2) can PyTorch see it through CUDA, (3) what is the VRAM headroom, and (4) do the driver and CUDA versions match. It exits 0 on success and 1 on any failure, so it can be wired into CI or a Makefile target.
+CUDA-verified VRAM provisioning is the gate for transformer-based ICP scoring in Zone 1 (Prospect Intelligence). A custom lead classifier can only serve a Clay enrichment waterfall if the backing GPU has free VRAM exceeding the model weights plus KV cache overhead per concurrent request. This script runs that check and exits with a status code you can gate a deployment on.
 
 ```python
 import subprocess
 import sys
 
-def check_nvidia_smi():
-    try:
-        result = subprocess.run(
-            ["nvidia-smi
+import torch
+
+def gpu_ready_for_icp_scoring(model_vram_gb=8.4, concurrency=4):
+    result = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.free,driver_version", "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, timeout=10
+    )
+    if result.returncode != 0:
+        return False, "FAIL: nvidia-smi error — no GPU or driver missing"
+    parts = [p.strip() for p in result.stdout.strip().split(",")]
+    free_gb = int(parts[0]) / 1024
+    driver = parts[1]
+    if not torch.cuda.is_available():
+        return False, f"FAIL: driver {driver} present but torch.cuda unavailable — version mismatch"
+    total_needed = model_vram_gb + (model_vram_gb * 0.15 * (concurrency - 1))
+    if free_gb < total_needed:
+        return False, f"FAIL: {free_gb:.1f} GB free, need {total_needed:.1f} GB for {concurrency}x concurrent ICP scoring"
+    return True, f"OK: {free_gb:.1f} GB free on {torch.cuda.get_device_name(0)} (driver {driver}) — need {total_needed:.1f} GB for {concurrency}x concurrent requests"
+
+ok, msg = gpu_ready_for_icp_scoring(model_vram_gb=8.4, concurrency=4)
+print(msg)
+sys.exit(0 if ok else 1)
+```
+
+## Exercises
+
+1. **Multi-Model VRAM Sizing** (Medium)
+   You need to serve two models on one GPU simultaneously: a 7B parameter ICP classifier in fp16 and a 3B parameter entity extractor in int8. Using `compute_vram_requirement`, calculate the combined minimum VRAM. Add 30% headroom for concurrent batching. Then call `find_cheapest_instance` with the total and print which instance fits. Manually verify the cost-per-VRAM-GB-hour ranking — is the cheapest total-cost instance also the cheapest per-GB? Explain why or why not in a comment-free print statement.
+
+2. **Driver-CUDA Compatibility Diagnostic** (Hard)
+   Extend the `gpu_ready_for_icp_scoring` function from Use It to parse the CUDA driver version from `nvidia-smi` (the `--query-gpu=driver_version` field) and compare it against `torch.version.cuda`. Build a mapping of minimum driver versions per CUDA toolkit release (e.g., CUDA 12.1 requires driver >= 530.30, CUDA 11.8 requires driver >= 520.61). If the installed driver is below the threshold for the PyTorch CUDA build, print a specific remediation message naming both versions and the required action. Test on a machine with a matching driver, then temporarily downgrade the check threshold to confirm the failure path triggers.
+
+## Key Terms
+
+- **VRAM (Video RAM)** — Memory physically located on the GPU die. Model weights must reside here for the GPU to compute against them. Access bandwidth is 10-50x faster than system RAM reached via PCIe.
+- **CUDA** — NVIDIA's parallel computing platform and API. PyTorch bundles a CUDA runtime in its wheels, but the host machine's NVIDIA driver must support that CUDA version or `torch.cuda.is_available()` silently returns `False`.
+- **KV Cache** — Key-value attention cache allocated during autoregressive generation. Stores prior token states so they are not recomputed each step. Grows with sequence length and batch size, and is the primary source of VRAM overhead beyond model weights.
+- **PCIe** — The hardware bus connecting system RAM to GPU VRAM. When a model exceeds VRAM, frameworks offload layers to system RAM and transfer them across PCIe each forward pass, incurring 10-50x latency.
+- **Cost-per-VRAM-GB-hour** — Hourly instance price divided by VRAM capacity. The unit metric for comparing GPU value across providers. Commodity providers (RunPod, Lambda Labs) typically deliver 2-4x better rates than managed clouds (AWS, GCP) for inference-only workloads.
+- **OOM Kill** — The failure when VRAM is exhausted during tensor allocation. PyTorch raises `RuntimeError: CUDA out of memory`. In production inference, this surfaces as a 500 error or a silent mid-batch failure that leaves enrichment tables partially populated.
+
+## Sources
+
+- NVIDIA. "NVIDIA System Management Interface (nvidia-smi)." NVIDIA Developer Documentation. https://developer.nvidia.com/nvidia-system-management-interface
+- PyTorch. "CUDA Semantics." PyTorch Documentation. https://pytorch.org/docs/stable/cuda.html
+- RunPod. "GPU Pricing." RunPod. https://www.runpod.io/pricing
+- Lambda Labs. "Lambda GPU Cloud Pricing." Lambda Labs. https://lambdalabs.com/service/gpu-cloud
+- AWS. "Amazon EC2 GPU Instance Types." Amazon Web Services. https://aws.amazon.com/ec2/instance-types/#Accelerated_Computing
+- Google Cloud. "GPUs on Compute Engine." Google Cloud Documentation. https://cloud.google.com/compute/docs/gpus
+- [CITATION NEEDED — concept: Clay waterfall triggering local inference endpoints]
+- [CITATION NEEDED — concept: Clay waterfall batch inference concurrency]
+- [CITATION NEEDED — concept: enterprise GTM playbook pricing benchmarks]

@@ -319,4 +319,74 @@ encoded, attn_weights = model(event_ids)
 print(f"\nEncoded representation shape: {encoded.shape}")
 print(f"Attention weights shape:      {attn_weights[0].shape}")
 
-avg_attn = attn_weights[0].mean(dim=(0
+avg_attn = attn_weights[0].mean(dim=(0, 1))
+print(f"Avg attention matrix shape:   {avg_attn.shape}")
+
+print("\nWhich events most influence 'demo_request' (position 3)?")
+focus_idx = 3
+ranked = avg_attn[focus_idx].topk(len(account_sequence))
+for val, idx in zip(ranked.values, ranked.indices):
+    print(f"  {id_to_event[idx.item()]:25s}  weight={val.item():.4f}")
+
+print("\nFull attention row for 'contact_sales' (final position):")
+final_idx = len(account_sequence) - 1
+for j in range(len(account_sequence)):
+    bar = "█" * int(avg_attn[final_idx, j].item() * 40)
+    print(f"  {account_sequence[j]:25s} {avg_attn[final_idx, j].item():.4f} {bar}")
+```
+
+Running this produces an attention matrix where each row shows how much every prior event contributes to the representation at that position. The last row — `contact_sales` — shows the model's assessment of which events in the account's history are most relevant to the final conversion event. In an untrained model, these weights are uniform-ish noise. After training on hundreds of labeled deal sequences (Zone 7: closed-won and closed-lost outcomes), the weights sharpen: the model discovers that `demo_request` followed by `competitor_comparison` within a 7-day window is a high-signal pattern, and the attention weight between those positions rises accordingly. The attention matrix becomes an inspectable, per-account intent score — not a black-box number, but a traceable weighting of which events mattered and how much.
+
+This is the mechanism that connects transformer architecture to GTM signal scoring. The transformer does not know what a "demo request" is. It knows that position $i$ attended to position $j$ with weight $w_{ij}$, and that minimizing the loss on training data required $w_{ij}$ to be large for certain event pairs. The meaning comes from the training labels, not the architecture. Swap the vocabulary from English words to GTM events, swap the training data from Wikipedia to your CRM history, and the same code learns to score buying intent.
+
+## Exercises
+
+### Exercise 1: Autoregressive Decoding Loop (Medium)
+
+The `Transformer` class produces logits at every target position, but the `Build It` script only takes `topk` at the final position. Write a `greedy_decode(model, src, max_len, start_token, end_token)` function that:
+
+1. Encodes the source sequence once (call `model.encoder(src)`).
+2. Initializes the target sequence with just the `start_token`.
+3. Loops up to `max_len` times: feeds the current target sequence through the decoder, takes the argmax of the logits at the last position, appends it to the target sequence, and breaks if the predicted token equals `end_token`.
+4. Returns the full generated sequence as a list of token IDs.
+
+Verify correctness: call `greedy_decode` with the dummy `model` from Build It, `src_tokens[0:1]`, `max_len=20`, `start_token=1`, `end_token=0`. Print each generated token at each step. Confirm that the function terminates when `end_token` is produced or `max_len` is reached.
+
+Extension question: why does the causal mask in `make_causal_mask` not prevent the model from generating during this loop, even though it was designed to prevent looking ahead during training?
+
+### Exercise 2: Event Sequence Classification Head (Hard)
+
+Replace the decoder and linear projection with a binary classification head on top of the `GTMEventEncoder`. The goal: predict whether an account sequence will result in a closed-won deal (label 1) or closed-lost (label 0).
+
+1. Add a `classification_head` to `GTMEventEncoder`: `nn.Linear(d_model, 1)` followed by `nn.Sigmoid()`.
+2. Modify `forward` to return both the encoded representation and the probability: take the mean of the encoder output across the sequence dimension (mean pooling), pass it through the classification head, return `(encoded, prob)`.
+3. Generate a synthetic training set: 200 random event sequences of length 6-10, with labels assigned by a deterministic rule (e.g., label 1 if the sequence contains both `demo_request` and `contact_sales`, else 0).
+4. Train for 100 epochs using `nn.BCELoss()` and `torch.optim.Adam` with `lr=0.001`. Print the loss every 20 epochs.
+5. After training, feed the `account_sequence` from Use It through the model and print the probability. Then feed a sequence that does NOT contain `demo_request` and compare.
+
+The point of this exercise: the self-attention weights are the inspectable intermediate representation. After training, extract `attn_weights[0]` and identify which event pairs the model learned to weight most heavily for predicting conversion. This is the same pattern a production intent-scoring model would use — the only difference is the scale of the training data and the sophistication of the event vocabulary.
+
+## Key Terms
+
+**Self-Attention** — The mechanism by which each position in a sequence computes a weighted sum of all positions' value vectors, where the weights are derived from the dot-product similarity of query and key vectors. The core operation that lets a transformer model long-range dependencies without recurrence.
+
+**Cross-Attention** — Attention where the query comes from the decoder but keys and values come from the encoder output. This is how the decoder "looks back" at the source sequence at every generation step. No causal mask is applied because the full source is available.
+
+**Causal Mask** — A lower-triangular matrix of ones and zeros applied to the self-attention scores in the decoder, setting future positions to $-\infty$ before softmax. This prevents position $t$ from attending to positions $t+1, t+2, \ldots$ during training, which is what enables parallel training while preserving autoregressive generation at inference time.
+
+**Residual Connection** — The `x + sublayer(x)` pattern that creates a gradient highway around each attention and feed-forward block. Without residual connections, gradients must pass through every layer's nonlinear transformations during backpropagation and vanish in deep models.
+
+**Teacher Forcing** — Training strategy where the decoder receives the ground-truth target sequence (shifted right) as input rather than its own predictions. Combined with the causal mask, this allows every position to be trained in a single forward pass.
+
+**Multi-Head Attention** — Running $h$ independent attention operations in parallel, each with its own learned projections on a $d_{model}/h$-dimensional subspace, then concatenating and projecting the results. Multiple heads let the model attend to different relationship types simultaneously (e.g., one head tracks syntactic dependencies, another tracks semantic similarity).
+
+**Positional Encoding** — A fixed or learned vector added to token embeddings that encodes each position's location in the sequence. Since self-attention is permutation-invariant by default, positional encoding is the only signal the model has about token order.
+
+**Layer Normalization** — Normalizing activations across the feature dimension (not the batch dimension) to zero mean and unit variance, followed by a learned scale and shift. Stabilizes activation distributions across layers, preventing the scale drift that degrades training in deep networks.
+
+## Sources
+
+- Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017). *Attention Is All You Need.* Advances in Neural Information Processing Systems (NeurIPS). arXiv:1706.03762 — The original encoder-decoder transformer architecture implemented in this lesson.
+- Karpathy, A. (2023). *nanoGPT.* GitHub repository: github.com/karpathy/nanoGPT — Reference implementation of a minimal GPT (decoder-only transformer) demonstrating the same architectural primitives.
+- [CITATION NEEDED — concept: transformer-based intent scoring in GTM platforms] — The mapping of self-attention weights to buying-intent signal scoring requires a documented case study or product reference showing transformer architectures applied to account event sequences in a GTM context.
+- [CITATION NEEDED — concept: Zone 7 fine-tuning definition ("Fine-tuning = training your scoring model on your own deal history")] — The handbook reference for Zone 7's training-on-deal-history approach needs a specific source citation from the 80/20 GTM Engineering Playbook or equivalent.

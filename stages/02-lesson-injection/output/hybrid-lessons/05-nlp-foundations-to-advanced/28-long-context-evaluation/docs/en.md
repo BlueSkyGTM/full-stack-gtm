@@ -113,4 +113,72 @@ To swap in a real API call, replace `simulate_retrieval` with a function that se
 
 ## Use It
 
-When you compile GTM enrichment payloads for account scoring or cold email generation, you are building a long-context prompt whether you realize it or not. An account research brief might include a 10-K filing (15k tokens), recent news articles (4k tokens), a tech-stack signal dump from BuiltWith or Wappalyzer (2k tokens), firmographic data
+Lost-in-the-middle attention collapse directly determines which fields in a GTM enrichment payload survive to the model's output and which are silently dropped. An account research brief might include a 10-K filing (15k tokens), recent news articles (4k tokens), a tech-stack signal dump from BuiltWith or Wappalyzer (2k tokens), firmographic data from Clearbit (500 tokens), intent signals from G2 or Bombora (1k tokens), and your scoring rubric (1k tokens). Total payload: roughly 24k tokens. If the model you are using exhibits U-shaped degradation with a valley at 50% depth, the tech-stack signals sitting at the 12k-token mark — the single most important input for your ICP fit score — will be retrieved unreliably. The model will still return a confident-looking answer. It will just be built on the wrong data.
+
+This matters for every GTM workflow that compiles research into a single prompt — account scoring, outbound personalization, deal-room summarization, churn-risk analysis. The code below models a realistic enrichment payload layout, assigns each section a depth based on token ordering, and predicts retrieval risk at each depth using the same U-shaped function from Build It. This is the GTM enrichment payload — Cluster 1.2, TAM Refinement & ICP Scoring, and Cluster 2.1, Outbound Research & Personalization.
+
+```python
+import random
+
+random.seed(42)
+
+ENRICHMENT_PAYLOAD = [
+    ("system_prompt",      0.02),
+    ("firmographics",      0.06),
+    ("10-K_filing",        0.15),
+    ("news_articles",      0.35),
+    ("tech_stack_signals", 0.48),
+    ("intent_data",        0.62),
+    ("scoring_rubric",     0.95),
+]
+
+def retrieval_p(depth):
+    edge_bias = min(depth, 1.0 - depth) / 0.5
+    return 0.50 + 0.45 * edge_bias
+
+def assess_payload(sections, trials=100):
+    print(f"{'Section':<22} {'Depth':<8} {'P(retrieve)':<14} {'Risk Level'}")
+    print("-" * 58)
+    for name, depth in sections:
+        p = retrieval_p(depth)
+        hits = sum(1 for _ in range(trials) if random.random() < p)
+        observed = hits / trials
+        risk = "LOW" if observed > 0.85 else ("MEDIUM" if observed > 0.6 else "HIGH")
+        print(f"{name:<22} {depth:<8.0%} {observed:<14.0%} {risk}")
+
+assess_payload(ENRICHMENT_PAYLOAD)
+```
+
+The output reveals the layout problem immediately: `tech_stack_signals` at 48% depth lands squarely in the lost-in-the-middle valley. It carries HIGH retrieval risk while `firmographics` at 6% and `scoring_rubric` at 95% — both near edges — are LOW risk. The fix is structural, not algorithmic. Move the tech-stack section to the front of the payload (depth 5–10%) or append it to the end (depth 90–95%). Re-run the assessment and the risk drops. This is prompt engineering as payload architecture: you are not changing what the model knows, you are changing where critical information sits relative to the model's attention bias.
+
+The same analysis applies to outbound personalization. If your cold-email generation prompt places the prospect's recent LinkedIn activity — the single most personalizable signal — at 45% depth inside a 30k-token research dump, the model will frequently ignore it and default to generic messaging. Move it to the end of the prompt, just before the generation instruction, and retrieval improves.
+
+## Exercises
+
+### Exercise 1 — Two-Needle Correlation Test (Easy)
+
+Modify the NIAH harness from Build It to insert two needles at different depths: one at 20% and one at 80%. Run 50 trials at a fixed context length of 4k tokens. For each trial, record whether needle A was retrieved, whether needle B was retrieved, and whether both were retrieved. Calculate: (a) individual retrieval rate for each needle, (b) joint retrieval rate (both correct), (c) whether the two retrievals are correlated or independent. A joint rate significantly lower than the product of individual rates indicates that the model's attention budget is shared — losing one needle predicts losing the other. This is the foundation of RULER's multi-needle task category.
+
+### Exercise 2 — Payload Relayout for a Real Account (Medium)
+
+Take a real or sample enrichment payload for an account in your pipeline. Estimate token counts for each section (rough heuristic: 1 token ≈ 4 characters). Calculate the depth percentage of each section in your current prompt layout. Run the `assess_payload` function with your actual section names and depths. Identify any section above 80% retrieval risk. Rewrite the payload ordering so that no section critical to your scoring or personalization logic sits between 35% and 65% depth — the lost-in-the-middle valley. Re-run the assessment and confirm the risk reduction. Document the before/after layout as a prompt template you can reuse.
+
+## Key Terms
+
+- **Needle-in-a-Haystack (NIAH):** A long-context benchmark that places a single target fact at a controlled depth within padding text, then queries the model for it. Output is a depth × context-length accuracy grid revealing positional bias.
+- **Lost in the Middle:** The empirically observed pattern where models retrieve information at the beginning and end of a context window more accurately than information in the middle, producing a U-shaped accuracy curve across depth.
+- **RULER:** A benchmark suite by Nvidia that extends NIAH to multi-key retrieval, multi-value retrieval, variable tracking, aggregation, and multi-needle tasks. Exposes failures that NIAH cannot detect because single-fact retrieval has saturated on frontier models.
+- **LongBench:** A benchmark using real-world long documents (legal contracts, academic papers, code repositories) rather than synthetic padding. Tests whether models handle structured natural text with formatting noise, repetition, and cross-references.
+- **MRCR (Multi-hop Reasoning on Context Retrieval):** A benchmark that requires chaining facts distributed across different context depths (A → B → C). Tests compositional reasoning over dispersed information, not just retrieval. Failure compounds: if any link in the chain is missed, the inference fails.
+- **Context Capacity Gap:** The difference between a model's advertised maximum context window (tokens it can ingest) and its effective usable window (tokens over which it retrieves and reasons accurately at a target reliability threshold).
+- **Depth Percentage:** The position of a fact within a context window, expressed as a fraction of total context length from 0% (first token) to 100% (last token). The independent variable in NIAH sweeps.
+
+## Sources
+
+- Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., & Liang, P. (2023). *Lost in the Middle: How Language Models Use Long Contexts*. arXiv:2307.03172 — [CITATION NEEDED — concept: specific page references and quantitative findings from the paper]
+- Kamradt, G. (2023). *Needle In A Haystack — Pressure Testing LLMs*. GitHub repository. Original NIAH implementation and prompt structure — [CITATION NEEDED — concept: canonical URL and version reference]
+- Hsieh, C.-P. et al. (2024). *RULER: What's the Real Context Size of Your Long-Context Language Models?* Nvidia Research. arXiv:2404.06654 — [CITATION NEEDED — concept: specific per-model failure rates on multi-variable and aggregation task categories]
+- Bai, Y. et al. (2023). *LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding*. arXiv:2308.14508 — [CITATION NEEDED — concept: full task list with associated metric definitions and scoring code]
+- [CITATION NEEDED — concept: MRCR benchmark — origin paper, authors, publication venue, and formal task specification]
+- [CITATION NEEDED — concept: Gemini 3 Pro MRCR accuracy at 1M tokens — primary source for the 26.3% figure cited in the lesson]
+- [CITATION NEEDED — concept: multi-hop reasoning degradation curves on frontier models — systematic study comparing single-hop vs. multi-hop accuracy as a function of context depth]

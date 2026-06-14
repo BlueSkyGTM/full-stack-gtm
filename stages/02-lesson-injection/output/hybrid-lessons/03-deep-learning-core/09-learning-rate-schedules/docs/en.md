@@ -92,29 +92,63 @@ Now look at what happens at the tail. By step 45, cosine and warmup-cosine have 
 
 ## Use It
 
-This lesson is foundational for Zone 40 (Model Training). Learning rate schedules have no direct GTM surface — they are a training-time hyperparameter, not a deployment-time feature. But if you are a practitioner fine-tuning models for classification, enrichment, or routing, the schedule is the difference between a model that converges and one that does not.
-
-Consider a concrete GTM pipeline. You are building on the Zone 03 cluster — web scraping directories and news feeds to detect hiring signals and funding events. You scrape company pages, parse HTML, and collect features. At some point you want a classifier that predicts whether a scraped company is a viable target — whether it passes your ICP filters. This is your SAM conversion rate: the percentage of scraped companies that pass ICP refinement after the classifier scores them. That classifier is a fine-tuned transformer or a simpler model trained on labeled examples. When you train it, the learning rate schedule determines whether the model reaches acceptable accuracy in 3 epochs or stalls at epoch 10 with loss still dropping too slowly to be useful. A stalled model means your SAM conversion rate stays low because the classifier is making low-confidence predictions on borderline cases — exactly the cases where a well-trained model would add the most value.
-
-The same dynamic applies to email validity rate (target: 95%+ valid or safe-to-send [CITATION NEEDED — concept: email validity rate benchmark in GTM workflows]). If you fine-tune a model to classify email addresses as valid, invalid, or risky, the schedule affects how cleanly the model separates the three classes. A model trained with an aggressive constant learning rate might achieve 90% accuracy but misclassify risky addresses as valid — sending to them damages your sender reputation. A model trained with warmup plus cosine annealing is more likely to learn the subtle boundary between "risky" and "valid" because the small late-stage steps let it settle into a sharper decision boundary.
-
-The practical takeaway: when fine-tuning a pretrained transformer for any GTM classification task, start with linear warmup over 10% of total steps, peak lr around 2e-5 to 5e-5, cosine decay to 10% of peak, and a minimum of 3 epochs. This is not a rule carved in stone — it is a starting point that works for most BERT-sized and RoBERTa-sized models on most classification datasets. You adjust from there based on the loss curve.
-
-## Ship It
-
-Write a complete PyTorch training loop that accepts a schedule config dict, constructs the schedule, applies it at every step, and prints the learning rate and loss at fixed intervals. This is the exact pattern you will use in any real fine-tuning script.
+Learning rate scheduling with warmup and cosine annealing controls how a fine-tuned model converges on its decision boundary — foundational for Zone 03 (TAM Refinement & ICP Scoring). When you train a classifier to predict whether a scraped company passes ICP filters, the schedule determines whether the model reaches usable accuracy or stalls with low-confidence predictions on borderline cases. This slice runs a complete training loop on a synthetic binary classification task that mirrors ICP scoring: ten features per company, a label indicating pass or fail.
 
 ```python
 import torch
 import torch.nn as nn
 import math
 
-def compute_lr(config, step):
-    sched_type = config["type"]
-    max_lr = config["max_lr"]
-    warmup = config.get("warmup_steps", 0)
-    total = config["total_steps"]
-    min_lr = config.get("min_lr", max_lr * 0.01)
+model = nn.Sequential(nn.Linear(10, 32), nn.ReLU(), nn.Linear(32, 2))
+optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
+criterion = nn.CrossEntropyLoss()
 
-    if warmup > 0 and step < warmup:
+total_steps, warmup, max_lr, min_lr = 100, 10, 2e-5, 2e-6
+torch.manual_seed(42)
+X = torch.randn(80, 10)
+y = (X[:, 0] > 0.5).long()
+
+def lr_at(step):
+    if step < warmup:
         return max_lr * (step + 1) / warmup
+    p = (step - warmup) / (total_steps - warmup)
+    return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * p))
+
+for step in range(total_steps):
+    for pg in optimizer.param_groups:
+        pg["lr"] = lr_at(step)
+    logits = model(X)
+    loss = criterion(logits, y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    if step % 25 == 0 or step == 99:
+        acc = (logits.argmax(1) == y).float().mean().item()
+        print(f"Step {step:>3} | LR {lr_at(step):.2e} | Loss {loss.item():.4f} | Acc {acc:.2%}")
+```
+
+Watch the output. During warmup (steps 0–9), the learning rate ramps from 2e-6 to 2e-5 — the loss barely moves because steps are deliberately small. After warmup, cosine decay begins: the learning rate is at its peak, loss drops fastest, and accuracy climbs. By step 99, the learning rate has decayed to near the floor, and the loss curve flattens as the model settles into its convergence basin. If you removed warmup and started at max_lr directly, the first few steps would produce large incoherent gradient updates — on a real transformer, this is where training diverges. This is the mechanism behind every production fine-tuning recipe: warmup to stabilize, peak to cover ground, decay to settle.
+
+## Exercises
+
+**Exercise 1 — Diagnose the failure mode.** You fine-tune a BERT classifier for email validity scoring (valid, invalid, risky). After 3 epochs, you observe the following: loss drops from 0.9 to 0.3 in the first 20 steps, then plateaus at 0.3 for the remaining 280 steps and never improves. Identify which schedule failure mode this represents, state which parameter to change, and propose a specific new value. Then modify the `warmup_cosine_lr` function from Build It to reflect your fix and run it over 50 steps to confirm the new schedule shape.
+
+**Exercise 2 — Compare schedules head to head.** Using the Use It training loop as your base, run all three decay strategies (constant, step decay, warmup+cosine) on the same synthetic dataset with the same model architecture and seed. Print final accuracy for each. Then remove warmup from the warmup+cosine variant and run again — observe what happens to the loss in the first 10 steps. Write a two-sentence summary of which schedule wins and why, grounded in the specific numbers you observed.
+
+## Key Terms
+
+- **Learning rate schedule** — A function mapping step index to learning rate, replacing a constant scalar with a value that changes over the course of training.
+- **Warmup** — A phase at the start of training where the learning rate ramps linearly from near-zero to a peak, giving the optimizer time to stabilize its moment estimates and the weights time to produce coherent gradients.
+- **Cosine annealing** — A decay schedule following a cosine curve from peak to floor, producing smooth continuous reduction that spends more wall-time near the peak and minimum than linear decay would.
+- **Step decay** — A schedule that drops the learning rate by a fixed multiplicative factor (typically 0.5 or 0.1) at fixed step intervals.
+- **1cycle policy** — A schedule that ramps the learning rate up from a minimum to a peak at the midpoint of training, then ramps it back down, allowing super-convergence on suitable architectures.
+- **Gradient coherence** — The degree to which gradients across layers point in a consistent, useful direction. Low at initialization due to random weights; increases as training progresses. Warmup exists because of this.
+- **Convergence basin** — The region around a local or global minimum where small steps allow the model to settle. A learning rate that is too large relative to the basin size causes oscillation rather than convergence.
+
+## Sources
+
+- Brown, T. et al. (2020). *Language Models are Few-Shot Learners.* GPT-3 used lr=6e-4 with linear warmup over 375M tokens, then cosine decay. [CITATION NEEDED — concept: GPT-3 paper learning rate schedule exact decay shape]
+- Loshchilov, I. & Hutter, F. (2017). *SGDR: Stochastic Gradient Descent with Warm Restarts.* Source of cosine annealing as a schedule family.
+- Smith, L. & Topin, N. (2019). *Super-Convergence: Very Fast Training of Neural Networks Using Large Learning Rates.* Source of the 1cycle policy.
+- [CITATION NEEDED — concept: Llama 3 learning rate schedule details, peak lr, warmup steps, decay shape]
+- [CITATION NEEDED — concept: email validity rate benchmarks in GTM outbound workflows, target deliverability thresholds]

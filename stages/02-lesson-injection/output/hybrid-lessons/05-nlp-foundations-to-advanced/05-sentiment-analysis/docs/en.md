@@ -242,4 +242,75 @@ def score_batch(replies, threshold=SENTIMENT_THRESHOLD):
             cache[text_hash] = sentiment
             source = "computed"
 
-        action =
+        action = route_decision(sentiment["label"], sentiment["confidence"], threshold)
+
+        results.append({
+            "prospect": entry["prospect"],
+            "label": sentiment["label"],
+            "confidence": round(sentiment["confidence"], 2),
+            "route": action,
+            "source": source,
+        })
+    return results
+
+scored = score_batch(email_replies)
+
+print("=== BATCH SENTIMENT ROUTING ===\n")
+for r in scored:
+    print(f"{r['route']:22s} | {r['label']:9s} ({r['confidence']:.2f}) | {r['prospect']:14s} | via {r['source']}")
+print(f"\nCache entries: {len(cache)}")
+
+duplicate_run = score_batch(email_replies[:2])
+print(f"\nRe-run on 2 duplicates — all served from cache: {all(r['source'] == 'cache' for r in duplicate_run)}")
+```
+
+The output reveals the production trade-off. "This looks really promising" routes as a buying signal — correct. "Not interested. Please remove me from your list" escalates to senior AE — arguably correct, though in practice you would route unsubscribe requests to a suppression workflow, not a human. The threshold matters more than the classifier here: bump `SENTIMENT_THRESHOLD` to 0.85 and the marginal cases ("Hmm, maybe") fall through to the default workflow instead of triggering premature escalation. This is the calibration exercise every GTM team must run on its own data: collect 200 labeled replies, sweep the threshold from 0.3 to 0.95 in 0.05 increments, and pick the value that maximizes precision on your routing objective. [CITATION NEEDED — concept: threshold calibration methodology for GTM sentiment routing]
+
+## Exercises
+
+### Exercise 1 — Negation Window (Easy)
+
+The lexicon scorer treats every word independently, which is why "not great" scores positive. Fix this by implementing a **negation window**: when the tokenizer encounters "not," "no," "never," or "n't," invert the polarity of the next *N* tokens (default window = 3).
+
+**Your task:**
+1. Modify `lexicon_score()` to accept a `negation_window` parameter.
+2. When a negation word is detected, multiply the polarity of the next `negation_window` matched words by –1.
+3. Re-run the test cases. Verify that "The food was not great" now scores negative and "Not bad at all, actually quite good" scores positive.
+4. Find a case where the negation window *overcorrects* — a sentence where flipping the next 3 tokens produces the wrong label. Write that sentence as a test case and explain why it fails.
+
+**Success criterion:** All 7 original test cases produce the expected label. You have at least 1 new test case that demonstrates the negation window's failure mode.
+
+### Exercise 2 — Multi-Signal Routing (Hard)
+
+Real GTM routing never uses sentiment alone. A negative reply from a Fortune 100 account in an active deal cycle is an escalation. The same negative reply from a cold prospect who never opened an email is a suppression. Build a routing layer that combines sentiment with account context.
+
+**Your task:**
+1. Extend the `email_replies` records to include two additional fields: `account_tier` (values: `"enterprise"`, `"mid_market"`, `"SMB"`) and `deal_stage` (values: `"none"`, `"qualified"`, `"negotiation"`, `"closed_won"`).
+2. Write a `multi_signal_route()` function that takes sentiment output plus account context and returns a routing decision according to these rules:
+   - NEGATIVE + enterprise + (qualified OR negotiation) → `escalate_churn_risk`
+   - NEGATIVE + any tier + deal_stage == "none" → `add_to_suppression_list`
+   - POSITIVE + enterprise + qualified → `flag_executive_sponsor`
+   - POSITIVE + any tier + negotiation → `alert_deal_velocity`
+   - Anything below threshold confidence → `default_workflow`
+3. Score a batch of at least 8 synthetic replies that exercise every routing rule. Print the results.
+4. Answer: what happens when a NEUTRAL-labeled reply comes from an enterprise account in negotiation? Is `default_workflow` the right call, or does the absence of signal itself warrant routing? Document your decision and justify it.
+
+**Success criterion:** All routing rules are exercised by at least one test case. The NEUTRAL + enterprise question has a written justification, not just a code branch.
+
+## Key Terms
+
+- **Polarity lexicon** — A dictionary mapping individual words or phrases to scalar sentiment values (e.g., `"excellent": +3`). The simplest sentiment mechanism; blind to context, negation, and word order.
+- **Naive Bayes classifier** — A probabilistic classifier that applies Bayes' theorem with a strong (naive) independence assumption between features. For text, it estimates `P(word | class)` from training counts and multiplies per-word likelihoods at inference. Fast, interpretable, but cannot model word interactions.
+- **Contextual embedding** — A token representation produced by a transformer where each word's vector is computed as a function of all other tokens in the sequence. This is what allows the model to read "not great" as negative rather than scoring "great" in isolation.
+- **Confidence threshold** — A scalar cutoff that converts a continuous sentiment score or probability into a binary routing decision. Below threshold: default workflow. Above threshold: action triggered. Calibrated against precision/recall trade-offs on domain-specific data.
+- **Laplace (add-one) smoothing** — A technique that adds 1 to every word count before computing conditional probabilities, preventing zero-probability multiplication when the classifier encounters an unseen word at inference time.
+- **Tokenization** — The process of splitting raw text into discrete units (words, subwords, characters) for model input. The simplest form is lowercase regex word extraction; transformer tokenizers use subword vocabularies (e.g., WordPiece, BPE).
+
+## Sources
+
+- HuggingFace Transformers library documentation — `pipeline("sentiment-analysis")` API and DistilBERT model card: https://huggingface.co/docs/transformers
+- Sanh, V. et al. (2019). "DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter." arXiv:1910.01108 — the distilled transformer model used in the Tier 3 example.
+- McCallum, A. & Nigam, K. (1998). "A Comparison of Event Models for Naive Bayes Text Classification." — the foundational formulation of multinomial Naive Bayes for text classification with Laplace smoothing.
+- Hutto, C.J. & Gilbert, E. (2014). "VADER: A Parsimonious Rule-based Model for Sentiment Analysis of Social Media Text." — the most widely cited production polarity lexicon with negation handling heuristics; reference architecture for the lexicon scorer built in this lesson.
+- [CITATION NEEDED — concept: sentiment-driven routing in Zone 2 enrichment workflows]
+- [CITATION NEEDED — concept: threshold calibration methodology for GTM sentiment routing]

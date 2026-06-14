@@ -296,245 +296,59 @@ The permutation test shuffles labels and recomputes the difference thousands of 
 
 ## Use It
 
-Lead scoring models are Bayesian update engines. When a scoring system takes a base conversion rate for an industry (the prior) and updates it with observed firmographic signals (the likelihood), it is computing a posterior probability using Bayes' theorem. The `Bayes` theorem mechanism here is the same one covered in the concept section — without understanding how priors and likelihoods interact, you cannot debug why a score spiked or collapsed. If the prior conversion rate for SaaS companies is 3%, and you observe that the company has 500+ employees (a signal correlated with higher deal size), the posterior jumps not because the signal is strong in isolation, but because the likelihood ratio favors conversion.
-
-Let us trace this mechanism with code:
+Bayesian inference — specifically the posterior update rule P(convert|signals) = P(signals|convert) × P(convert) / P(signals) — is the mechanism behind every lead scoring model in GTM enrichment. Your CRM has a base conversion rate (prior), enrichment data provides signals (likelihood), and the output score is a posterior probability. This maps directly to Cluster 1.2: TAM Refinement & ICP Scoring.
 
 ```python
 import math
 
-def bayes_update(prior, likelihood_given_yes, likelihood_given_no):
-    evidence = likelihood_given_yes * prior + likelihood_given_no * (1 - prior)
-    posterior = (likelihood_given_yes * prior) / evidence
-    return posterior
+def bayes_update(prior, p_sig_conv, p_sig_no_conv):
+    evidence = p_sig_conv * prior + p_sig_no_conv * (1 - prior)
+    return (p_sig_conv * prior) / evidence
 
-def log_odds_update(prior_prob, signal_log_likelihood_ratio):
-    prior_logit = math.log(prior_prob / (1 - prior_prob))
-    posterior_logit = prior_logit + signal_log_likelihood_ratio
-    posterior_prob = 1 / (1 + math.exp(-posterior_logit))
-    return posterior_prob
-
-print("=" * 70)
-print("BAYESIAN LEAD SCORING: How Signals Update Prior Conversion Rate")
-print("=" * 70)
-
-prior_conversion = 0.03
-print(f"\nPrior: P(convert) = {prior_conversion} (base rate for this industry)")
-
+prior = 0.03
 signals = [
-    ("Company size > 500",  0.08, 0.02),
-    ("Recent funding round", 0.06, 0.015),
-    ("Hiring for role X",   0.05, 0.01),
-    ("Tech stack match",    0.04, 0.02),
+    ("500+ employees",   0.08, 0.02),
+    ("Series B funding", 0.06, 0.015),
+    ("Hiring SDRs",      0.05, 0.01),
+    ("Tech stack match", 0.04, 0.02),
 ]
 
-current_prior = prior_conversion
-print(f"\n{'Signal':<25s} | {'P(sig|conv)':>12s} | {'P(sig|no-conv)':>14s} | {'Posterior':>10s}")
-print("-" * 70)
+score = prior
+print(f"Prior (base rate): {score:.4f}\n")
+for name, p_y, p_n in signals:
+    score = bayes_update(score, p_y, p_n)
+    lr = p_y / p_n
+    print(f"  {name:<18s}  LR={lr:.1f}x  posterior={score:.4f}")
 
-for name, p_sig_given_conv, p_sig_given_no in signals:
-    posterior = bayes_update(current_prior, p_sig_given_conv, p_sig_given_no)
-    print(f"{name:<25s} | {p_sig_given_conv:>12.4f} | {p_sig_given_no:>14.4f} | {posterior:>10.4f}")
-    current_prior = posterior
-
-print(f"\nFinal score after all signals: {current_prior:.4f}")
-print(f"Lift over base rate:           {current_prior / prior_conversion:.2f}x")
-
-print("\n" + "=" * 70)
-print("DIAGNOSTIC: Which Signal Drove the Score Up?")
-print("=" * 70)
-
-current_prior = prior_conversion
-for name, p_sig_given_conv, p_sig_given_no in signals:
-    posterior = bayes_update(current_prior, p_sig_given_conv, p_sig_given_no)
-    lift = posterior - current_prior
-    likelihood_ratio = p_sig_given_conv / p_sig_given_no
-    print(f"  {name:<25s}  Lift: +{lift:.4f}  Likelihood ratio: {likelihood_ratio:.2f}x")
-    current_prior = posterior
-
-print()
-print("INTERPRETATION:")
-print("  The signal with the highest likelihood ratio contributes the most")
-print("  to the score increase. A likelihood ratio of 4.0 means the signal")
-print("  is 4x more likely in converters than non-converters.")
-print("  If a score spiked unexpectedly, check which signal's likelihood")
-print("  ratio is inflated — that is the input driving the posterior.")
+print(f"\nFinal score: {score:.4f}  ({score/prior:.1f}x lift)")
+print(f"If you ranked accounts by this score without validating")
+print(f"the likelihoods against real conversion data, the lift is fiction.")
 ```
 
-This is the exact mechanism behind scoring waterfalls in enrichment platforms. When Clay enriches an account with firmographic data and recalculates a fit score, it is multiplying a prior by a likelihood. The scoring waterfall in Zone 2 GTM enrichment runs this update at scale across thousands of accounts — each one gets a posterior that is only as good as the prior and likelihood inputs. If your base conversion rates (priors) are wrong, every downstream score is miscalibrated. If your signal-to-conversion likelihoods are estimated from too little data, the posteriors have high variance and the rankings are unstable. [CITATION NEEDED — concept: Clay scoring waterfall implementation details]
+Run this and you see the posterior climb from 3% to roughly 15%. That 5x lift looks impressive in a dashboard. But the likelihoods (`p_sig_conv`, `p_sig_no_conv`) are assumptions — not measured values. If those numbers are wrong, every account score is wrong. Before deploying a scoring waterfall in Clay or any enrichment platform, you must validate that converted and non-converted accounts actually come from different distributions on each signal. That validation is the permutation test and effect size calculation from the Build It section applied to your real CRM data. [CITATION NEEDED — concept: Clay scoring waterfall posterior computation method]
 
-The practical implication: before deploying any scoring model in a GTM pipeline, validate that converted and non-converted accounts actually come from different distributions. The Ship It deliverable below is exactly that validation step. Without it, you are ranking accounts by a posterior whose prior was never checked against reality.
+The diagnostic that matters: compute the likelihood ratio for each signal against your historical conversion data. If the ratio is near 1.0, the signal carries no information — it appears in converters and non-converters at the same rate. Remove it from the waterfall. A scoring model with five useless signals produces the same posterior as the prior alone, but looks more sophisticated in the UI.
 
-## Ship It
+## Exercises
 
-Build a Python script that takes a CSV of account scores with conversion labels, runs statistical tests to determine whether the scoring model has signal, and prints a go/no-go recommendation. This is the validation step that precedes any predictive scoring workflow — the Python equivalent of the enrichment environment where you will run Clay webhooks and API calls in Zone 2 GTM work.
+**Exercise 1 (Medium):** Modify the permutation test from Build It to compare medians instead of means. Run it on two samples from exponential distributions with the same rate but different sample sizes (n=200 vs n=2000). Does the p-value change? Does sample size affect the test's sensitivity? Write a one-paragraph interpretation of what this tells you about minimum sample sizes for GTM A/B tests.
 
-```python
-import csv
-import math
-import random
+**Exercise 2 (Hard):** Build a complete scoring model validation script. Generate a synthetic CSV of 500 account scores with conversion labels (use the data generation logic from Build It as a starting point). Then implement all four validation checks: Welch's t-test, permutation test, Cohen's d, and bootstrap confidence interval for the mean difference. The script should print a go/no-go recommendation with explicit reasoning — not just pass/fail per check, but a combined interpretation. For example: "p-value is significant but Cohen's d is 0.12 — the difference is real but too small to matter operationally. Do not deploy."
 
-random.seed(42)
+## Key Terms
 
-def generate_account_scores_csv(filename, n_accounts=500):
-    random.seed(42)
-    with open(filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['account_id', 'score', 'converted'])
-        for i in range(n_accounts):
-            if random.random() < 0.15:
-                score = max(0.0, min(1.0, random.gauss(0.68, 0.12)))
-                converted = 1 if random.random() < 0.45 else 0
-            else:
-                score = max(0.0, min(1.0, random.gauss(0.35, 0.14)))
-                converted = 1 if random.random() < 0.08 else 0
-            writer.writerow([f"ACC-{i:04d}", f"{score:.4f}", converted])
-    return filename
+- **Prior probability (P(A)):** The base rate of an event before observing any evidence. In GTM, this is your historical conversion rate for a segment.
+- **Posterior probability (P(A|B)):** The updated probability after incorporating evidence. This is what a lead score represents — the probability of conversion given observed signals.
+- **Likelihood ratio (P(B|A) / P(B|¬A)):** How much more likely a signal is among converters versus non-converters. A ratio near 1.0 means the signal carries no information.
+- **Permutation test:** A non-parametric hypothesis test that builds an empirical null distribution by shuffling labels. Makes no distributional assumptions — works on skewed, non-normal data.
+- **Bootstrap confidence interval:** An estimate of uncertainty constructed by resampling with replacement. Does not require knowing the underlying distribution.
+- **Cohen's d:** Effect size measured in standard deviation units. Values below 0.2 are negligible, above 0.8 are large. Determines whether a statistically significant difference actually matters.
+- **Sampling distribution:** The distribution of a statistic (like the mean) across repeated samples from the same population. The Central Limit Theorem says this approaches normal as sample size grows.
 
-def load_scores(filename):
-    converted = []
-    not_converted = []
-    with open(filename, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            score = float(row['score'])
-            if int(row['converted']) == 1:
-                converted.append(score)
-            else:
-                not_converted.append(score)
-    return converted, not_converted
+## Sources
 
-def mean(data):
-    return sum(data) / len(data)
-
-def median(data):
-    s = sorted(data)
-    n = len(s)
-    if n % 2 == 0:
-        return (s[n // 2 - 1] + s[n // 2]) / 2
-    return s[n // 2]
-
-def variance(data, ddof=1):
-    m = mean(data)
-    return sum((x - m) ** 2 for x in data) / (len(data) - ddof)
-
-def std_dev(data, ddof=1):
-    return math.sqrt(variance(data, ddof))
-
-def cohens_d(group1, group2):
-    m1, m2 = mean(group1), mean(group2)
-    s1, s2 = std_dev(group1), std_dev(group2)
-    pooled_sd = math.sqrt((s1**2 + s2**2) / 2)
-    return (m1 - m2) / pooled_sd if pooled_sd > 0 else 0
-
-def welch_t_test(group1, group2):
-    m1, m2 = mean(group1), mean(group2)
-    v1, v2 = variance(group1), variance(group2)
-    n1, n2 = len(group1), len(group2)
-    se = math.sqrt(v1 / n1 + v2 / n2)
-    t_stat = (m1 - m2) / se if se > 0 else 0
-    df_num = (v1 / n1 + v2 / n2) ** 2
-    df_den = (v1 / n1) ** 2 / (n1 - 1) + (v2 / n2) ** 2 / (n2 - 1)
-    df = df_num / df_den if df_den > 0 else 1
-    return t_stat, df
-
-def normal_cdf(z):
-    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
-
-def permutation_test(sample_a, sample_b, num_permutations=10000):
-    observed_diff = abs(mean(sample_a) - mean(sample_b))
-    combined = sample_a + sample_b
-    n_a = len(sample_a)
-    count_extreme = 0
-    for _ in range(num_permutations):
-        shuffled = combined[:]
-        random.shuffle(shuffled)
-        perm_diff = abs(mean(shuffled[:n_a]) - mean(shuffled[n_a:]))
-        if perm_diff >= observed_diff:
-            count_extreme += 1
-    return count_extreme / num_permutations
-
-def bootstrap_ci(data, num_bootstrap=5000, confidence=0.95):
-    n = len(data)
-    boot_means = []
-    for _ in range(num_bootstrap):
-        sample = [random.choice(data) for _ in range(n)]
-        boot_means.append(mean(sample))
-    boot_means.sort()
-    alpha = 1 - confidence
-    return boot_means[int((alpha / 2) * num_bootstrap)], boot_means[int((1 - alpha / 2) * num_bootstrap)]
-
-def evaluate_scoring_model(filename):
-    converted, not_converted = load_scores(filename)
-
-    print("=" * 72)
-    print("ACCOUNT SCORING MODEL VALIDATION")
-    print("=" * 72)
-
-    print(f"\n1. SAMPLE SUMMARY")
-    print(f"   Converted accounts:     n={len(converted)}")
-    print(f"     Mean score:   {mean(converted):.4f}")
-    print(f"     Median score: {median(converted):.4f}")
-    print(f"     Std dev:      {std_dev(converted):.4f}")
-    print(f"   Non-converted accounts: n={len(not_converted)}")
-    print(f"     Mean score:   {mean(not_converted):.4f}")
-    print(f"     Median score: {median(not_converted):.4f}")
-    print(f"     Std dev:      {std_dev(not_converted):.4f}")
-
-    print(f"\n2. WELCH'S T-TEST (does not assume equal variance)")
-    t_stat, df = welch_t_test(converted, not_converted)
-    p_two_tailed = 2 * (1 - normal_cdf(abs(t_stat)))
-    print(f"   t-statistic:      {t_stat:.4f}")
-    print(f"   degrees of freedom: {df:.1f}")
-    print(f"   Approximate p-value: {p_two_tailed:.6f}")
-    print(f"   Significant at alpha=0.05? {'YES' if p_two_tailed < 0.05 else 'NO'}")
-
-    print(f"\n3. PERMUTATION TEST (distribution-free validation)")
-    perm_p = permutation_test(converted, not_converted, num_permutations=5000)
-    print(f"   p-value: {perm_p:.4f}")
-    print(f"   Significant at alpha=0.05? {'YES' if perm_p < 0.05 else 'NO'}")
-
-    print(f"\n4. EFFECT SIZE (practical significance)")
-    d = cohens_d(converted, not_converted)
-    print(f"   Cohen's d: {d:.4f}")
-    if abs(d) < 0.2:
-        interp = "negligible"
-    elif abs(d) < 0.5:
-        interp = "small"
-    elif abs(d) < 0.8:
-        interp = "medium"
-    else:
-        interp = "large"
-    print(f"   Interpretation: {interp}")
-    print(f"   (Even if p-value is significant, d < 0.2 means the")
-    print(f"    difference is too small to matter operationally)")
-
-    print(f"\n5. BOOTSTRAP 95% CI FOR MEAN DIFFERENCE")
-    combined_diffs = []
-    for _ in range(5000):
-        boot_conv = [random.choice(converted) for _ in range(len(converted))]
-        boot_non = [random.choice(not_converted) for _ in range(len(not_converted))]
-        combined_diffs.append(mean(boot_conv) - mean(boot_non))
-    combined_diffs.sort()
-    lo = combined_diffs[int(0.025 * 5000)]
-    hi = combined_diffs[int(0.975 * 5000)]
-    print(f"   Mean difference: {mean(converted) - mean(not_converted):.4f}")
-    print(f"   95% CI:          [{lo:.4f}, {hi:.4f}]")
-    print(f"   CI excludes 0?   {'YES — signal is real' if lo > 0 or hi < 0 else 'NO — cannot rule out no difference'}")
-
-    print(f"\n{'=' * 72}")
-    print("GO / NO-GO RECOMMENDATION")
-    print(f"{'=' * 72}")
-
-    checks = {
-        "t-test significant": p_two_tailed < 0.05,
-        "permutation test significant": perm_p < 0.05,
-        "effect size >= small (d >= 0.2)": abs(d) >= 0.2,
-        "bootstrap CI excludes 0": lo > 0 or hi < 0,
-    }
-
-    passed = sum(checks.values())
-    total = len(checks)
-
-    for check, result in checks.items():
-        status =
+- Wasserman, L. (2004). *All of Statistics: A Concise Course in Statistical Inference*. Springer. — Foundational reference for distributions, hypothesis testing, and Bayes' theorem.
+- Efron, B. & Hastie, T. (2016). *Computer Age Statistical Inference*. Cambridge University Press. — Bootstrap method, permutation tests, and the evolution of resampling-based inference.
+- Cohen, J. (1988). *Statistical Power Analysis for the Behavioral Sciences*. Routledge. — Original framework for effect size interpretation (Cohen's d thresholds).
+- [CITATION NEEDED — concept: Clay scoring waterfall implementation details, posterior computation method, likelihood estimation from CRM data]
+- [CITATION NEEDED — concept: GTM industry standard for minimum sample size in B2B lead scoring validation]

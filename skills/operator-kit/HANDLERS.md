@@ -56,6 +56,17 @@ Director (User)
 
 ---
 
+## Two Squads in One Ecosystem
+
+| Squad | Members | Model | Job | Manifest |
+|-------|---------|-------|-----|----------|
+| **The Loom** | GLM-5.2 Taskmaster + Lyra handlers (GLM-5.1/5.1v) | 5.2 + 5.1 | Weave lessons (generate) | `stages/02-.../manifest.json` |
+| **The Tailors** | Echo · Newton · Turing · Shannon · Hinton | GLM-5.2 | Verify the AI seam, cross-reference sources | `stages/09-.../manifest.json` |
+
+The Loom builds; the Tailors finish. They run on **separate manifests** and **chain sequentially** (Loom → ship-ready → Tailors → Loom correction) so they never compete for the 5-call ceiling. Tailors verify-and-flag; they do not rewrite. Full squad: `TAILORS.md`. Hypatia (GLM-5.1) tailors the GTM seam alongside.
+
+---
+
 ## Existing Handlers
 
 ### Stage 02 — Lesson Injection Handler

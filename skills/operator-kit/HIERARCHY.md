@@ -2,7 +2,9 @@
 
 Entry point for any agent or operator new to the BlueSkyGTM curriculum pipeline.
 
-**As of 2026-06-14 this pipeline is GLM-native.** The Taskmaster tier moved out of Claude sub-agents and into GLM-5.2. The whole Taskmaster→Handler chain now runs inside one GLM ecosystem. The Conductor (Claude) launches it and watches the manifest — it no longer holds a sub-agent per stage.
+**As of 2026-06-14 this pipeline is GLM-native.** The Taskmaster tier moved out of Claude sub-agents and into GLM-5.2. The whole Taskmaster→Handler chain now runs inside one GLM ecosystem — **The Loom**: GLM-5.2 sets the pattern, GLM-5.1/5.1v are the threads, and every lesson is woven from the AI strand and the GTM strand at once. The Conductor (Claude) launches The Loom and watches the manifest — it no longer holds a sub-agent per stage.
+
+> **The Loom** = the GLM collective that builds the curriculum (GLM-5.2 + GLM-5.1 + GLM-5.1v). ICM/ICL is *how it's organized*; The Loom is *the network itself*. The Conductor conducts; The Loom weaves.
 
 ---
 
@@ -108,3 +110,17 @@ python -c "import json; rows=json.load(open('stages/02-lesson-injection/output/m
 | `interpreted-context-loop/SKILL.md` | The ICL loop pattern |
 | `watchdog.py` | Stall monitor — Conductor runs this |
 | `taskmasters/<role>/CONTEXT.md` | Per-stage orchestrator brief |
+
+---
+
+## → Next: run it
+
+The spine ends here, on the file that does the work:
+
+```bash
+export $(grep -v '^#' .env | xargs)                          # load ZHIPUAI_API_KEY
+python skills/operator-kit/orchestrator.py --dry-run --sample 5   # confirm work selection
+python skills/operator-kit/orchestrator.py --workers 5            # fire The Loom
+```
+
+`orchestrator.py` reads the manifest, lets GLM-5.2 oversee GLM-5.1, and weaves until `pending = 0`. Monitor the manifest; don't weave yourself.

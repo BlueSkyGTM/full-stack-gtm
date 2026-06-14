@@ -198,14 +198,12 @@ The retry loop classifies every exception before deciding what to do. A `RateLim
 
 ## Use It
 
-Cost tracking and retry classification become non-negotiable when an LLM sits inside a Clay enrichment waterfall processing thousands of accounts. A Clay waterfall is a sequence of data providers tried in order — if ZoomInfo returns nothing, try Apollo; if Apollo returns nothing, try an LLM-generated research summary. When the LLM is the last step in that waterfall, its output becomes the enrichment of record. A silent failure — an empty string, a truncated response, a refusal formatted as valid JSON — propagates into every downstream personalization field. The prospect receives an email with a placeholder where their company's GTM motion should be. The campaign looks personalized in the aggregate dashboard but is broken at the individual record level.
+Retry classification and structured cost tracking become non-negotiable when an LLM sits inside a Clay enrichment waterfall processing thousands of accounts. A Clay waterfall tries providers in sequence — if ZoomInfo returns nothing, try Apollo; if Apollo returns nothing, try an LLM-generated research summary. When the LLM is the last step, its output becomes the enrichment of record. A silent failure — an empty string, a truncated response, a refusal formatted as valid JSON — propagates into every downstream personalization field. The prospect receives an email with a blank where their GTM motion should be. This is Cluster 1.2, TAM Refinement & ICP Scoring — the exact layer where a malformed `{"error": "..."}` in the `ai_summary` field corrupts the ICP signal for an entire segment.
 
-The production client you just built prevents this in three ways. First, the retry layer ensures that a transient 429 from Anthropic does not produce an empty enrichment record — it waits and tries again, up to your configured limit. Second, the JSON validation layer catches model outputs that are structurally wrong before they reach Clay's field mapping. A refusal like `{"error": "I cannot assist"}` passes JSON parsing but fails a semantic check — the exercise at the end of this lesson asks you to add that check. Third, the cost tracker gives you per-session attribution so you know what the enrichment run actually cost, not just what the monthly invoice says.
+The production client prevents this three ways. The retry layer ensures a transient 429 does not produce an empty enrichment record. The JSON validation catches structurally malformed output before it reaches Clay's field mapping. The cost tracker gives per-session attribution so you know what the run cost before the monthly invoice arrives.
 
 ```python
 import anthropic
-import time
-import json
 
 client = ProductionLLMClient(model="claude-sonnet-4-20250514")
 
@@ -224,9 +222,8 @@ accounts = [
 
 for account in accounts:
     user_msg = f"Company: {account['name']}, Industry: {account['industry']}, Employees: {account['employees']}, Recent signal: {account['signal']}"
-    messages = [{"role": "user", "content": user_msg}]
     try:
-        enrichment = client.complete_json(SYSTEM, messages, max_tokens=200)
+        enrichment = client.complete_json(SYSTEM, [{"role": "user", "content": user_msg}], max_tokens=200)
         print(f"{account['name']}: {enrichment['icp_fit']} — {enrichment['signal']}")
     except ValueError as e:
         print(f"{account['name']}: ENRICHMENT FAILED — {e}")
@@ -236,30 +233,41 @@ for account in accounts:
 print(f"\nBatch cost: {client.tracker.summary()}")
 ```
 
-This batch loop demonstrates the pattern that separates a lookup table from a reliable enrichment layer. Each account either gets a validated enrichment dict or a logged failure that a human can review. No silent empty strings. No unvalidated model output flowing into your CRM. And the cost summary at the end tells you exactly what this batch of three accounts cost — extrapolate to 3,000 accounts and you know the budget before you commit to the run. [CITATION NEEDED — concept: Clay waterfall enrichment pricing models per-record]
+Each account either gets a validated enrichment dict or a logged failure that a human can review. No silent empty strings. No unvalidated model output flowing into your CRM. The cost summary at the end tells you exactly what this batch cost — extrapolate to 3,000 accounts and you know the budget before you commit. [CITATION NEEDED — concept: Clay waterfall enrichment pricing models per-record]
 
-The same client structure applies to reply classification in a Gong-style revenue intelligence workflow. When an SDR forwards a prospect reply to your system for classification (interested, not interested, out of office, objection), the LLM call needs the same production guarantees: retry on transient failure, validate the classification label against an allowed set, and track cost per classification so you know what your automated triage pipeline actually costs per month.
+The same pattern applies to reply classification in a Gong-style revenue intelligence workflow. When an SDR forwards a prospect reply for classification (interested, not interested, out of office, objection), the LLM call needs the same guarantees: retry on transient failure, validate the classification label against an allowed set, track cost per classification so you know what automated triage costs per month.
 
-## Ship It
+## Exercises
 
-Structured logging and health checks are what separate a reply classification service that RevOps trusts from one they silently route around. Before you deploy any LLM-dependent GTM system — whether it is enrichment, reply classification, or sequence personalization — you need four deployment primitives in place.
+### Exercise 1 — Semantic Field Validation (Medium)
 
-**Environment variable management.** The API key never appears in source code, config files, or logs. The `anthropic.Anthropic()` constructor reads `ANTHROPIC_API_KEY` from the environment automatically — do not override that. In production, inject the key via your platform's secret manager (AWS Secrets Manager, Doppler, `.env` files loaded by the deployment, never committed to git). Rotate the key on a schedule and verify the old key fails after rotation.
+The `complete_json` method confirms the model returned a parseable JSON dict. It does not confirm the dict's *contents* are correct. A refusal formatted as `{"error": "I cannot assist"}` passes validation today and would propagate into your CRM. Fix this.
 
-**Structured logging to a file.** Stdout is for humans reading a terminal. Production systems need structured logs — JSON lines in a file — that a log aggregator can parse. Every LLM call should produce a log entry with timestamp, model, latency, token counts, cost, status, and retry count. The following setup writes both to console (for development) and to a JSON-lines file (for production observability):
+Add two optional parameters to `complete_json`: `required_keys` (a set of key names the response must contain) and `enum_fields` (a dict mapping field names to their allowed values, e.g., `{"icp_fit": {"strong", "moderate", "weak"}}`). After parsing, before returning, validate both conditions. Raise `ValueError` with the specific field name and observed value on failure. Then test with the enrichment script above: modify the system prompt to provoke a refusal and confirm the client rejects the output rather than passing garbage downstream.
 
-```python
-import json
-import logging
-import os
-from datetime import datetime, timezone
+### Exercise 2 — Circuit Breaker Integration (Hard)
 
-class JSONLHandler(logging.Handler):
-    def __init__(self, filepath):
-        super().__init__()
-        self.filepath = filepath
+The retry loop handles per-call transient failures. But if the Anthropic API goes down for 10 minutes, every call in your batch burns through its full retry budget — 5 attempts, 15 seconds of backoff, then an exception. With 3,000 accounts, that is 3,000 doomed retry sequences hitting a provider that is already down. Implement a `CircuitBreaker` class that prevents this.
 
-    def emit(self, record):
-        entry = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "
+The breaker tracks consecutive failures across all calls. After `failure_threshold` consecutive failures (default 5), it trips to the **open** state: `complete` raises immediately without making an API call. After `cooldown_seconds` (default 30) it transitions to **half-open**: one trial call is allowed. A success closes the circuit. A failure restarts the cooldown. Add state-transition logging (`CIRCUIT_OPEN`, `CIRCUIT_HALF_OPEN`, `CIRCUIT_CLOSED`). Integrate it into `ProductionLLMClient` so the breaker wraps the API call, not the retry loop — the breaker sits above retry. Test by setting `ANTHROPIC_API_KEY` to an invalid value and watching the breaker trip after 5 auth errors, then block subsequent calls instantly instead of retrying.
+
+## Key Terms
+
+- **Transient failure** — An API error condition that resolves with time: rate limits (429), server errors (500/502/503), timeouts. The request was valid; the provider could not handle it at that moment. Safe to retry with backoff.
+
+- **Semantic failure** — A condition where retrying will not help: authentication errors (401), malformed prompts (400), or responses that are structurally valid JSON but semantically wrong (a refusal where data was expected, a missing required field). Retrying burns money for the same result.
+
+- **Exponential backoff** — Retry delay that doubles with each attempt: `delay = base * 2^attempt`. Prevents a retrying client from hammering a provider that is already overloaded. Combined with jitter (random 10–25% variation) to avoid thundering herd effects when many clients retry simultaneously.
+
+- **Circuit breaker** — A protective layer above retry that tracks consecutive failures across calls. After a threshold of failures, it blocks all outbound calls for a cooldown period rather than continuing to retry against an unavailable backend. The canonical pattern from distributed systems engineering.
+
+- **Cost ledger** — Per-session or per-feature tracking of input tokens, output tokens, and accumulated dollar cost. Turns a monthly invoice into per-feature spend visibility. Without it, you cannot attribute spend to the enrichment run that caused it.
+
+- **Markdown fence stripping** — Removing the `` ```json ... ``` `` wrapper that models frequently add to JSON output despite instructions not to. A preprocessing step before `json.loads()` — without it, the first JSON request often fails with a `JSONDecodeError`.
+
+## Sources
+
+- Anthropic Python SDK — retry behavior, exception hierarchy, and usage object structure: https://github.com/anthropics/anthropic-sdk-python
+- Anthropic API pricing (input/output per million tokens by model): https://www.anthropic.com/pricing
+- Martin Fowler, "CircuitBreaker" — canonical pattern reference for the breaker state machine (closed / open / half-open): https://martinfowler.com/bliki/CircuitBreaker.html
+- [CITATION NEEDED — concept: Clay waterfall enrichment pricing models per-record]

@@ -327,118 +327,67 @@ When you run this, observe three rejection modes. The audience mismatch (`Step 5
 
 ## Use It
 
-The deployment pipeline for production GTM infrastructure — your Clay enrichment tables, n8n workflow automations, outbound email sequences — runs on the same principle as resource indicator validation. SPF, DKIM, and DMARC are the email world's version of RFC 8707: SPF binds a sending IP to a domain (audience), DKIM cryptographically signs the message (token integrity), and DMARC defines the policy when the binding fails (rejection). An MCP token without a `resource` parameter is like an email without SPF — it works, but anyone can spoof it. [CITATION NEEDED — concept: SPF/DKIM/DMARC as audience binding analogy for OAuth resource indicators]
-
-In a GTM stack that deploys multiple MCP servers — one reading from Clay, one writing to Salesforce, one enriching via Clearbit — each server should validate the `aud` claim against its own URI before processing any request. This means your CI/CD pipeline must inject the correct `resource` URI into each server's configuration at deploy time, not hardcode it in application logic. If your deploy pipeline ships a Clay integration MCP server with `resource=https://clay-mcp.internal`, that server rejects any token minted for `resource=https://salesforce-mcp.internal`, even if both tokens share the same signing key and authorization server. The blast radius of a compromised token is exactly one server.
-
-Incremental scoping maps to a real GTM workflow pattern: a user connects their CRM to an enrichment tool and initially grants read-only access to build a prospect list. When they later click "push to CRM," the tool performs step-up authorization — requesting `write:leads` for that specific operation. The token in the user's session between those two actions carries only `read:leads`. If a session token is exfiltrated during the read-only phase (through a compromised browser extension, a misconfigured proxy, or a log file capturing the `Authorization` header), the attacker can read leads but cannot modify them. The exposure window for elevated permissions is measured in the seconds between step-up and token use, not the lifetime of the user's session.
-
-Here is a minimal client that processes a 403 challenge and performs step-up automatically:
+The OAuth 2.1 token validation pipeline — PKCE challenge verification, `aud` claim matching against a resource URI, scope sufficiency checks — is the access control mechanism an MCP-hosted AI agent traverses on every tool call when it reads from Clay (Cluster 1.2, TAM Refinement) and writes to Salesforce (Cluster 3.1, Pipeline Execution). Each token's audience binding constrains blast radius to exactly one server: a credential stolen from the Clay MCP integration cannot replay against the Salesforce MCP server even if both share the same signing key. The step-up pattern maps to progressive consent — a prospecting agent reads contacts, then escalates to write only when the user pushes a curated list to CRM.
 
 ```python
-import base64, hashlib, hmac, json, secrets, time
+import hashlib, hmac, json, time, base64
 
-def b64url_encode(data):
-    if isinstance(data, str):
-        data = data.encode()
-    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+def b64(d): return base64.urlsafe_b64encode(d).rstrip(b'=').decode()
+def claims(t):
+    s = t.split('.')[1]; s += '=' * (-len(s) % 4)
+    return json.loads(base64.urlsafe_b64decode(s))
 
-def generate_pkce_pair():
-    verifier = b64url_encode(secrets.token_bytes(64))
-    challenge = b64url_encode(hashlib.sha256(verifier.encode()).digest())
-    return verifier, challenge
+def token(scopes, aud):
+    h = b64(json.dumps({"alg":"HS256","typ":"JWT"}).encode())
+    p = b64(json.dumps({"iss":"https://auth.internal","sub":"user-42","aud":aud,
+        "scope":scopes,"iat":int(time.time()),"exp":int(time.time())+3600}).encode())
+    s = b64(hmac.new(b"shared-secret", f"{h}.{p}".encode(), hashlib.sha256).digest())
+    return f"{h}.{p}.{s}"
 
-def create_jwt(payload, secret):
-    header = {"alg": "HS256", "typ": "JWT"}
-    h = b64url_encode(json.dumps(header, separators=(',', ':')))
-    p = b64url_encode(json.dumps(payload, separators=(',', ':')))
-    sig_input = f"{h}.{p}".encode()
-    sig = b64url_encode(hmac.new(secret.encode(), sig_input, hashlib.sha256).digest())
-    return f"{h}.{p}.{sig}"
+def crm(t, action):
+    c = claims(t)
+    if c["aud"] != "https://crm.internal": return 401, "audience mismatch"
+    need = {"list_leads":"read:leads","create_lead":"write:leads"}[action]
+    if need not in c["scope"]: return 403, f'Bearer scope="{need}"'
+    return 201, f"{action} ok for {c['sub']}"
 
-def decode_jwt_claims(token):
-    parts = token.split('.')
-    padding = 4 - len(parts[1]) % 4
-    payload = parts[1] + '=' * (padding % 4)
-    return json.loads(base64.urlsafe_b64decode(payload))
-
-SECRET = "shared-secret-256-bit"
-RESOURCE_CRM = "https://crm.internal"
-
-def issue_token(scopes, resource, secret=SECRET):
-    now = int(time.time())
-    payload = {
-        "iss": "https://auth.internal", "sub": "user-42",
-        "aud": resource, "scope": " ".join(scopes),
-        "iat": now, "exp": now + 3600
-    }
-    return create_jwt(payload, secret)
-
-def crm_handle(token, action):
-    claims = decode_jwt_claims(token)
-    scope_map = {"list_leads": {"read:leads"}, "create_lead": {"write:leads"}}
-    needed = scope_map.get(action, set())
-    granted = set(claims.get("scope", "").split())
-    if claims.get("aud") != RESOURCE_CRM:
-        return {"status": 401, "error": "invalid_token", "detail": "audience mismatch"}
-    if not needed.issubset(granted):
-        missing = needed - granted
-        return {"status": 403, "error": "insufficient_scope",
-                "www_authenticate": f'Bearer scope="{" ".join(missing)}"',
-                "missing": sorted(missing)}
-    return {"status": 201, "ok": True, "action": action}
-
-class StepUpClient:
-    def __init__(self, resource):
-        self.resource = resource
-        self.current_token = None
-        self.current_scopes = set()
-
-    def authorize(self, scopes):
-        v, c = generate_pkce_pair()
-        self.current_token = issue_token(scopes, self.resource)
-        self.current_scopes = set(scopes)
-        claims = decode_jwt_claims(self.current_token)
-        print(f"  [client] acquired token: scope={claims['scope']} aud={claims['aud']}")
-        return self.current_token
-
-    def call(self, action):
-        print(f"\n  [client] calling {action}()...")
-        result = crm_handle(self.current_token, action)
-
-        if result.get("status") == 403:
-            www = result.get("www_authenticate", "")
-            needed_scope = www.split('scope="')[1].rstrip('"') if 'scope="' in www else ""
-            print(f"  [client] received 403: needs scope '{needed_scope}'")
-            print(f"  [client] performing step-up authorization...")
-
-            combined = self.current_scopes | {needed_scope}
-            self.authorize(combined)
-
-            print(f"  [client] retrying {action}() with escalated token...")
-            result = crm_handle(self.current_token, action)
-
-        return result
-
-client = StepUpClient(RESOURCE_CRM)
-
-print("=== Initial Authorization: read:leads only ===")
-client.authorize({"read:leads"})
-
-print("\n=== Operation 1: list_leads (should succeed) ===")
-r = client.call("list_leads")
-print(f"  result: {r}")
-
-print("\n=== Operation 2: create_lead (triggers step-up) ===")
-r = client.call("create_lead")
-print(f"  result: {r}")
-
-print(f"\n=== Final token scopes: {client.current_scopes} ===")
-print("=== Note: delete:leads was never requested, never granted ===")
+t = token("read:leads", "https://crm.internal")
+print(f"Token scope: read:leads | aud: crm.internal")
+print(f"list_leads:   {crm(t, 'list_leads')}")
+code, hdr = crm(t, 'create_lead')
+print(f"create_lead:  {code} -> needs {hdr.split('scope=\"')[1].rstrip('\"')}")
+t2 = token("read:leads write:leads", "https://crm.internal")
+print(f"Step-up token: read:leads write:leads")
+print(f"create_lead:  {crm(t2, 'create_lead')}")
 ```
 
-The client starts with `read:leads`. Its first call succeeds. Its second call receives a 403, parses the `WWW-Authenticate` header to discover the missing scope, performs step-up authorization, and retries — all within a single function call. The user never sees a second consent screen for scopes they implicitly requested by clicking "create lead."
+The client starts with `read:leads` only. The first call succeeds. The second call receives a 403 with the missing scope named in the `WWW-Authenticate` header. The client parses that header, mints a consolidated token, and retries — all within one workflow. The window during which `write:leads` exists is the seconds between step-up and operation completion, not the lifetime of the user's session.
 
-## Ship It
+## Exercises
 
-Production deployment of MCP servers with OAuth 2.1 requires three infrastructure decisions baked into your CI/CD pipeline, not added afterward. First: every MCP server needs a stable, unique resource URI that serves as both its `aud` claim value and its RFC 9728 protected-resource-metadata endpoint. This URI must not change between deploys without a coordinated token migration — existing tokens pin to the old URI and will be rejected by the new one. Second: the authorization server's signing key must be
+**Exercise 1 — Third Resource Server (Easy)**
+
+Add a third `ResourceServer` to the Build It simulation: `https://billing.internal` with actions `view_invoice` (scope: `read:billing`) and `pay_invoice` (scope: `write:billing`). Issue a token for `https://crm.internal` and attempt to call `view_invoice` on the billing server. Then issue a correctly targeted token for billing and confirm it succeeds. Document the exact status code, error message, and the specific claim that causes the first rejection. Modify the SUMMARY block to include both test cases.
+
+**Exercise 2 — Refresh Token Rotation with Audience Locking (Hard)**
+
+Modify the `AuthorizationServer` class to issue refresh tokens alongside access tokens. After `exchange()` returns an access token, also generate an opaque refresh token (random string) stored in a dict: `self.refresh_tokens[rt] = {"user_id": ..., "scope": ..., "resource": ..., "used": False}`. Add an `exchange_refresh(refresh_token, resource)` method that: (1) rejects any refresh token where `resource` does not match the stored value, (2) rejects already-used refresh tokens (rotation), (3) issues a new access token with the same `aud` and `scope`, and (4) marks the old refresh token as used and issues a new one. Demonstrate that a refresh token minted for `crm.internal` returns `invalid_target` when presented with `resource=https://enrichment.internal`. Then demonstrate that replaying a rotated refresh token returns `invalid_grant`.
+
+## Key Terms
+
+- **PKCE (Proof Key for Code Exchange)**: A cryptographic extension (RFC 7636) where the client proves possession of a secret by sending its SHA-256 hash (`code_challenge`) during authorization and the original secret (`code_verifier`) during token exchange. Mandatory in OAuth 2.1 for all clients.
+- **Resource Indicator (RFC 8707)**: A `resource` request parameter that binds an access token to a specific resource server URI, encoded as the token's `aud` claim. Prevents token replay across servers.
+- **Incremental Authorization (Step-Up)**: A pattern where the client requests additional scopes during an active session without restarting the authorization flow, triggered by a `403` response with a `WWW-Authenticate: Bearer scope="..."` header.
+- **Audience Claim (`aud`)**: The JWT claim identifying the intended recipient of a token. Resource servers reject tokens whose `aud` does not match their own configured identifier.
+- **Confused Deputy**: An attack where a trusted intermediary is tricked into replaying its authority against an unintended target. Audience binding through resource indicators is the mitigation.
+- **Scope**: A permission string (e.g., `read:leads`) carried in the JWT `scope` claim as a space-delimited list. Resource servers verify scope sufficiency before processing each action.
+- **Blast Radius**: The set of systems and operations a compromised token can affect. Constrained by three independent mechanisms: audience binding (where), scope restriction (what), and incremental authorization (when).
+
+## Sources
+
+- RFC 8707 — "Resource Indicators for OAuth 2.0," Campbell, B., et al., IETF, February 2020. https://datatracker.ietf.org/doc/html/rfc8707
+- RFC 7636 — "Proof Key for Code Exchange (PKCE) by OAuth Public Clients," Sakimura, N. and J. Bradley, IETF, September 2015. https://datatracker.ietf.org/doc/html/rfc7636
+- "The OAuth 2.1 Authorization Framework," draft-ietf-oauth-v2-1, IETF. https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/
+- [CITATION NEEDED — concept: MCP specification (2025-11-25) adoption of OAuth 2.1 as authorization profile with resource indicator and incremental authorization requirements]
+- [CITATION NEEDED — concept: SEP-835 incremental authorization specification for MCP server-to-client scope escalation]
+- [CITATION NEEDED — concept: GTM toolchain deployment patterns for multi-server MCP authentication with audience-pinned tokens]

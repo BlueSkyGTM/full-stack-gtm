@@ -210,184 +210,69 @@ The outpainting mask marks only the padding region as white. When you pass this 
 
 ## Use It
 
-The partial conditioning pattern in inpainting — preserve a known-good subset, regenerate the rest with context awareness — maps directly to a problem in Zone 08: CRM data hygiene and selective enrichment. Your CRM is a retrieval system, and like any retrieval system, its value degrades when records contain stale, missing, or contradictory fields. [CITATION NEEDED — concept: CRM decay rates and field-level staleness benchmarks]
-
-Consider a CRM with 50,000 company records. Each record has fields: company name, domain, industry, employee count, revenue, tech stack. Some fields are reliable (company name, domain — they rarely change). Some fields are stale (employee count, revenue — they drift quarterly). Some fields are missing entirely (tech stack — never collected). Running a full enrichment waterfall on every record wastes API budget regenerating data that is already correct. The efficient approach is field-level masking: preserve the reliable fields, regenerate only the stale and missing ones. This is inpainting applied to structured data.
+The partial conditioning mechanism — clamp a known-good subset, regenerate only the masked remainder with context awareness — maps directly to selective CRM enrichment (Cluster 1.3, TAM Refinement & ICP Scoring). Your CRM is a retrieval system whose value degrades when records contain stale or missing fields. Running a full enrichment waterfall on every record wastes API budget regenerating data that is already correct. Field-level masking is inpainting applied to structured data: preserve the trustworthy fields, flag only the stale and null ones for regeneration.
 
 ```python
-import numpy as np
-from datetime import datetime, timedelta
+import datetime
 
 records = [
-    {"id": "001", "company": "Acme Corp", "domain": "acme.com",
-     "industry": "SaaS", "employees": 250, "revenue": None,
-     "tech_stack": None, "last_updated": "2025-01-15"},
-    {"id": "002", "company": "Globex", "domain": "globex.io",
-     "industry": None, "employees": None, "revenue": 5000000,
-     "tech_stack": None, "last_updated": "2024-06-01"},
-    {"id": "003", "company": "Initech", "domain": "initech.com",
-     "industry": "Fintech", "employees": 50, "revenue": 2000000,
-     "tech_stack": ["AWS", "Salesforce"], "last_updated": "2025-11-01"},
+    {"id": "001", "domain": "acme.com", "industry": "SaaS",
+     "employees": 250, "revenue": None, "updated": "2025-01-15"},
+    {"id": "002", "domain": "globex.io", "industry": None,
+     "employees": None, "revenue": 5_000_000, "updated": "2024-06-01"},
+    {"id": "003", "domain": "initech.com", "industry": "Fintech",
+     "employees": 50, "revenue": 2_000_000, "updated": "2025-11-01"},
 ]
 
-enrichment_fields = ["industry", "employees", "revenue", "tech_stack"]
-trustworthy_fields = ["company", "domain"]
-decay_days = 90
-now = datetime.now()
+DECAY_DAYS = 90
+COST_PER_FIELD = 0.03
+now = datetime.datetime.now()
+enrichment_fields = ["industry", "employees", "revenue"]
 
 mask = {}
-for record in records:
-    record_mask = {}
-    last_updated = datetime.strptime(record["last_updated"], "%Y-%m-%d")
-    age = (now - last_updated).days
-    for field in enrichment_fields:
-        is_null = record[field] is None
-        is_stale = age > decay_days
-        needs_update = is_null or is_stale
-        record_mask[field] = 1 if needs_update else 0
-    mask[record["id"]] = record_mask
+for r in records:
+    age = (now - datetime.datetime.strptime(r["updated"], "%Y-%m-%d")).days
+    mask[r["id"]] = {f: (1 if r[f] is None or age > DECAY_DAYS else 0)
+                     for f in enrichment_fields}
 
-total_fields = len(records) * len(enrichment_fields)
-fields_to_update = sum(sum(m.values()) for m in mask.values())
-fields_preserved = total_fields - fields_to_update
-enrichment_cost_per_field = 0.03
+masked_updates = sum(sum(m.values()) for m in mask.values())
+total_slots = len(records) * len(enrichment_fields)
+full_cost = total_slots * COST_PER_FIELD
+masked_cost = masked_updates * COST_PER_FIELD
 
-full_cost = total_fields * enrichment_cost_per_field
-masked_cost = fields_to_update * enrichment_cost_per_field
-savings = full_cost - masked_cost
-
-print(f"Total records: {len(records)}")
-print(f"Fields per record (enrichment targets): {len(enrichment_fields)}")
-print(f"Total field slots: {total_fields}")
-print(f"Fields to update (masked=1): {fields_to_update}")
-print(f"Fields preserved (masked=0): {fields_preserved}")
-print(f"Preservation rate: {fields_preserved/total_fields*100:.1f}%")
-print(f"Full enrichment cost: ${full_cost:.2f}")
-print(f"Masked enrichment cost: ${masked_cost:.2f}")
-print(f"Savings: ${savings:.2f} ({savings/full_cost*100:.1f}%)")
-print()
+print(f"Full enrichment:   ${full_cost:.2f}  ({total_slots} field lookups)")
+print(f"Masked enrichment: ${masked_cost:.2f}  ({masked_updates} field lookups)")
+print(f"Savings:           ${full_cost - masked_cost:.2f}  ({(1 - masked_cost/full_cost)*100:.0f}%)")
 for rid, m in mask.items():
     flagged = [k for k, v in m.items() if v == 1]
-    print(f"  Record {rid}: update {flagged}")
+    print(f"  {rid}: enrich {flagged or '— skip, all fields current'}")
 ```
 
-The output quantifies the savings from selective enrichment. Record 003 was updated recently and has no null fields — its mask is all zeros, and it is skipped entirely. Record 002 has null fields and is six months stale — every enrichment field is flagged. This is the data-pipeline analog of the inpainting mask: you define which fields need regeneration, clamp the rest, and run your enrichment waterfall only on the masked subset.
+Record 003 was updated recently with no nulls — its mask is all zeros, and the waterfall skips it entirely. Record 002 has nulls and is six months stale — every enrichment field is flagged. This is the data-pipeline analog of a binary inpainting mask: you define which fields need regeneration, clamp the rest, and spend API budget only on the masked subset.
 
-The `denoising_strength` parameter in image inpainting has a structural analog here. A low denoising strength (0.3–0.5) in image editing means "mostly preserve the original, make a small change." In CRM enrichment, this maps to field-level confidence thresholds: if an enrichment provider returns an employee count of 247 for a record that previously said 250, the delta is small enough that you might accept the update silently. If it returns 2,470, the delta is large — the equivalent of a high denoising strength — and you flag the update for human review before overwriting. The principle is the same: the magnitude of change should govern the level of scrutiny applied.
-
-## Ship It
-
-In a production pipeline, the bottleneck is not the diffusion model — it is mask generation. You cannot hand-draw masks for 10,000 product images. You need automated masking that is reliable enough to run without human review on at least 80% of inputs. The remaining 20% get routed to a human reviewer.
-
-Color thresholding handles green-screen and solid-background product photography. Semantic segmentation handles the harder case: removing a specific object class (person, car, logo) from an arbitrary background. Models like Segment Anything (SAM) or YOLO-segmentation produce pixel-accurate masks from a point prompt or bounding box, which you then feed into the inpainting pipeline.
-
-```python
-import numpy as np
-from PIL import Image, ImageDraw
-import time
-
-class InpaintingPipeline:
-    def __init__(self, model_id="runwayml/stable-diffusion-inpainting",
-                 min_mask_area=0.01, max_mask_area=0.75):
-        self.min_mask_area = min_mask_area
-        self.max_mask_area = max_mask_area
-        self.pipe = None
-        self.stats = {"processed": 0, "skipped_small": 0,
-                      "skipped_large": 0, "errors": 0}
-
-    def _load_model(self):
-        if self.pipe is not None:
-            return
-        import torch
-        from diffusers import AutoPipelineForInpainting
-        self.pipe = AutoPipelineForInpainting.from_pretrained(
-            self.model_id if hasattr(self, 'model_id') else "runwayml/stable-diffusion-inpainting",
-            torch_dtype=torch.float16,
-            safety_checker=None,
-        )
-        self.pipe.to("cuda" if torch.cuda.is_available() else "cpu")
-
-    def validate_mask(self, mask_array):
-        coverage = mask_array.mean() / 255.0
-        if coverage < self.min_mask_area:
-            return False, f"mask too small ({coverage*100:.1f}% < {self.min_mask_area*100:.1f}%)"
-        if coverage > self.max_mask_area:
-            return False, f"mask too large ({coverage*100:.1f}% > {self.max_mask_area*100:.1f}%)"
-        return True, f"coverage {coverage*100:.1f}%"
-
-    def batch_process(self, items, prompt_fn=None):
-        default_prompt = "clean background, seamless, professional"
-        results = []
-        for item in items:
-            image = item["image"]
-            mask = item["mask"]
-            prompt = prompt_fn(item) if prompt_fn else default_prompt
-
-            mask_arr = np.array(mask)
-            valid, reason = self.validate_mask(mask_arr)
-
-            if not valid:
-                if "too small" in reason:
-                    self.stats["skipped_small"] += 1
-                else:
-                    self.stats["skipped_large"] += 1
-                results.append({"id": item.get("id"), "status": "skipped",
-                                "reason": reason})
-                continue
-
-            results.append({"id": item.get("id"), "status": "queued",
-                            "prompt": prompt, "coverage": reason})
-            self.stats["processed"] += 1
-
-        return results
-
-source1 = Image.new("RGB", (512, 512), (200, 200, 200))
-draw1 = ImageDraw.Draw(source1)
-draw1.rectangle([200, 200, 250, 250], fill=(255, 0, 0))
-
-source2 = Image.new("RGB", (512, 512), (200, 200, 200))
-mask2 = Image.new("L", (512, 512), 255)
-
-source3 = Image.new("RGB", (512, 512), (200, 200, 200))
-mask3 = Image.new("L", (512, 512), 0)
-draw3 = ImageDraw.Draw(mask3)
-draw3.ellipse([210, 210, 230, 230], fill=255)
-
-mask1 = Image.new("L", (512, 512), 0)
-draw_m1 = ImageDraw.Draw(mask1)
-draw_m1.rectangle([200, 200, 250, 250], fill=255)
-
-batch = [
-    {"id": "IMG-001", "image": source1, "mask": mask1,
-     "defect": "red logo on wall"},
-    {"id": "IMG-002", "image": source2, "mask": mask2,
-     "defect": "full frame overwrite"},
-    {"id": "IMG-003", "image": source3, "mask": mask3,
-     "defect": "tiny dust spot"},
-]
-
-def prompt_for_item(item):
-    defect = item.get("defect", "object")
-    return f"remove {defect}, clean surface, seamless background"
-
-pipeline = InpaintingPipeline(min_mask_area=0.005, max_mask_area=0.60)
-results = pipeline.batch_process(batch, prompt_fn=prompt_for_item)
-
-print(f"Batch size: {len(batch)}")
-print(f"Processed (queued): {pipeline.stats['processed']}")
-print(f"Skipped (mask too small): {pipeline.stats['skipped_small']}")
-print(f"Skipped (mask too large): {pipeline.stats['skipped_large']}")
-print()
-for r in results:
-    print(f"  {r['id']}: {r['status']} — {r.get('reason', r.get('prompt', ''))}")
-```
-
-The mask validation thresholds — 1% minimum, 75% maximum — are not arbitrary. A mask covering less than 1% of the image is likely a detection false positive (a speck of noise flagged as an object). A mask covering more than 75% means the "edit" is essentially a full regeneration, and you should be using img2img instead, which is cheaper and does not require the 9-channel inpainting model. These thresholds should be tuned on your specific dataset: product photography on white backgrounds tends to have small masks (remove a small blemish), while scene editing has larger masks (replace entire backgrounds).
-
-The batch processor pattern above mirrors what a Clay waterfall does in the CRM enrichment context. A Clay waterfall tries multiple data providers in sequence for each enriched field, stopping when it gets a hit. The inpainting pipeline tries a single model but applies the same selective-attention logic: skip records that do not need processing, flag records that are out of distribution, and process the rest. In both cases, the engineering challenge is the same — handling edge cases at scale without human intervention.
+The `denoising_strength` parameter has a structural analog here too. A low denoising strength (0.3–0.5) means "mostly preserve the original, make a small change." In CRM enrichment, this maps to field-level confidence thresholds: if an enrichment provider returns 247 employees for a record that previously said 250, the delta is small — accept the update silently. If it returns 2,470, the delta is large — flag it for human review before overwriting. The magnitude of change should govern the level of scrutiny applied.
 
 ## Exercises
 
 **Exercise 1 — Mask sensitivity analysis.** Take the color thresholding function from Build It and run it on the synthetic product image with tolerance values of 10, 20, 30, 40, 50, 60. For each tolerance, print the mask coverage percentage and the number of foreground pixels incorrectly included in the background mask. Plot or print the tolerance-versus-accuracy tradeoff. Which tolerance value gives the cleanest separation?
 
-**Exercise 2 — Denoising strength comparison.** Using the inpainting pipeline from Build It, run the same source image and mask with `strength` values of 0.3, 0.5, 0.7, 0.85, and 1.0. Save each result. For each output, compute the pixel-level difference between the masked region of the output and the masked region of the original source. Print the L2 distance for each strength value. At what
+**Exercise 2 — Denoising strength sweep.** Using the inpainting pipeline from Build It, run the same source image and mask with `strength` values of 0.3, 0.5, 0.7, 0.85, and 1.0. Save each result. For each output, compute the L2 pixel distance between the masked region of the output and the masked region of the original source. Print the distance for each strength value. At what strength does the model stop preserving any structural information from the original masked region? How does this threshold compare between object-removal prompts ("clean wall") versus modification prompts ("red car")?
+
+## Key Terms
+
+- **Inpainting** — Regenerating pixels inside a user-defined mask while clamping all unmasked pixels to their original values. Requires a 9-channel U-Net (4 noisy latent + 4 encoded original + 1 mask) or equivalent conditioning mechanism.
+- **Outpainting** — A special case of inpainting where the mask covers only the padding region of an expanded canvas. The model extends boundary textures into the new area.
+- **Img2img (SDEdit)** — Adding partial noise to the entire image (controlled by `strength`), then denoising with a new prompt. No mask is used; every pixel is a candidate for modification.
+- **Partial conditioning** — The shared principle behind all editing paradigms: the model receives both the original content and a specification of what to change, and clamps the unmarked portion during denoising.
+- **Denoising strength** — A float in [0.0, 1.0] controlling how much noise is added before denoising begins. Higher values allow more structural change; lower values preserve more of the original.
+- **Binary mask** — A single-channel image where white (255) marks pixels to regenerate and black (0) marks pixels to preserve. The input that makes inpainting spatially precise.
+- **Instruction-based editing** — A diffusion model fine-tuned on `(image, instruction, output)` triplets that applies edits from natural-language commands without requiring an explicit mask. Trades spatial precision for convenience.
+
+## Sources
+
+- Rombach, R., et al. "High-Resolution Image Synthesis with Latent Diffusion Models." (CVPR 2022) — introduces the LDM architecture underlying Stable Diffusion, including the VAE-encode/decode and U-Net denoising loop that inpainting extends. https://arxiv.org/abs/2112.10752
+- Meng, C., et al. "SDEdit: Guided Image Synthesis and Editing with Stochastic Differential Equations." (ICLR 2022) — defines the img2img / strength-based partial-noise approach. https://arxiv.org/abs/2108.01073
+- Avrahami, O., et al. "InstructPix2Pix: Learning to Follow Image Editing Instructions." (CVPR 2023) — introduces instruction-based editing without explicit masks. [CITATION NEEDED — concept: InstructPix2Pix training dataset composition and instruction fidelity benchmarks]
+- Saharia, C., et al. "Palette: Image-to-Image Diffusion Models." (SIGGRAPH 2022) — conditions diffusion on source image and mask via channel concatenation, the architectural pattern used by SD Inpainting. https://arxiv.org/abs/2111.05805
+- Hugging Face Diffusers documentation — `AutoPipelineForInpainting` API and the 9-channel input contract for SD/SDXL inpainting models. https://huggingface.co/docs/diffusers/en/api/pipelines/auto_pipeline
+- [CITATION NEEDED — concept: CRM field-level decay rates and selective enrichment cost benchmarks]

@@ -175,4 +175,67 @@ Multi-view mesh generation is the mechanism that turns one text prompt into a re
 
 The GTM application is concrete. A SaaS company launching a new feature builds an interactive product configurator on their landing page. Instead of commissioning twelve product renders from a 3D artist, they generate a base mesh, export it as GLB, and embed it in a WebGL viewer that lets prospects rotate, zoom, and inspect the product in real time. The same mesh feeds static renders for social cards, email headers, and documentation. One generation run, dozens of derivative assets, all angle-consistent because they come from the same source geometry.
 
-[CITATION NEEDED — concept
+[CITATION NEEDED — concept: 3D-generated assets replacing product photography in PLG content engines]
+
+This is the asset-multiplication pipeline — Cluster 4.1 (Content Engine & Creative Automation). The code below takes the mesh from Build It and runs the full GTM slice: export to GLB for web embedding, queue static renders for every channel that needs product imagery, and print the cost arithmetic.
+
+```python
+import trimesh, numpy as np, os, json
+
+mesh = trimesh.load('/tmp/generated_mesh.obj')
+mesh.visual.face_colors = np.tile([70, 130, 180, 255], (len(mesh.faces), 1))
+mesh.export('/tmp/product_asset.glb')
+
+os.makedirs('/tmp/marketing_assets', exist_ok=True)
+
+channels = [
+    ("landing_hero", 0, 15),
+    ("social_square", 45, 0),
+    ("email_header", 90, 10),
+    ("config_thumb_a", 180, 25),
+    ("config_thumb_b", 270, 25),
+    ("ad_carousel_1", 135, 5),
+    ("ad_carousel_2", 225, 20),
+]
+
+manifest = {"source_mesh": "generated_mesh.obj", "glb": "/tmp/product_asset.glb", "renders": channels}
+with open('/tmp/marketing_assets/manifest.json', 'w') as f:
+    json.dump(manifest, f, indent=2)
+
+glb_kb = os.path.getsize('/tmp/product_asset.glb') / 1024
+print(f"GLB for WebGL embed: /tmp/product_asset.glb ({glb_kb:.0f} KB)")
+print(f"Static render angles queued: {len(channels)}")
+for name, az, el in channels:
+    print(f"  {name}: az={az:>3}°  el={el:>2}°")
+print(f"Total derivative assets: {len(channels) + 1} from 1 mesh")
+print(f"Cost: 1 generation run → {len(channels) + 1} angle-consistent assets")
+```
+
+The manifest maps each render angle to a GTM surface — landing hero, social card, email header, configurator thumbnails, ad carousel frames. In production, each render job feeds the content pipeline that serves these surfaces. The GLB goes to the web team for the interactive viewer. The static renders go to the marketing automation platform. The same geometry underpins all of them, which means a creative refresh — new paint job, new lighting — requires regenerating derivatives from one source mesh, not re-shooting a product line.
+
+The quality-vs-latency tradeoff matters here. If the landing page needs a hero render by end of day, Shap-E's seconds-to-mesh pipeline is the right tool. If the configurator needs high-detail geometry that holds up under close inspection, SDS-based optimization or a curated Objaverse asset is the better choice. The wrong tradeoff — spending forty minutes on SDS for a social thumbnail that renders at 200×200 — is how 3D pipelines stall in prototype.
+
+## Exercises
+
+**Exercise 1 (Easy) — Degenerate face detection.** Load any mesh you generated in Build It with `trimesh.load()`. Write a script that counts degenerate faces (area < 1e-10), counts non-manifold edges using `mesh.edges_unique` and vertex-edge incidence, and prints a pass/fail verdict. Then deliberately corrupt the mesh by merging two vertices (set `mesh.vertices[5] = mesh.vertices[6]`) and rerun the check. Confirm that the corruption is detected.
+
+**Exercise 2 (Hard) — SDS loop on a toy problem.** Implement a miniature Score Distillation Sampling loop that optimizes a single 3D Gaussian (position + covariance + color) to match a 2D target image of a red circle on a black background. Use `torch` for differentiable rendering: rasterize the Gaussian projection onto a 64×64 image, compare against the target with MSE loss, and backpropagate into the Gaussian parameters for 200 steps. Print the loss every 50 steps and the final Gaussian parameters. The point is not to produce a great 3D asset — it is to internalize the render → compare → backprop loop that SDS automates with a diffusion model as the comparator instead of a ground-truth image.
+
+## Key Terms
+
+- **Score Distillation Sampling (SDS):** Optimization technique that uses a 2D diffusion model's score function as a gradient signal for 3D parameters. Never directly trains the diffusion model; instead renders the 3D object, adds noise, asks the diffusion model to denoise, and backpropagates the difference. Introduced in DreamFusion (Poole et al., 2022).
+- **Janus problem:** Failure mode where a generated 3D object has multiple "fronts" or faces, caused by the 2D diffusion model evaluating each view independently without any 3D consistency constraint.
+- **Gaussian Splatting:** 3D representation using explicit anisotropic Gaussians (position, covariance, opacity, spherical-harmonic color) sorted by depth and alpha-composited. Differentiable and renders at real-time framerates.
+- **Mesh:** Collection of vertices (XYZ positions) and faces (index triplets forming triangles). The universal exchange format for 3D assets — OBJ, GLB, FBX.
+- **Degenerate face:** A triangle with near-zero area, typically caused by two or three coincident vertices. Creates rendering artifacts and breaks manifold topology. Detectable via `mesh.area_faces < 1e-10`.
+- **Objaverse-XL:** Large-scale open 3D object dataset (~10 million objects as of 2023). Used to train direct-regression models like Shap-E. Skews toward simple objects, which limits out-of-distribution generation quality.
+
+## Sources
+
+- Poole, B., Jain, A., Barron, J. T., & Mildenhall, B. (2022). *DreamFusion: Text-to-3D using 2D Diffusion.* arXiv:2209.14988. — Introduces Score Distillation Sampling.
+- Nichol, A., et al. (2022). *Point-E: A System for Generating 3D Point Clouds from Complex Prompts.* arXiv:2212.08751. — Direct text-to-point-cloud regression.
+- Jun, H., & Nichol, A. (2023). *Shap-E: Generating Conditional 3D Implicit Functions.* arXiv:2305.02463. — Direct text-to-implicit-function regression; trades quality for speed.
+- Kerbl, B., Kopanas, G., Leimkühler, T., & Drettakis, G. (2023). *3D Gaussian Splatting for Real-Time Radiance Field Rendering.* ACM Transactions on Graphics, 42(4). — Explicit Gaussian primitives replacing NeRF MLPs.
+- Mildenhall, B., et al. (2020). *NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis.* ECCV 2020. — Foundational NeRF paper.
+- Deitke, M., et al. (2023). *Objaverse-XL: A Universe of 3D Objects.* arXiv:2307.05663. — Largest open 3D dataset; training data for direct-regression models.
+- [CITATION NEEDED — concept: 3D-generated assets replacing product photography in PLG content engines]

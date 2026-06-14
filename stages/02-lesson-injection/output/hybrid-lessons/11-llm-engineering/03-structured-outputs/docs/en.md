@@ -5,7 +5,6 @@
 - Implement all three enforcement layers — prompt-only, JSON mode, and schema-constrained outputs — using the OpenAI Python SDK and observe where each fails.
 - Build a Pydantic validation layer that catches schema violations JSON mode cannot detect, and wire it into a retry loop that feeds validation errors back to the model.
 - Trace how constrained decoding modifies token selection at each generation step using a finite-state machine or context-free grammar, and explain why this prevents syntactically invalid output without post-processing.
-- Design an enrichment extraction schema for a Clay waterfall step, including fallback behavior for empty or rejected fields, and compute the effective cost of parse-failure retries.
 
 ## The Problem
 
@@ -284,31 +283,53 @@ The retry loop feeds the exact Pydantic error message back to the model as a cor
 
 ## Use It
 
-The GTM application for structured outputs lives in **Enrichment & Waterfall Orchestration** — the zone where Clay operates. A Clay waterfall is a sequence of enrichment steps that run in priority order: step one tries to fill a cell from source A, if the cell is empty step two tries source B, and so on until the cell is filled or the waterfall exhausts its sources. Many of these steps use an LLM as an AI web scraper that navigates to a company website, reads the unstructured content, and extracts specific fields — company name, headcount, funding stage, tech stack. The LLM's output must be a structured object that maps directly to spreadsheet columns, not a sentence describing what it found.
+Constrained decoding is the mechanism that makes a Clay enrichment waterfall (Cluster 1.2: TAM Refinement & ICP Scoring) reliable enough to run unattended across thousands of rows. Each waterfall step sends raw website text to an LLM and expects a structured object that maps directly to spreadsheet columns. The schema is enforced during token generation — the model cannot produce `"Series-A"` when the enum says `"series_a"`, so the cell fills correctly on the first pass and the waterfall proceeds without human inspection.
 
-Without constrained decoding, the waterfall breaks at the parse boundary. The LLM returns valid JSON that is missing the `employee_count` field, or returns `"Series-A"` when your schema expects `"series_a"`, or wraps the entire output in markdown fences because the source website mentioned a code block. Each of these is a silent failure: the step reports success, but the downstream consumer gets an empty cell or a type error when it tries to render the row. With structured outputs, the schema enforcement happens during generation — the model literally cannot produce `"Series-A"` because the token sequence `Series-A` is not in the grammar defined by the enum constraint.
+```python
+from openai import OpenAI
+from pydantic import BaseModel, Field
+from typing import Literal
 
-Consider a concrete Clay enrichment scenario. You have a column for `funding_stage` with allowed values `seed`, `series_a`, `series_b`, `series_c`, `public`. Your waterfall step sends the model a company's Crunchbase page and asks it to classify the funding stage. If you use prompt-only JSON, the model might return `"funding_stage": "Pre-seed"` or `"funding_stage": "series A"` (with a space). Both are semantically correct but structurally invalid for your downstream consumer. If you use JSON mode, you get valid JSON but the same bad values. If you use structured outputs with an enum constraint, the decoder will only ever produce one of the five allowed tokens — `Pre-seed` is masked out because it does not match any enum value, and `series A` (with a space) is masked out because the enum says `series_a`. The enrichment cell is filled correctly on the first pass, and the waterfall proceeds to the next step without human intervention.
+client = OpenAI()
 
-The cost calculation matters here. Constrained decoding has a computational overhead — the decoder must evaluate the schema grammar at every token step, which adds latency per token. For a Clay enrichment pipeline processing thousands of rows, this overhead is justified by the reduction in parse-failure retries. A retry is not free: it costs another API call, another few seconds of latency, and potentially another failure. If your base failure rate is 10% with JSON mode and near-zero with structured outputs, the structured output path is cheaper at any scale above a few hundred rows, even though each individual call is slightly slower.
+class CompanyEnrichment(BaseModel):
+    company_name: str = Field(min_length=1)
+    employee_count: int = Field(ge=1)
+    funding_stage: Literal["seed", "series_a", "series_b", "series_c", "public"]
 
-## Ship It
+website_text = "Acme Robotics — 42 employees, Series A, $12M raised. acmerobotics.io"
 
-When you ship a structured extraction pipeline into production, schema versioning becomes a real concern. Your downstream consumer — a CRM, a spreadsheet, a data warehouse — has expectations about what fields exist and what types they are. If you add a field to your schema, old records produced under the previous schema will not have it. If you remove a field, old records will have data your new consumer does not expect. The safest approach is additive versioning: never remove fields, only add optional ones, and version your schema name (e.g., `CompanyEnrichment_v2`) so you can track which records were produced under which contract. When Clay changes its enrichment output schema, existing rows retain their original structure and new rows get the expanded one — a mixing of versions that downstream code must handle with `getattr` or `.get()` rather than direct key access.
+schema = {
+    "type": "object",
+    "properties": {
+        "company_name": {"type": "string"},
+        "employee_count": {"type": "integer"},
+        "funding_stage": {"type": "string", "enum": ["seed", "series_a", "series_b", "series_c", "public"]},
+    },
+    "required": ["company_name", "employee_count", "funding_stage"],
+    "additionalProperties": False,
+}
 
-The fallback strategy for empty or rejected fields needs to be explicit, not implicit. When structured output returns an empty string for `company_name` because the source website did not contain one, what goes in the cell? Three options: `null` (explicit absence, downstream code checks for it), a sentinel like `"NOT_FOUND"` (visible in the spreadsheet, human can scan for it), or a retry against the next waterfall source. Each has trade-offs. `null` is the cleanest for programmatic consumers but is invisible in a spreadsheet UI. `"NOT_FOUND"` is visible but can leak into downstream systems that expect real strings. Retry is the most expensive but produces the most complete data. In a Clay waterfall, the default behavior is retry-then-null: the waterfall tries the next source, and if all sources fail, the cell stays empty and the row is flagged for review.
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": "Extract company data from the website text."},
+        {"role": "user", "content": website_text},
+    ],
+    response_format={"type": "json_schema", "json_schema": {"name": "Company", "schema": schema, "strict": True}},
+)
 
-Monitoring schema rejection rates is the health metric for your enrichment pipeline. If you are using Pydantic as a post-generation validation layer, log every rejection: the input text, the model output, the specific field that failed, and the error type. Over time, rejection rates tell you whether your prompt is degrading, whether the model version changed behavior, or whether your input distribution shifted. A sudden spike in rejections on the `website` field might mean the source websites changed their URL format, not that the model got worse. A gradual increase in rejections on `funding_stage` might mean the enum is too narrow for the companies you are now enriching — startups are inventing new funding stage names faster than your schema accounts for.
+enriched = CompanyEnrichment.model_validate_json(response.choices[0].message.content)
+print(f"Waterfall cell: {enriched.company_name} | {enriched.funding_stage} | {enriched.employee_count} employees")
+```
 
-Rate-limit implications compound with retries. If your enrichment pipeline processes 1,000 companies and 5% require a retry, that is 50 extra API calls. If the retry also fails 5% of the time, those 50 calls produce 2-3 second retries, each consuming rate-limit budget. At scale, this cascading failure can exhaust your API quota before the pipeline finishes. Structured outputs reduce the retry rate at the source — if the model cannot produce invalid output, the validation layer rarely triggers, and the retry loop stays cold. The monitoring dashboard should track the ratio of API calls to successfully enriched rows as a key efficiency metric: a healthy structured output pipeline runs at roughly 1.0 calls per row, while a prompt-only pipeline might run at 1.1-1.3.
+The output is `Waterfall cell: Acme Robotics | series_a | 42 employees`. The enum constraint forced `series_a` — not `"Series A"`, not `"Series-A"`, not `"Pre-seed"`. The integer constraint forced `42`, not `"forty-two"` or `"42 employees"`. Pydantic validation passes on the first attempt. In a 5,000-row Clay table, this is the difference between zero manual interventions and 500.
 
 ## Exercises
 
-**Exercise 1 (Easy):** Modify the `schema` variable in the first code example to add a required field `"bluetooth_version"` of type `"string"`. Re-run the structured output call and confirm the model includes the field with a value extracted from the source text. Then change the type to `"number"` and confirm the model returns a numeric version instead of a string.
+**Exercise 1 (Easy):** Modify the `schema` variable in the first Build It code example to add a required field `"bluetooth_version"` of type `"string"`. Re-run the structured output call and confirm the model includes the field with a value extracted from the source text. Then change the type to `"number"` and confirm the model returns a numeric version instead of a string.
 
-**Exercise 2 (Medium):** Create a Pydantic model called `LeadScore` with fields `score: int` (range 0-100), `confidence: float` (range 0.0-1.0), `reasoning: str` (min length 10), and `recommended_action: Literal["contact", "nurture", "disqualify"]`. Write three test dictionaries — one valid, one with an out-of-range score, one with an invalid enum value — and pass each through `model_validate()`. Print the error type and message for each failure. Then modify the retry loop from the Build It section to use `LeadScore` instead of `CompanyEnrichment` and run it against a paragraph describing a sales lead.
-
-**Exercise 3 (Hard):** Build a nested schema for a company profile that includes a list of products, each with name, price, and a nested `competitor` object containing `company_name` and `market_share` (float 0.0-1.0). Define this as both a JSON Schema for the OpenAI structured output API and a Pydantic model. Generate structured output from a paragraph about a company and its products. Then manually corrupt one field in the output (e.g., set a competitor's `market_share` to 1.5) and confirm that Pydantic catches the violation at the correct nesting depth. Print the full error location path from `error.loc`.
+**Exercise 2 (Medium):** Build a nested Pydantic model called `LeadScore` with fields `score: int` (range 0–100), `confidence: float` (range 0.0–1.0), `reasoning: str` (min length 10), and `recommended_action: Literal["contact", "nurture", "disqualify"]`. Write three test dictionaries — one valid, one with an out-of-range score, one with an invalid enum value — and pass each through `model_validate()`. Print the error type and message for each failure. Then modify the retry loop from Build It to use `LeadScore` instead of `CompanyEnrichment` and run it against a paragraph describing a sales lead.
 
 ## Key Terms
 
@@ -334,4 +355,3 @@ Rate-limit implications compound with retries. If your enrichment pipeline proce
 - **JSON mode as token-level constraint**: OpenAI Platform Documentation, "Structured Outputs" — section comparing JSON mode vs. structured outputs. [CITATION NEEDED — concept: OpenAI's internal implementation detail of JSON mode as a logit processor / grammar constraint, exact doc section]
 - **Pydantic validation API**: Pydantic v2 documentation, `model_validate()` and `ValidationError`. Available at `docs.pydantic.dev/latest/`.
 - **Constrained decoding via finite-state machines (FSM) and context-free grammars (CFG)**: Covered in Phase 5 · 20 (Structured Outputs & Constrained Decoding) of this curriculum; for external reference see Outlines library documentation and XGrammar. [CITATION NEEDED — concept: specific academic or library reference for FSM-based logit masking in LLM constrained decoding]
-- **Zone 11 connection (Evals, LLM testing, reply classification)**: Living GTM mapping — "Evals = A/B testing your sequences before they go live; reply classification is your eval feedback loop." Structured outputs are the output format for reply classification labels. [CITATION NEEDED — concept: exact gtm-topic-map.md source for Zone 11 row]

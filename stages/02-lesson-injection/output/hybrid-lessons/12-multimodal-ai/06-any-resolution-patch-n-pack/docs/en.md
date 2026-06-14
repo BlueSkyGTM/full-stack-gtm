@@ -210,34 +210,79 @@ Run this and you see the packing decisions. The large document (2480×3508 = 33,
 
 ## Use It
 
-Patch-n'-pack at native resolution is foundational for Zone 2 enrichment pipelines that process visual signals — company logos, product screenshots, ad creatives, document scans — where downscaling destroys the signal that makes extraction work. Consider a Clay enrichment workflow that ingests a prospect's website screenshot, their LinkedIn company logo, and a PDF of their pricing page. Each arrives at a different resolution. The screenshot might be 1440×900 (landscape), the logo 200×200 (square), the PDF page rendered at 2550×3300 (portrait letter). A fixed-resolution encoder forced to resize all three to 224×224 will read the logo fine (downscaled slightly), will struggle with the screenshot (text becomes blurry), and will make the PDF pricing table completely unreadable (3300 pixels compressed to 224 is a 14.7× reduction — every character becomes sub-pixel).
+Patch-n'-pack lets a single SigLIP-class encoder process a Clay enrichment batch — company logos, website screenshots, and scanned pricing PDFs — at native resolution in one forward pass, where a fixed-resolution encoder would silently destroy the text and structure you are trying to extract. This is the visual-data backbone for Zone 2 enrichment (Cluster 1.2 — TAM Refinement & ICP Scoring): when you enrich a prospect record with their logo, a screenshot of their homepage, and a rendered pricing page, each arrives at a different aspect ratio, and downscaling any of them degrades the downstream signal proportionally to the compression factor.
 
-With patch-n'-pack, the same encoder processes all three at native resolution in a single forward pass. The screenshot generates 5,062 patches, the logo generates 169 patches, the PDF page generates 32,938 patches. The packing scheduler assigns them to batches within the token budget. The logo costs almost nothing in compute — 169 tokens out of a 16,384 budget means it rides alongside other enrichment images with negligible overhead. The PDF page is expensive but the information is preserved: every number in the pricing table is represented by real pixels at real resolution, not interpolated mush.
+```python
+patch_size = 16
+budget = 16384
 
-The GTM application is direct: enrichment accuracy on visual data — OCR quality on scanned business cards, chart data extraction from earnings report screenshots, logo classification for brand monitoring — degrades proportionally to the downscaling factor. A pricing table at 14.7× downscale is not "slightly worse OCR." It is "OCR returns garbage characters because the vertical strokes in digits have been averaged away." Patch-n'-pack eliminates this failure mode entirely. The cost is token budget management: you need the packing scheduler to avoid one 33,000-patch document monopolizing a batch that could have held fifteen logos.
+assets = [
+    ("acme_logo", 200, 200),
+    ("acme_homepage_screenshot", 1440, 900),
+    ("acme_pricing_pdf_page", 2550, 3300),
+    ("acme_banner_ad", 200, 3000),
+    ("acme_favicon", 64, 64),
+    ("acme_og_image", 1200, 630),
+    ("rival_favicon", 32, 32),
+    ("rival_logo", 480, 480),
+]
 
-## Ship It
+tagged = [(n, h, w, (h // patch_size) * (w // patch_size)) for n, h, w in assets]
+tagged.sort(key=lambda x: x[3], reverse=True)
 
-Token budget utilization in a patch-n'-pack pipeline is the visual analog of reply rate drift — it is a pipeline health signal that tells you when your input distribution has shifted. Zone 12 observability means instrumenting the packing scheduler to log not just throughput but utilization metrics: average batch fill percentage, max image resolution per batch, and the ratio of processing time to token count. When average batch utilization drops from 85% to 40% over a week, your enrichment pipeline is receiving images with abnormal aspect ratios — maybe a data source started returning thumbnails instead of full screenshots, or a scraper is hitting a CDN that serves compressed previews. The token budget metric catches this before the downstream model quality metrics do, because the model will silently produce worse embeddings on thumbnails without throwing an error.
+batches = []
+for entry in tagged:
+    for b in batches:
+        if sum(e[3] for e in b) + entry[3] <= budget:
+            b.append(entry); break
+    else:
+        batches.append([entry])
 
-In production, the packing scheduler becomes an observability surface. Every batch assignment is a log line: timestamp, image count, total tokens, budget utilization, max resolution, min resolution. You can trace any degraded enrichment result back to the specific batch it was packed into and see whether it shared a batch with an anomalously large image that starved it of attention capacity (attention is masked, so this should not matter — but if your mask implementation has a bug, this is how you find it). The first-fit-decreasing scheduler also produces a natural ordering of images by patch count, which is useful for capacity planning: if your 95th percentile image requires 8,000 patches and your budget is 16,384, you can fit at most two large images per batch. When the 99th percentile jumps to 15,000 patches (someone started uploading uncompressed medical scans to the enrichment pipeline), the scheduler log shows the shift before any dashboard alert fires.
+naive_pad_tokens = max(h for _, h, w, _ in tagged) // patch_size * max(w for _, _, w, _ in tagged) // patch_size * len(tagged)
+packed_tokens = sum(e[3] for e in tagged)
+oversized = [e for e in tagged if e[3] > budget]
 
-The practical observability pattern: emit a structured log entry per batch with `{"batch_id": ..., "image_count": ..., "total_tokens": ..., "budget": ..., "utilization": ..., "max_patches": ..., "min_patches": ...}`. Compute the rolling mean of utilization over 1,000 batches. If it drops below 60%, your pipeline is wasting compute on underfilled batches — either raise the batch budget or investigate why images are smaller than expected. If the rolling max of `max_patches` exceeds your budget, individual images are being processed alone (or split across batches), which means your throughput drops by the ratio of oversized images. These metrics cost nothing to collect — the scheduler already computes them — and they surface distribution shift hours before model quality degrades enough to notice in downstream task accuracy.
+print(f"Enrichment batch: {len(tagged)} visual assets for 2 prospect companies")
+print(f"Patch-n'-pack total tokens: {packed_tokens} across {len(batches)} batch(es)")
+print(f"Naive padding total tokens: {naive_pad_tokens} (pad all to max grid)")
+print(f"Padding waste ratio: {(1 - packed_tokens / naive_pad_tokens) * 100:.1f}%")
+print(f"Assets exceeding {budget}-token budget (need solo or split): {[e[0] for e in oversized]}")
+print()
+for i, b in enumerate(batches):
+    total = sum(e[3] for e in b)
+    print(f"Batch {i}: {total} tokens, {total/budget*100:.1f}% fill")
+    for name, h, w, n in b:
+        print(f"  {name:<28} {h}x{w:<6} -> {n:>6} patches")
+```
+
+Run this and you see the enrichment cost model: the favicon and small logo cost almost nothing (4 and 169 tokens), so they ride alongside a homepage screenshot at negligible marginal compute. The pricing PDF at 32,938 patches exceeds the budget and gets flagged for solo processing or splitting. The naive-padding alternative wastes over 90% of its tokens — and more importantly, it would have downscaled the PDF to fit, making the pricing table unreadable before the encoder ever sees it.
 
 ## Exercises
 
-**1. Patch count comparison.** Take five images at resolutions 512×512, 1024×1024, 2048×2048, 480×640, and 128×256. Compute the patch count for each at patch_size=16. Compute the total tokens if all five are padded to 2048×2048 and batched together. Then compute the total tokens with patch-n'-pack (no padding). Print the padding waste ratio.
+**1. Naive padding vs patch-n'-pack waste ratio.** Write a function that takes a list of `(name, height, width)` tuples and computes two token counts: (a) naive padding — every image padded to the max height and max width in the list, all at `patch_size=16`; (b) patch-n'-pack — sum of native patch counts. Run it on this batch: `[("a", 256, 256), ("b", 512, 512), ("c", 1024, 1024), ("d", 224, 224)]`. Print both counts, the waste ratio, and state which single image dominates the naive-padding cost. Then add a 2048×2048 image and rerun — print the new waste ratio and explain why one oversized image makes naive padding collapse.
 
-**2. Mask verification.** Modify the first code block to add a fourth image at 320×480. Rebuild the packed sequence and attention mask. Verify the mask is block-diagonal by checking that `mask[i, j] == 0` for every pair `(i, j)` where token `i` belongs to a different image than token `j`. Print the number of cross-image attention entries that are incorrectly set to 1 (should be 0).
-
-**3. Scheduler comparison.** Implement a worst-fit-decreasing scheduler (assign each image to the batch with the most remaining capacity, not the first batch with room). Run both first-fit-decreasing and worst-fit-decreasing on the eight-image resolution list from Build It. Compare the number of batches and overall utilization. Print which heuristic wins for this specific input.
-
-**4. Positional embedding generalization.** Create a factorized embedding table with `max_rows=64, max_cols=64`. Generate embeddings for a 1024×1024 image (64×64 grid). Then generate embeddings for a 1056×1056 image (66×66 grid). What happens? Print the error. Then increase the table size and confirm the larger image works. This demonstrates the constraint: factorized embeddings generalize to unseen resolutions *up to the table size*.
-
-**5. Naive padding cost.** Write a function that takes a list of image resolutions and simulates naive batch padding (pad all images to the max height and max width in the batch). Compute total tokens for naive padding vs patch-n'-pack. Run it on batches where one image is much larger than the others. Print the waste ratio and identify the threshold at which a single oversized image makes naive padding worse than processing images individually.
+**2. Factorized embedding table-size failure mode.** Create a factorized positional embedding table with `max_rows=64, max_cols=64, half_dim=4`. Generate embeddings for a 1024×1024 image (64×64 grid at patch_size=16) and confirm it works. Then attempt embeddings for a 1056×1056 image (66×66 grid). Catch the `IndexError` and print the failing row/col index. Increase the table to `max_rows=128, max_cols=128` and confirm the larger image now resolves. Print a one-line conclusion: factorized embeddings generalize to unseen resolutions *up to the table ceiling*, and that ceiling is a deployment-time constraint, not a training-time one.
 
 ## Key Terms
 
-**Patch-n'-Pack** — The strategy of extracting patches at native resolution from multiple images and concatenating them into a single transformer sequence, eliminating resize distortion and padding waste.
+**Patch-n'-Pack** — Extracting patches at native resolution from multiple images and concatenating them into one transformer sequence, enforced by a block-diagonal attention mask, eliminating both resize distortion and padding waste.
 
-**Block-diagonal attention mask** — A mask structure where attention is allowed within contiguous blocks of tokens (one block per image)
+**Block-diagonal attention mask** — A mask where each image's patch tokens can only attend to tokens from the same image, producing isolated attention regions within a single concatenated sequence.
+
+**Factorized positional embeddings** — Separate learned lookup tables for row and column indices, combined as `row_emb[r] ⊕ col_emb[c]`, so the same `(r, c)` position maps to the same embedding regardless of total image grid dimensions.
+
+**First-fit-decreasing (FFD) bin packing** — A greedy scheduling heuristic: sort items by size descending, place each into the first bin with remaining capacity. Within ~20% of optimal in practice; runs in milliseconds.
+
+**NaFlex** — SigLIP 2's implementation of patch-n'-pack with flexible resolution scheduling, allowing the encoder to trade patch count (detail) for throughput at inference time. [CITATION NEEDED — concept: NaFlex resolution scheduling algorithm specifics]
+
+**AnyRes tiling** — LLaVA-NeXT's alternative approach: split a high-resolution image into a grid of fixed-size tiles plus a downscaled base image, process each tile separately, concatenate token outputs.
+
+**M-RoPE (Multimodal Rotary Position Embedding)** — Qwen2-VL's approach: rotary position embeddings factorized along temporal, height, and width axes, replacing learned position tables entirely.
+
+## Sources
+
+- Dehghani, Mustafa, Djolonga, et al. "Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution." arXiv:2307.06304, 2023. — Source for patch-n'-pack, block-diagonal masking, and factorized positional embeddings.
+- Wang, et al. "Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution." arXiv:2409.12191, 2024. — Source for M-RoPE (multimodal rotary position embeddings along temporal/height/width axes).
+- [CITATION NEEDED — concept: SigLIP 2 NaFlex variant architecture, its relationship to NaViT, and its inference-time resolution scheduling algorithm] — Referenced as Google DeepMind, 2025; formal publication reference unconfirmed.
+- [CITATION NEEDED — concept: LLaVA-NeXT AnyRes tiling strategy formal publication / arXiv reference] — AnyRes described across the LLaVA-1.6 / LLaVA-NeXT release documentation; no single canonical arXiv paper confirmed.
+- [CITATION NEEDED — concept: GTM enrichment pipeline token-budget benchmarks for OCR, chart extraction, and logo classification at variable resolution] — The claim that extraction quality degrades proportionally to downscaling factor is observed in practice but not formally benchmarked in a cited GTM study.

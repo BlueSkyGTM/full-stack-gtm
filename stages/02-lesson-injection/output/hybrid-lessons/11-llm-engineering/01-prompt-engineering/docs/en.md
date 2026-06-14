@@ -236,4 +236,59 @@ Run all five sections and compare. The zero-shot outputs are inconsistent in for
 
 ## Use It
 
-The enrichment waterfall in Clay is a prompt chain. Each enrichment column is a prompt that conditions on the output of prior columns: company website scraped → company summarized → company classified → lead scored → message personalized. Each step is a separate LLM call with its own prompt, its own output format, and its own error surface. The patterns we just built are the building blocks of that waterfall. Few-shot examples fix the classification accuracy. Output constraints force JSON that Clay's formula columns can reference. Role assignment keeps the research grounded instead of hallucinated
+The enrichment waterfall in Clay is a prompt chain. Each enrichment column is a prompt that conditions on the output of prior columns: company website scraped → company summarized → company classified → lead scored → message personalized. Each step is a separate LLM call with its own prompt, its own output format, and its own error surface. The patterns we just built are the building blocks of that waterfall. Few-shot examples fix the classification accuracy. Output constraints force JSON that Clay's formula columns can reference. Role assignment keeps the research grounded instead of hallucinated. [CITATION NEEDED — concept: Clay enrichment waterfall architecture and column dependency model]
+
+This maps directly to **Cluster 1.2 — TAM Refinement & ICP Scoring**. The enrichment waterfall is the mechanism that turns a raw company list into a scored, tiered, personalized prospect database. Every column in a Clay table is one node in the chain. If your classification column fails (format drift), every downstream column that references it breaks. Prompt engineering at this level is pipeline reliability engineering.
+
+Here is a runnable three-stage enrichment chain that mirrors what a Clay waterfall does — categorize, angle, personalize — against a single lead. Each stage's JSON output feeds the next:
+
+```python
+import anthropic, json
+client = anthropic.Anthropic()
+MODEL = "claude-sonnet-4-20250514"
+lead = {"name": "Vercel", "desc": "Frontend cloud and deployment platform"}
+
+def ask(system, user, tokens=100):
+    r = client.messages.create(model=MODEL, max_tokens=tokens, system=system,
+        messages=[{"role":"user","content":user}])
+    return json.loads(r.content[0].text)
+
+cat = ask("You are a GTM analyst. Output JSON only.",
+    f"Categorize: {lead['name']} - {lead['desc']}\nJSON: {{\"category\":\"<string>\",\"has_engineering_team\":<bool>}}")
+
+angle = ask("You are a sales strategist. Output JSON only.",
+    f"What CI/CD pain point would {lead['name']} ({cat['category']}) have?\nJSON: {{\"pain_point\":\"<string>\"}}")
+
+msg = ask("You are an SDR. Output JSON only.",
+    f"Write a 2-sentence cold open for {lead['name']} about: {angle['pain_point']}\nJSON: {{\"subject\":\"<string>\",\"body\":\"<string>\"}}", tokens=150)
+
+print(json.dumps({"lead": lead["name"], "category": cat["category"],
+    "pain_point": angle["pain_point"], **msg}, indent=2))
+```
+
+Run this and you get a structured enrichment record: the company categorized, a pain-point angle extracted, and a personalized cold open grounded in that angle. That is three nodes of an enrichment waterfall in 25 lines of code. Add error handling (try/except around `json.loads`) and you have the skeleton of a production enrichment step. Scale the `lead` variable to a list of 5,000 and you have a Clay table.
+
+## Exercises
+
+**Exercise 1 — Fix the drift (easy).** Take the zero-shot classifier from Build It. Run it 10 times against the same company and collect the outputs. You will see format drift: some calls return "Tier 1", others return "1" or "tier 1." Now rewrite the prompt using few-shot examples with the exact "Tier N" format. Run it 10 times. Verify that all 10 outputs match the regex `^Tier [123]$`. Then add chain-of-thought and compare: does accuracy improve on the borderline companies (Apex Logistics, Greenleaf Consulting)? Document which pattern combination gives you both format consistency *and* correct classifications.
+
+**Exercise 2 — Build an eval harness (hard).** Create a labeled dataset of 20 companies with their correct ICP tier (you define the labels). Build a test harness that runs the production classifier (role + JSON constraint) against all 20, then measures three things: (1) classification accuracy — how many tiers match your labels, (2) JSON parse failure rate — how many calls failed `json.loads`, (3) average latency per call. Iterate on the prompt until accuracy exceeds 85% and parse failures hit zero. Then swap the prompt for the chaining version and compare all three metrics. Document which approach wins on accuracy versus cost (total tokens consumed across the full dataset). This is the exact workflow you will run when shipping a prompt to production — a prompt that has not passed an eval suite is a prototype, not a deliverable.
+
+## Key Terms
+
+- **Zero-shot prompting** — Giving the model only the instruction and input, with no examples. The baseline pattern; works on simple tasks, fails on format-sensitive or multi-step tasks.
+- **Few-shot prompting** — Providing 2–5 input→output examples before the actual input. Fixes format drift through in-context learning: the model treats examples as a pattern to continue.
+- **Chain-of-thought (CoT)** — Instructing the model to generate intermediate reasoning steps before the final answer. Fixes reasoning collapse by giving the attention mechanism more relevant tokens to condition on.
+- **In-context learning** — The mechanism by which an LLM picks up patterns from examples in the prompt without updating weights. The model is not "learning" — it is conditioning its next-token distribution on the example pattern.
+- **Role assignment** — Setting a persona in the system prompt ("You are a GTM analyst") to bias the model's vocabulary and framing toward a specific domain. Reduces domain hallucination.
+- **Output constraint** — An instruction that forces a specific format (JSON, CSV, markdown table) and prohibits any other output. Makes the output machine-parseable with probability approaching 1.0.
+- **Format drift** — When the model's output shape varies between calls for the same task. The primary failure mode of zero-shot prompts in production pipelines.
+- **Prompt chaining** — Decomposing a complex task into a sequence of simpler prompts where each output feeds the next. Each stage gets its own context window, output format, and error surface. The mechanism behind enrichment waterfalls.
+
+## Sources
+
+- Anthropic. *Claude API Documentation — Messages API*. https://docs.anthropic.com/en/api/messages
+- Wei, J., Wang, X., Schuurmans, D., et al. (2022). *Chain-of-Thought Prompting Elicits Reasoning in Large Language Models*. arXiv:2201.11903. — Source for the CoT mechanism: intermediate tokens improve reasoning by conditioning the final answer on more relevant context.
+- Brown, T., Mann, B., Ryder, N., et al. (2020). *Language Models are Few-Shot Learners*. arXiv:2005.14165. — Source for in-context learning: the model treats few-shot examples as a pattern to continue without weight updates.
+- [CITATION NEEDED — concept: Clay enrichment waterfall architecture and column dependency model]
+- [CITATION NEEDED — concept: production prompt failure rates at scale (format compliance, hallucination rates in enrichment pipelines)]

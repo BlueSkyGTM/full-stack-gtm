@@ -1,0 +1,7 @@
+## Ship It
+
+Before deploying any chunking strategy to production, build a fixture set: 20-50 query-document pairs where you have labeled the gold answer span in each document. Run each strategy, embed the chunks, and measure recall@5 — the percentage of queries where the gold span appears in at least one of the top 5 retrieved chunks. This is the only reliable way to compare strategies on your actual data. General-purpose benchmarks tell you what works on average; your fixture set tells you what works on your competitive briefs, your case studies, your product docs.
+
+For the Clay + RAG workflow specifically: if you are chunking case studies for retrieval in an outbound agent, inspect at least 10 chunks manually before deploying. Read each one and ask: "Could a rep forward this chunk to a prospect without editing?" If the answer is no — because the chunk cuts off the outcome metric, or because it starts mid-sentence, or because it lacks the customer name — the strategy is wrong for that document type. Switch strategies and re-inspect. This manual check takes 15 minutes and catches problems that recall metrics miss, because recall measures whether the right chunk is retrieved, not whether the retrieved chunk is usable.
+
+Overlap configuration deserves a specific production note. For competitive intel docs with dense, interconnected arguments (pricing comparisons, feature matrices), set overlap to 15-20% of chunk size. For case studies with discrete sections that stand alone (Challenge, Solution, Results), set overlap to

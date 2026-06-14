@@ -150,4 +150,68 @@ The output shows four spans with a clear parent-child hierarchy. The pipeline sp
 
 The GenAI semantic conventions map directly onto the **AI Enrichment** cluster in Zone 2. When your Clay waterfall or custom enrichment agent calls an LLM to score leads, extract firmographics, or draft personalization, each call emits a model/client span with `gen_ai.request.model` and token usage attributes. By adding a custom `pipeline.run_id` attribute to every span in the tree, you create a join key that links every token spent back to the specific enrichment run — and therefore to the specific input company.
 
-This is the observability layer for Zone 14's cost management mandate: "Every Clay credit is a token cost — optimize like you would LLM calls" [CITATION NEEDED — concept: Clay credit
+This is the observability layer for Zone 14's cost management mandate: "Every Clay credit is a token cost — optimize like you would LLM calls" [CITATION NEEDED — concept: Clay credit-to-token cost equivalence]. Without semantic conventions, you cannot build a cost dashboard that works across models. With them, the same SpanQL or TraceQL query aggregates spend across Anthropic, OpenAI, and any future provider your pipeline adopts — because they all speak the same attribute vocabulary.
+
+The runnable slice below demonstrates the mechanism: manual OTel spans with GenAI convention attributes attached to a enrichment pipeline that calls two providers. The `pipeline.run_id` acts as the correlation key. Multiply token counts by per-model rates and you get per-run cost without touching a provider billing console.
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter
+
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer("gtm-cost-tracker")
+
+RATES = {
+    "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
+    "gpt-4o": {"input": 0.005, "output": 0.015},
+}
+
+def enrichment_run(run_id, domain, model_calls):
+    with tracer.start_as_current_span("pipeline.run") as root:
+        root.set_attribute("pipeline.run_id", run_id)
+        root.set_attribute("pipeline.input.domain", domain)
+        total = 0.0
+        for mc in model_calls:
+            with tracer.start_as_current_span("chat") as span:
+                span.set_attribute("gen_ai.system", mc["system"])
+                span.set_attribute("gen_ai.request.model", mc["model"])
+                span.set_attribute("gen_ai.usage.input_tokens", mc["in"])
+                span.set_attribute("gen_ai.usage.output_tokens", mc["out"])
+                r = RATES[mc["model"]]
+                total += (mc["in"] * r["input"] + mc["out"] * r["output"]) / 1000
+        root.set_attribute("pipeline.total_cost_usd", round(total, 4))
+        return total
+
+cost = enrichment_run("enrich_042", "acme.com", [
+    {"system": "anthropic", "model": "claude-3-5-sonnet", "in": 1240, "out": 340},
+    {"system": "openai", "model": "gpt-4o", "in": 890, "out": 210},
+])
+print(f"acme.com enrichment cost: ${cost:.4f}")
+```
+
+The console exporter prints three spans. The root `pipeline.run` span carries `pipeline.total_cost_usd`, `pipeline.run_id`, and `pipeline.input.domain`. The two child `chat` spans carry the GenAI convention attributes. Any backend that ingests these spans — Datadog, Honeycomb, Tempo — can now group by `gen_ai.request.model` to show cost-per-model, or group by `pipeline.run_id` to show cost-per-enrichment-run. That query works regardless of which provider SDK emitted the span, because the attribute names are identical.
+
+## Exercises
+
+**Exercise 1 — Add a Third Provider (Medium).** Extend the `enrichment_run` function to include a third model call to `aws.bedrock` using model `anthropic.claude-3-haiku`. Add the rate entry to the `RATES` dictionary (input: 0.0008, output: 0.0016 per 1K tokens). Run the pipeline and confirm the third `chat` span appears with `gen_ai.system = aws.bedrock` and that the total cost includes all three calls. Then write a one-line Python comprehension that sums `gen_ai.usage.input_tokens` across all three child spans to verify cross-provider aggregation yields a single number.
+
+**Exercise 2 — Per-Step Cost Attribution (Hard).** Modify the enrichment pipeline so each `chat` span includes a `pipeline.step_name` attribute (e.g., `"industry_classify"`, `"intent_score"`, `"opener_draft"`). Export the spans to a JSON file. Then write a separate script that reads the JSON, groups spans by `pipeline.step_name`, and prints a table showing step name, model used, input tokens, output tokens, and cost per step. The goal is to identify which enrichment step is the most expensive — the exact question a GTM engineer needs to answer when deciding whether to downgrade a step to a cheaper model.
+
+## Key Terms
+
+- **Semantic Conventions** — A pre-agreed dictionary of OTel span attribute names and value formats that ensures different instrumentation libraries emit compatible telemetry for the same concepts.
+- **`gen_ai.system`** — The convention attribute identifying the LLM provider (e.g., `anthropic`, `openai`, `aws.bedrock`). Enables provider-level grouping in dashboards.
+- **Model/client span** — An OTel span wrapping a single LLM API call. Carries `gen_ai.request.model`, token usage attributes, and optionally response metadata.
+- **Agent span** — A span wrapping an orchestration loop (LangGraph, CrewAI, custom ReAct). Named `invoke_agent {gen_ai.agent.name}`. Parent of model and tool spans.
+- **`OTEL_SEMCONV_STABILITY_OPT_IN`** — Environment variable that controls adoption of semantic convention versions. Set to include `gen_ai` to opt into the GenAI attribute schema and optional content capture.
+- **Content capture** — The practice of logging raw prompt and completion text on GenAI spans. Defaults to off for privacy and storage reasons; opt-in via instrumentation configuration.
+- **`pipeline.run_id`** — A custom (non-convention) correlation attribute you attach to every span in an enrichment run. Functions as a join key for cost attribution queries.
+
+## Sources
+
+- OpenTelemetry Semantic Conventions — Generative AI: `https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/README.md` (specification of `gen_ai.*` attributes, span categories, and content capture policy)
+- OpenTelemetry Python SDK Documentation: `https://opentelemetry.io/docs/languages/python/` (TracerProvider, SpanProcessor, ConsoleSpanExporter API used in Build It and Use It)
+- OpenTelemetry Semantic Convention Stability and Opt-In: `https://opentelemetry.io/docs/specs/semconv/` (documentation of `OTEL_SEMCONV_STABILITY_OPT_IN` environment variable and versioning policy)

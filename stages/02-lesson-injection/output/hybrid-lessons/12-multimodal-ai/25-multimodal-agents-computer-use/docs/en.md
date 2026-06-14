@@ -107,4 +107,148 @@ class SimulatedBrowser:
                     return {"status": "clicked", "element": eid}
             return {"status": "error", "detail": f"No element with id '{eid}'"}
         elif atype == "type":
-            return {"status": "typed", "value":
+            return {"status": "typed", "value": action.get("text", "")}
+        elif atype == "scroll":
+            return {"status": "scrolled", "direction": action.get("text", "down")}
+        elif atype == "done":
+            return {"status": "done"}
+        return {"status": "error", "detail": f"Unknown action '{atype}'"}
+
+
+class SimulatedVLM:
+    def __init__(self):
+        self.step_count = 0
+
+    def predict_action(self, observation, goal, history):
+        self.step_count += 1
+        url = observation["url"]
+        elements = observation["elements"]
+
+        if "careers" in url and "engineering" not in url:
+            target = next((e for e in elements if e["id"] == "link-eng"), None)
+            if target:
+                return {
+                    "action": "click",
+                    "element_id": "link-eng",
+                    "reasoning": f"Goal is engineering roles. Clicking '{target['text']}' link.",
+                }
+
+        if "engineering" in url:
+            roles = [e for e in elements if e["id"].startswith("role-")]
+            parsed = []
+            for r in roles:
+                parts = [p.strip() for p in r["text"].split("—")]
+                if len(parts) >= 2:
+                    parsed.append({"title": parts[0], "location": parts[1]})
+            return {
+                "action": "done",
+                "result": {"roles": parsed, "count": len(parsed)},
+                "reasoning": f"Extracted {len(parsed)} engineering roles from page.",
+            }
+
+        return {"action": "done", "result": {"roles": []}, "reasoning": "No engineering content found."}
+
+
+class AgentLoop:
+    def __init__(self, browser, vlm, goal, max_steps=10):
+        self.browser = browser
+        self.vlm = vlm
+        self.goal = goal
+        self.max_steps = max_steps
+        self.history = []
+
+    def run(self):
+        for step in range(1, self.max_steps + 1):
+            obs = self.browser.observe()
+            print(f"\n── Step {step} ──")
+            print(f"  URL:      {obs['url']}")
+            print(f"  Elements: {[e['id'] for e in obs['elements']]}")
+
+            action = self.vlm.predict_action(obs, self.goal, self.history)
+            print(f"  Action:   {action['action']}")
+            print(f"  Reason:   {action.get('reasoning', '')}")
+
+            self.history.append({"step": step, "observation": obs, "action": action})
+
+            if action["action"] == "done":
+                return action.get("result", {})
+
+            result = self.browser.execute(action)
+            print(f"  Result:   {result}")
+            if result.get("status") == "error":
+                print(f"  ⚠ Grounding or execution error — continuing loop.")
+
+        print("\nMax steps reached without task completion.")
+        return None
+
+
+if __name__ == "__main__":
+    browser = SimulatedBrowser()
+    vlm = SimulatedVLM()
+    agent = AgentLoop(
+        browser=browser,
+        vlm=vlm,
+        goal="Find all open engineering roles. Return titles and locations.",
+    )
+    result = agent.run()
+    print("\n══ Final Extraction ══")
+    print(json.dumps(result, indent=2))
+```
+
+Running this produces a two-step trace: the agent observes the home page, grounds the instruction to the `link-eng` element, clicks it, re-observes the engineering page, parses three role cards, and returns structured JSON. That trace is the entire computer-use pattern in miniature. Every real production agent—Anthropic's, OpenAI's, or a custom Playwright loop—runs this same observe-predict-execute cycle. The only differences are the observation fidelity (screenshot vs. DOM), the model doing the prediction, and the error-recovery logic.
+
+## Use It
+
+Anthropic's computer-use tool API (beta) is the production mechanism: Claude receives a base64-encoded screenshot inside a message, emits a structured `tool_use` block containing an action (coordinate-based `click`, `type`, `key`, `screenshot`, or `done`), and the client executes that action against a real browser via Playwright before sending the next screenshot back. The GTM application is hiring-intent signal enrichment—scanning target-account careers pages for role openings that indicate budget expansion, team scaling, or technology adoption aligned to your ICP.
+
+```python
+import anthropic, base64, json, time
+
+client = anthropic.Anthropic()
+
+def extract_hiring_signals(careers_url, keyword="engineer"):
+    tools = [{"type": "computer_20241022", "name": "computer",
+              "display_width_px": 1280, "display_height_px": 800}]
+    shot = take_screenshot(careers_url)
+    messages = [{"role": "user", "content": [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": shot}},
+        {"type": "text", "text": f"Find open {keyword} roles. Return JSON: {{\"roles\":[{{\"title\":\"\",\"location\":\"\"}}]}}."},
+    ]}]
+    for _ in range(15):
+        resp = client.beta.computer_tools.messages.create(
+            model="claude-sonnet-4-5-20250929", max_tokens=4096,
+            tools=tools, messages=[{"role": "user", "content": messages[-1]["content"]}])
+        messages.append({"role": "assistant", "content": resp.content})
+        if resp.stop_reason == "end_turn":
+            return json.loads(_extract_text(resp))
+        for block in resp.content:
+            if block.type == "tool_use":
+                take_screenshot.action(block.input)
+        shot = take_screenshot(careers_url)
+        messages.append({"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": shot}}]})
+    return {"error": "max_steps"}
+```
+
+This is account-level signal enrichment — a layer of intelligence that flags ICP-fit companies actively scaling teams you sell into. [CITATION NEEDED — concept: GTM cluster mapping for hiring-intent signal enrichment] Every step that goes wrong—wrong click, wrong page, stale screenshot—wastes a VLM call that costs real money. The agent loop in Build It shows the structure; this slice shows the real tool surface. Run it against five target accounts and you will immediately see which ones have clean, parseable careers pages and which ones fight you with shadow DOM, login walls, or CAPTCHAs.
+
+## Exercises
+
+**Exercise 1 — Add a pagination step.** The `SimulatedBrowser` currently has two pages. Add a third page (`engineering-page-2`) with two additional roles and a `btn-next` element on the engineering page. Modify `SimulatedVLM.predict_action` to detect when a "Next" button exists and issue a `click` on it before returning `done`. Verify the final extraction includes all five roles across both pages.
+
+**Exercise 2 — Inject a grounding error and recover.** Modify `SimulatedVLM` so that on step 1 it clicks `link-sales` instead of `link-eng` (simulating a VLM that misidentified the target element). Add a `detect_state_drift` method to `AgentLoop` that compares the current URL against the goal's expected path and issues a corrective navigation if the agent lands on the wrong page. Your agent should reach the engineering page by step 3 and complete extraction by step 5. This is the pattern real production agents need: not perfect prediction, but error detection and recovery within the step budget.
+
+## Key Terms
+
+- **GUI Grounding** — The task of mapping a natural-language instruction to a specific interactive element on a specific screen state, either via pixel coordinates or DOM element references.
+- **Action Space** — The finite set of action primitives an agent can emit (click, type, scroll, done, etc.). Coarser action spaces are universal but lossy; richer ones are precise but require richer observations.
+- **Computer-Use Agent** — A multimodal agent that perceives a graphical interface via screenshot or accessibility tree, reasons about it with a VLM, and emits structured actions that a browser or OS runtime executes.
+- **Accessibility Tree** — A serialized representation of a page's interactive elements (roles, labels, bounding boxes) that an LLM can reason over as text, eliminating the need for pixel-coordinate prediction.
+- **State Drift** — The compounding error condition where an early wrong action (mis-clicked link, mistyped text) puts the agent on a trajectory where every subsequent observation is off-goal, making recovery harder with each step.
+
+## Sources
+
+- Anthropic. "Computer Use (Beta)." *Anthropic Documentation*, 2024. https://docs.anthropic.com/en/docs/build-with-claude/computer-use
+- Microsoft. "OmniParser: Screen Parsing Model for Pure Vision Based GUI Agent." GitHub, 2024. https://github.com/microsoft/OmniParser
+- browser-use. "browser-use: Open-source web-automation for any LLM." GitHub, 2024. https://github.com/browser-use/browser-use
+- [CITATION NEEDED — concept: GTM cluster mapping for hiring-intent signal enrichment as a TAM/account-intelligence workflow]

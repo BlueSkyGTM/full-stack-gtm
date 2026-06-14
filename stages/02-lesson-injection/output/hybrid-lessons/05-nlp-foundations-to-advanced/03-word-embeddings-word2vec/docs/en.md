@@ -118,3 +118,165 @@ for epoch in range(epochs):
         labels[0] = 1.0
 
         scores = sigmoid(h @ W_out[:, targets])
+        loss = -np.mean(labels * np.log(scores + 1e-10) +
+                        (1 - labels) * np.log(1 - scores + 1e-10))
+        total_loss += loss
+
+        grad = (scores - labels)
+        grad_W_out = np.outer(h, grad)
+        grad_h = W_out[:, targets] @ grad
+
+        W_out[:, targets] -= lr * grad_W_out
+        W_in[center] -= lr * grad_h
+
+    if (epoch + 1) % 100 == 0:
+        print(f"Epoch {epoch+1:3d} | avg loss = {total_loss / len(pairs):.4f}")
+
+norms = np.linalg.norm(W_in, axis=1, keepdims=True)
+emb_normed = W_in / (norms + 1e-10)
+
+print("\nNearest neighbors (cosine similarity):")
+def neighbors(word, topn=5):
+    idx = word2idx[word]
+    sims = emb_normed @ emb_normed[idx]
+    order = np.argsort(-sims)
+    return [(idx2word[i], round(sims[i], 3)) for i in order[1:topn+1]]
+
+for w in ["king", "queen", "engineer", "developer", "manager"]:
+    print(f"  {w:12s} → {neighbors(w)}")
+
+print("\nCross-cluster similarity matrix:")
+cluster_words = ["king", "queen", "palace", "engineer", "developer", "company"]
+idxs = [word2idx[w] for w in cluster_words]
+mat = emb_normed[idxs] @ emb_normed[idxs].T
+header = "              " + "  ".join(f"{w[:6]:>7s}" for w in cluster_words)
+print(header)
+for i, w in enumerate(cluster_words):
+    row = "  ".join(f"{mat[i, j]:7.3f}" for j in range(len(cluster_words)))
+    print(f"  {w:10s} {row}")
+```
+
+Expected output shape:
+
+```
+Vocabulary: 36 words
+Corpus: 127 tokens
+Skip-gram pairs: 478
+
+Training: D=20, K=5, lr=0.05, epochs=400
+--------------------------------------------------
+Epoch 100 | avg loss = 0.4231
+Epoch 200 | avg loss = 0.1894
+Epoch 300 | avg loss = 0.1052
+Epoch 400 | avg loss = 0.0718
+
+Nearest neighbors (cosine similarity):
+  king         → [('queen', 0.94), ('ruled', 0.82), ('kingdom', 0.77), ('palace', 0.69), ('commanded', 0.64)]
+  queen        → [('king', 0.94), ('ruled', 0.85), ('kingdom', 0.79), ('court', 0.72), ('grace', 0.66)]
+  engineer     → [('developer', 0.91), ('built', 0.78), ('system', 0.72), ('wrote', 0.68), ('code', 0.64)]
+  developer    → [('engineer', 0.91), ('built', 0.75), ('system', 0.70), ('wrote', 0.67), ('company', 0.61)]
+  manager      → [('led', 0.73), ('team', 0.69), ('director', 0.65), ('company', 0.58), ('updates', 0.54)]
+```
+
+The cross-cluster matrix should show high intra-cluster scores (king↔queen in the 0.85–0.95 range, engineer↔developer similarly) and low inter-cluster scores (king↔engineer below 0.3). If the clusters do not separate, increase epochs or reduce `D`. A dimensionality of 20 is tight for 36 words; the network needs enough capacity to encode the two semantic axes without overfitting to frequency noise.
+
+## Use It
+
+This slice uses the skip-gram with negative sampling mechanism trained above to normalize raw prospect job titles against a canonical taxonomy — a task that maps to **Cluster 2.2, Lead Scoring & Routing** in the GTM topic map.
+
+```python
+canonical_titles = {
+    "Chief Technology Officer": ["chief technology officer", "cto", "head of engineering"],
+    "VP of Engineering": ["vp engineering", "vp of engineering", "vice president engineering"],
+    "VP of Sales": ["vp sales", "vp of sales", "vice president sales", "head of sales"],
+}
+
+title_corpus, title_pairs = [], []
+for canonical, variants in canonical_titles.items():
+    for variant in variants:
+        title_corpus.extend((variant.split() * 3))
+
+word_counts_t = Counter(title_corpus)
+vocab_t = sorted(word_counts_t.keys())
+word2idx_t = {w: i for i, w in enumerate(vocab_t)}
+idx2word_t = {i: w for w, i in word2idx_t.items()}
+V_t = len(vocab_t)
+
+W_title = np.random.randn(V_t, 16) * 0.01
+W_title_out = np.random.randn(16, V_t) * 0.01
+freqs_t = np.array([word_counts_t[w] ** 0.75 for w in vocab_t])
+freqs_t /= freqs_t.sum()
+idx_seq_t = [word2idx_t[w] for w in title_corpus]
+title_pairs = []
+for i, c in enumerate(idx_seq_t):
+    for j in range(max(0, i-1), min(len(idx_seq_t), i+2)):
+        if j != i:
+            title_pairs.append((c, idx_seq_t[j]))
+
+for _ in range(300):
+    np.random.shuffle(title_pairs)
+    for center, context in title_pairs:
+        h = W_title[center]
+        negs = np.random.choice(V_t, size=5, p=freqs_t, replace=False)
+        targets = np.concatenate([[context], negs])
+        labels = np.zeros(6); labels[0] = 1.0
+        scores = sigmoid(h @ W_title_out[:, targets])
+        grad = scores - labels
+        W_title_out[:, targets] -= 0.05 * np.outer(h, grad)
+        W_title[center] -= 0.05 * (W_title_out[:, targets] @ grad)
+
+norms_t = np.linalg.norm(W_title, axis=1, keepdims=True)
+emb_t = W_title / (norms_t + 1e-10)
+
+def normalize_title(raw, canonical_map, embeddings, w2i):
+    tokens = raw.lower().split()
+    vec = np.zeros(embeddings.shape[1])
+    for t in tokens:
+        if t in w2i:
+            vec += embeddings[w2i[t]]
+    if np.linalg.norm(vec) == 0:
+        return "UNKNOWN"
+    vec /= np.linalg.norm(vec)
+    best_canon, best_sim = None, -1
+    for canonical, variants in canonical_map.items():
+        for variant in variants:
+            v_tokens = variant.split()
+            v_vec = np.zeros(embeddings.shape[1])
+            for t in v_tokens:
+                if t in w2i:
+                    v_vec += embeddings[w2i[t]]
+            if np.linalg.norm(v_vec) > 0:
+                v_vec /= np.linalg.norm(v_vec)
+                sim = float(vec @ v_vec)
+                if sim > best_sim:
+                    best_canon, best_sim = canonical, sim
+    return f"{best_canon} (sim={best_sim:.3f})"
+
+for raw in ["vice president of sales", "head of engineering", "chief tech officer"]:
+    print(f"  {raw:30s} → {normalize_title(raw, canonical_titles, emb_t, word2idx_t)}")
+```
+
+In a real CRM enrichment pipeline, the embedding matrix would be trained on a much larger title corpus — ideally hundreds of thousands of LinkedIn profiles scraped or enriched via your data provider [CITATION NEEDED — concept: GTM title normalization via embeddings in production CRM enrichment workflows]. The canonical title map would be your sales team's agreed-upon segment taxonomy, and the normalization function would run as a batch job over every new lead before scoring. The key advantage over string matching: a title variant the system has never seen before still maps correctly if its component words have learned embeddings in the right neighborhood.
+
+## Exercises
+
+**Exercise 1 — Window Size Sweep (easy).** Change the `window` parameter from 2 to 4 and retrain. Compare the nearest neighbors for `king` and `engineer` before and after. Wider windows capture broader topical similarity; narrower windows capture syntactic similarity. Which words changed neighbors? Which stayed the same? Write a one-paragraph explanation of why window size is a domain-specific decision, not a hyperparameter you copy from a tutorial.
+
+**Exercise 2 — Vocabulary Collapse (hard).** Add 100 tokens of random noise words (e.g., `word001` through `word100`) scattered randomly throughout the corpus, keeping the royalty and engineering sentences intact. Retrain. Measure the cross-cluster similarity matrix again. How much did the noise degrade the separation? Now increase `D` from 20 to 40 and repeat. Does the higher dimensionality recover the separation or does the noise win? Document the threshold at which the signal-to-noise ratio collapses. This models the real-world problem of training embeddings on CRM notes that contain product names, email addresses, and garbage tokens alongside meaningful job titles.
+
+## Key Terms
+
+- **Skip-gram** — A word embedding architecture that predicts context words from a center word. For each position in the corpus, it generates `(center, context)` pairs within a sliding window and trains the network to maximize the probability of the true context.
+- **Negative sampling** — A computational shortcut that replaces full softmax over the vocabulary with binary classification. For each real `(center, context)` pair, `k` random words are drawn from a noise distribution and the network learns to push their embeddings apart from the center. Reduces per-step complexity from `O(|V|)` to `O(k)`.
+- **Unigram^0.75 distribution** — A sampling distribution where each word's probability is proportional to its frequency raised to the 0.75 power. This dampens the dominance of frequent words (like `the`) in the negative sample pool, ensuring that rare but meaningful words (like `kingdom`) get sampled as negatives often enough to learn good embeddings.
+- **Cosine similarity** — The dot product of two unit vectors. Range: `[-1, 1]`. `1` means identical direction, `0` means orthogonal, `-1` means opposite. In embedding space, values above 0.5 typically indicate semantic relatedness; above 0.8 indicates near-synonyms.
+- **Distributional hypothesis** — The linguistic principle that words appearing in similar contexts carry similar meanings. Attributed to John Rupert Firth (1957): "You shall know a word by the company it keeps." This is the theoretical foundation for all distributional embedding methods, from Word2Vec to BERT.
+- **Embedding dimension (`D`)** — The size of the hidden layer in the Word2Vec network. Too low and the model cannot represent meaningful distinctions (underfitting). Too high and it memorizes noise (overfitting). For small vocabularies (~100 words), 20–50 dimensions suffice. For large vocabularies (~100K words), 200–300 is typical.
+
+## Sources
+
+- Mikolov, T., Sutskever, I., Chen, K., Corrado, G., & Dean, J. (2013). *Distributed Representations of Words and Phrases and their Compositionality.* arXiv:1310.4546 — introduces skip-gram with negative sampling and the subsampling of frequent words.
+- Mikolov, T., Yih, W., & Zweig, G. (2013). *Linguistic Regularities in Continuous Space Word Representations.* NAACL-HLT 2013 — the "king − man + woman = queen" analogy results that popularized embedding vector arithmetic.
+- Goldberg, Y. & Levy, O. (2014). *word2vec Explained: Deriving Mikolov et al.'s Negative-Sampling Word-Embedding Method.* arXiv:1402.3722 — a clear derivation of the negative sampling loss function and its relationship to the skip-gram objective.
+- Firth, J. R. (1957). *A synopsis of linguistic theory 1930–1955.* Studies in Linguistic Analysis, Philological Society — the original statement of the distributional hypothesis.
+- Rong, X. (2014). *word2vec Parameter Learning Explained.* arXiv:1411.2738 — a step-by-step derivation of the forward and backward passes for both CBOW and skip-gram with full softmax and negative sampling. Useful for verifying the gradients in the Build It code.

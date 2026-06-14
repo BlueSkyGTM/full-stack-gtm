@@ -182,13 +182,12 @@ Both losses decrease over the gradient steps. InfoNCE starts higher because the 
 
 ## Use It
 
-Zero-shot classification is where CLIP earns its keep in a GTM enrichment pipeline. Instead of training a custom classifier to distinguish pricing pages from blog posts from product pages, you encode a screenshot alongside text prompts for each category and take the argmax. The contrastive alignment CLIP learned during pretraining generalizes to these prompts without any fine-tuning.
+CLIP's dual-encoder contrastive alignment — a shared embedding space where image vectors and text vectors are directly comparable via cosine similarity — gives you zero-shot visual classification for GTM screenshot enrichment. Encode a prospect's homepage alongside candidate text prompts ("a pricing page", "a blog post", "a login screen") and take the argmax. No fine-tuning, no labeled examples. This is the page-type tagging primitive behind website-based ICP scoring and tech-stack detection from pixels.
 
-The mechanism: CLIP's text encoder maps each prompt to a vector in the shared embedding space. CLIP's image encoder maps the screenshot to the same space. Cosine similarity between the image vector and each prompt vector gives a score. The prompt with the highest score wins. This is identical to the zero-shot ImageNet evaluation from the original CLIP paper — they used "a photo of a {class}" templates — except your classes are GTM-relevant page types instead of dog breeds.
+[CITATION NEEDED — concept: CLIP-based screenshot classification for B2B page-type tagging in GTM enrichment pipelines]
 
 ```python
-import torch
-import torch.nn.functional as F
+import torch, torch.nn.functional as F
 from transformers import CLIPModel, CLIPProcessor
 from PIL import Image, ImageDraw
 
@@ -196,171 +195,44 @@ model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 model.eval()
 
-def make_pricing_page():
-    img = Image.new("RGB", (400, 300), (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    draw.rectangle([50, 50, 150, 250], outline=(100, 100, 100), fill=(240, 240, 240))
-    draw.rectangle([160, 50, 260, 250], outline=(100, 100, 100), fill=(240, 240, 240))
-    draw.rectangle([270, 50, 370, 250], outline=(100, 100, 100), fill=(240, 240, 240))
-    draw.text((90, 60), "$9", fill=(0, 0, 0))
-    draw.text((190, 60), "$29", fill=(0, 0, 0))
-    draw.text((300, 60), "$99", fill=(0, 0, 0))
-    return img
+PROMPTS = ["a pricing page with subscription tiers", "a blog post article",
+           "a login or signup form", "a product landing page"]
 
-def make_blog_page():
-    img = Image.new("RGB", (400, 300), (250, 250, 250))
-    draw = ImageDraw.Draw(img)
-    for y in range(80, 280, 12):
-        draw.line([50, y, 350, y], fill=(180, 180, 180), width=1)
-    draw.text((50, 30), "Blog Post Title", fill=(30, 30, 30))
-    return img
-
-def make_login_page():
-    img = Image.new("RGB", (400, 300), (245, 245, 245))
-    draw = ImageDraw.Draw(img)
-    draw.rectangle([130, 80, 270, 220], outline=(80, 80, 80), fill=(255, 255, 255))
-    draw.rectangle([145, 110, 255, 130], outline=(150, 150, 150), fill=(240, 240, 240))
-    draw.rectangle([145, 145, 255, 165], outline=(150, 150, 150), fill=(240, 240, 240))
-    draw.rectangle([145, 180, 255, 210], fill=(30, 100, 200))
-    return img
-
-screenshots = [
-    ("pricing_page", make_pricing_page()),
-    ("blog_post", make_blog_page()),
-    ("login_page", make_login_page()),
-]
-
-page_type_prompts = [
-    "a screenshot of a pricing page with subscription tiers",
-    "a screenshot of a blog post or article",
-    "a screenshot of a login or signup page",
-    "a screenshot of a product landing page",
-    "a screenshot of a contact or about page",
-]
-
-images = [s[1] for s in screenshots]
-inputs = processor(text=page_type_prompts, images=images, return_tensors="pt", padding=True)
-
+text_inputs = processor(text=PROMPTS, return_tensors="pt", padding=True)
 with torch.no_grad():
-    outputs = model(**inputs)
+    text_emb = F.normalize(model.get_text_features(**text_inputs), dim=-1)
 
-image_embeds = F.normalize(outputs.image_embeds, dim=-1)
-text_embeds = F.normalize(outputs.text_embeds, dim=-1)
-
-sim = image_embeds @ text_embeds.T
-
-print("Zero-Shot Page-Type Classification")
-print("=" * 60)
-for i, (true_label, _) in enumerate(screenshots):
-    scores = sim[i]
-    best_idx = scores.argmax().item()
-    print(f"\n  Screenshot: {true_label}")
-    for j, prompt in enumerate(page_type_prompts):
-        marker = " <== WINNER" if j == best_idx else ""
-        short_prompt = prompt.replace("a screenshot of a ", "")
-        print(f"    {scores[j].item():.4f}  {short_prompt}{marker}")
-    correct = page_type_prompts[best_idx].replace("a screenshot of a ", "")
-    match = "CORRECT" if true_label in correct or correct in true_label else "WRONG"
-    print(f"    Prediction: {correct}  [{match}]")
-```
-
-The same mechanism handles logo detection. Encode a screenshot of a prospect's homepage alongside prompts like "a website showing the Stripe logo", "a website showing the HubSpot logo", "a website showing the Salesforce logo". The highest-scoring prompt identifies the technology vendor visible on the page. This is visual enrichment — extracting signal from pixels that your HTML scraper missed because the logo is a background image or an SVG the parser discarded.
-
-The contrastive alignment is what makes this work without fine-tuning. CLIP never saw your specific prompts during training. It never saw screenshots of pricing pages. But it did see millions of image-caption pairs where text described visual content, so it learned a general mapping from visual concepts to textual descriptions. Your prompts ride on top of that learned mapping. When a prompt scores poorly across all images, that is a prompt-engineering problem, not a model problem — rephrase the prompt to match how people naturally caption similar images on the web.
-
-## Ship It
-
-Deploying CLIP-based visual enrichment into a production pipeline means wrapping the inference call in observability. The Zone 12 pattern — pipeline health monitoring through signal drift — applies directly: when average cosine similarity scores on your page-type classifier drop below a threshold, your enrichment quality is degrading, and you need to know before downstream sequences start misfiring.
-
-The mechanism for monitoring: log every classification's top score and confidence margin (difference between the top two scores). Track the distribution over time. A healthy pipeline shows stable score distributions. A drift in those distributions indicates either model degradation (unlikely with a frozen CLIP checkpoint) or input distribution shift (your prospect list now contains pages CLIP was never trained on — foreign-language sites, heavy JavaScript SPAs that render as blank screenshots, or new design patterns). This is the visual analog of reply rate drift as a model degradation signal: the score distribution is your leading indicator, and you catch the problem before it corrupts your CRM data.
-
-```python
-import json
-import time
-import torch
-import torch.nn.functional as F
-from datetime import datetime, timezone
-from transformers import CLIPModel, CLIPProcessor
-from PIL import Image
-
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-model.eval()
-
-PAGE_TYPES = ["pricing page", "blog post", "login page", "product page", "contact page"]
-PROMPTS = [f"a screenshot of a {pt}" for pt in PAGE_TYPES]
-
-text_inputs = processor(text=PROMPTS, return_tensors="pt", padding=True, truncation=True)
-with torch.no_grad():
-    text_outputs = model.get_text_features(**text_inputs)
-    prompt_embeds = F.normalize(text_outputs, dim=-1)
-
-def classify_screenshot(image, source_url="", min_confidence=0.15):
-    inputs = processor(images=image, return_tensors="pt")
+def tag_screenshot(img):
+    inputs = processor(images=img, return_tensors="pt")
     with torch.no_grad():
-        img_embeds = F.normalize(model.get_image_features(**inputs), dim=-1)
+        img_emb = F.normalize(model.get_image_features(**inputs), dim=-1)
+    scores = (img_emb @ text_emb.T).squeeze(0)
+    best = scores.argmax().item()
+    return PROMPTS[best].replace("a ", ""), scores[best].item()
 
-    scores = (img_embeds @ prompt_embeds.T).squeeze(0)
+pricing = Image.new("RGB", (400, 300), "white")
+d = ImageDraw.Draw(pricing)
+for x in [50, 160, 270]:
+    d.rectangle([x, 50, x+100, 250], outline="gray", fill=(240, 240, 240))
+    d.text((x+35, 60), "$", fill="black")
 
-    top_idx = scores.argmax().item()
-    top_score = scores[top_idx].item()
-    sorted_scores = scores.sort(descending=True)
-    margin = (sorted_scores.values[0] - sorted_scores.values[1]).item()
+login = Image.new("RGB", (400, 300), (245, 245, 245))
+d2 = ImageDraw.Draw(login)
+d2.rectangle([130, 80, 270, 220], outline="gray", fill="white")
+d2.rectangle([150, 110, 250, 130], outline="gray", fill=(240, 240, 240))
+d2.rectangle([150, 145, 250, 165], outline="gray", fill=(240, 240, 240))
+d2.rectangle([150, 180, 250, 210], fill=(30, 100, 200))
 
-    result = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "url": source_url,
-        "predicted_type": PAGE_TYPES[top_idx],
-        "top_score": round(top_score, 4),
-        "confidence_margin": round(margin, 4),
-        "all_scores": {PAGE_TYPES[i]: round(scores[i].item(), 4) for i in range(len(PAGE_TYPES))},
-        "low_confidence_flag": top_score < min_confidence,
-    }
-    return result
-
-mock_pages = [
-    ("acme.com/pricing", Image.new("RGB", (400, 300), (240, 240, 240))),
-    ("acme.com/blog/launch", Image.new("RGB", (400, 300), (250, 250, 245))),
-    ("acme.com/login", Image.new("RGB", (400, 300), (245, 245, 248))),
-]
-
-print("Production CLIP Enrichment Pipeline — Mock Run")
-print("=" * 65)
-print(f"Prompt bank: {len(PROMPTS)} page types")
-print(f"Min confidence threshold: 0.15")
-print()
-
-score_log = []
-for url, img in mock_pages:
-    result = classify_screenshot(img, source_url=url)
-    score_log.append(result["top_score"])
-
-    flag = " *** LOW CONFIDENCE — REVIEW" if result["low_confidence_flag"] else ""
-    print(f"  URL: {url}")
-    print(f"  Type: {result['predicted_type']}")
-    print(f"  Score: {result['top_score']:.4f}  Margin: {result['confidence_margin']:.4f}{flag}")
-    print(f"  All scores: {json.dumps(result['all_scores'], indent=4)}")
-    print()
-
-avg_score = sum(score_log) / len(score_log)
-min_seen = min(score_log)
-print(f"Batch Summary")
-print(f"  Mean top score:    {avg_score:.4f}")
-print(f"  Min top score:     {min_seen:.4f}")
-print(f"  Low confidence ct: {sum(1 for s in score_log if s < 0.15)}/{len(score_log)}")
-print()
-print("In production: emit score_log to your observability backend.")
-print("Alert when rolling mean drops >2σ from baseline.")
-print("Route low_confidence_flag items to human review queue.")
+for name, img in [("pricing_page", pricing), ("login_page", login)]:
+    tag, score = tag_screenshot(img)
+    print(f"  {name} → '{tag}' (cosine: {score:.3f})")
 ```
 
-The `min_confidence` threshold and the rolling mean alert are the two levers that connect CLIP inference to GTM pipeline health. Every enrichment record either lands in the CRM as a confident classification or gets flagged for review. The score log becomes a time series you monitor exactly like email reply rates or meeting booking rates — when it drifts, something upstream changed, and you investigate before the bad data propagates into sequencing decisions.
-
-The blank-image mock will produce low confidence scores across all page types. That is the correct behavior — CLIP has no strong prior about page type when the input carries no discriminative visual content. In a real pipeline, these low-confidence items are exactly the screenshots you want to catch and route to a human reviewer or flag as "screenshot capture failed" before they generate a misleading enrichment record.
+In production, swap the synthetic images for real screenshots captured via headless browser. The same pattern handles logo detection — swap page-type prompts for "a website showing the Stripe logo", "a website showing the HubSpot logo" — and the highest-scoring prompt identifies the visible vendor. When all scores are low (below ~0.15 cosine), the screenshot carries no discriminative signal for your prompt set, and you flag it for human review rather than writing a garbage enrichment record.
 
 ## Exercises
 
-**Exercise 1 (Easy):** Given a precomputed similarity matrix, identify the best-matching caption for each image using argmax. Print the matches and whether each is on the diagonal.
+**Exercise 1 (Easy):** Given a precomputed 4×4 cosine similarity matrix from a CLIP inference run, recover the best-matching caption for each image via argmax, check whether each match lands on the diagonal, and compute retrieval accuracy.
 
 ```python
 import torch
@@ -376,16 +248,17 @@ print("Similarity Matrix:")
 print(sim)
 print()
 
+correct = 0
 for i in range(sim.shape[0]):
     best = sim[i].argmax().item()
     on_diag = "ON DIAGONAL" if best == i else "OFF DIAGONAL"
-    print(f"  Image {i} → Caption {best}  (score: {sim[i][best]:.2f})  {on_diag}")
+    correct += int(best == i)
+    print(f"  Image {i} -> Caption {best}  (score: {sim[i][best]:.2f})  {on_diag}")
 
-correct = sum(sim[i].argmax().item() == i for i in range(sim.shape[0]))
-print(f"\n  Correct matches: {correct}/{sim.shape[0]}")
+print(f"\n  Retrieval accuracy: {correct}/{sim.shape[0]}")
 ```
 
-**Exercise 2 (Medium):** Implement InfoNCE loss from scratch and verify it decreases over gradient steps. The target is the diagonal index — each image should match its corresponding text.
+**Exercise 2 (Medium):** Implement symmetric InfoNCE loss from scratch, run 10 optimization steps on random embeddings with an Adam optimizer, and confirm the loss decreases monotonically. Then increase the batch size from 16 to 64 and observe how the initial loss changes (more negatives = harder softmax = higher starting loss).
 
 ```python
 import torch
@@ -400,8 +273,41 @@ def infonce_loss(image_embeds, text_embeds, temperature=0.07):
     loss_t2i = F.cross_entropy(logits.T, targets)
     return (loss_i2t + loss_t2i) / 2
 
-torch.manual_seed(0)
-N, D = 16, 256
-img = torch.randn(N, D, requires_grad=True)
-txt = torch.randn(N, D, requires_grad=True)
-optimizer = torch.optim.Adam
+def train_and_report(N, D, steps=10):
+    torch.manual_seed(0)
+    img = torch.randn(N, D, requires_grad=True)
+    txt = torch.randn(N, D, requires_grad=True)
+    opt = torch.optim.Adam([img, txt], lr=0.05)
+    print(f"\n  N={N}, D={D}")
+    print(f"  {'Step':>4}  {'Loss':>8}")
+    for step in range(steps):
+        loss = infonce_loss(img, txt)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        print(f"  {step:4d}  {loss.item():8.4f}")
+
+train_and_report(N=16, D=256)
+train_and_report(N=64, D=256)
+```
+
+## Key Terms
+
+**Contrastive learning** — Training paradigm where the model learns by pulling matched pairs together and pushing mismatched pairs apart in embedding space, without explicit class labels.
+
+**InfoNCE loss** — Symmetric cross-entropy over a cosine similarity matrix divided by temperature τ. Each row is a softmax distribution; the target is the diagonal index. Requires all embeddings in the batch to compute the denominator.
+
+**Zero-shot classification** — Predicting a class the model was never explicitly trained on by encoding the input alongside text prompts for each candidate class and picking the highest cosine similarity. Requires no fine-tuning or labeled examples.
+
+**Temperature (τ)** — Scalar that controls the sharpness of the softmax in InfoNCE. Low τ makes the loss aggressively penalize mismatched pairs; high τ makes it forgiving. CLIP uses τ ≈ 0.01–0.07.
+
+**SigLIP (sigmoid loss)** — Replacement for InfoNCE that applies a sigmoid independently to each image-text pair (label +1 for matches, −1 for non-matches) instead of softmax over the full batch. Removes cross-GPU synchronization overhead, enabling batch sizes of 32,000+.
+
+**Dual-encoder architecture** — Two separate neural networks (image encoder + text encoder) that project their respective inputs into a single shared embedding space where cross-modal similarity is computed via dot product.
+
+## Sources
+
+- Radford, A., Kim, J.W., Hallacy, C., et al. (2021). "Learning Transferable Visual Models From Natural Language Supervision." *Proceedings of the 38th International Conference on Machine Learning (ICML).* — Primary source for CLIP architecture, InfoNCE training procedure, zero-shot evaluation methodology, and the 400M image-text pair pretraining dataset description.
+- Zhai, X., Mustafa, B., Kolesnikov, A., & Beyer, L. (2023). "Sigmoid Loss for Language Image Pre-Training." *Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV).* — Primary source for SigLIP's sigmoid-based pairwise loss, batch-size scaling analysis, and comparison against softmax-based InfoNCE.
+- [CITATION NEEDED — concept: CLIP-based screenshot classification for page-type tagging in B2B GTM enrichment pipelines]
+- [CITATION NEEDED — concept: logo detection via zero-shot CLIP prompts for tech-stack enrichment in prospecting workflows]

@@ -265,4 +265,93 @@ def classify_reply(reply_text: str) -> dict:
     elif any(w in text for w in ["meeting", "call", "demo", "learn more"]):
         return {"classification": "interested", "route": "warm_sequence"}
     elif any(w in text for w in ["out of office", "ooo", "vacation"]):
-        return {"classification":
+        return {"classification": "auto_reply", "route": "retry_7d"}
+    else:
+        return {"classification": "ambiguous", "route": "human_review"}
+
+@mcp.resource("prospect://acme.com")
+def get_prospect_context() -> str:
+    return """Company: Acme Corp
+Domain: acme.com
+Industry: SaaS
+Employee Count: 250
+Last Visit: 2025-01-15 — pricing page, 3 pageviews
+Triggering Event: Series B funding announcement (2025-01-10)
+Sequence Status: Email 2 of 4 sent
+Last Reply: 'Can we talk next week?'
+Reply Classification: interested
+Recommended Route: warm_sequence with visit context in opening line
+"""
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
+```
+
+Save this as `server.py` (replacing the old version), then run the GTM slice below. This script drives the full MCP tool-calling mechanism — structured function invocation over JSON-RPC 2.0 — to simulate an SDR workflow: read prospect context, enrich the account, classify the inbound reply, and output a routing decision.
+
+```python
+import subprocess, json, sys
+
+proc = subprocess.Popen([sys.executable, "server.py"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+
+def call(mid, method, params=None):
+    req = {"jsonrpc": "2.0", "id": mid, "method": method}
+    if params:
+        req["params"] = params
+    proc.stdin.write(json.dumps(req) + "\n")
+    proc.stdin.flush()
+    return json.loads(proc.stdout.readline())
+
+call(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+     "clientInfo": {"name": "sdr-bot", "version": "1.0.0"}})
+proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+proc.stdin.flush()
+
+ctx = call(2, "resources/read", {"uri": "prospect://acme.com"})
+trigger = [l for l in ctx["result"]["contents"][0]["text"].split("\n") if "Triggering" in l]
+print("TRIGGER:", trigger[0].split(":", 1)[1].strip())
+
+r = call(3, "tools/call", {"name": "enrich_company", "arguments": {"domain": "acme.com"}})
+co = json.loads(r["result"]["content"][0]["text"])
+print(f"ACCOUNT: {co['company_name']} | {co['employee_count']} employees | {co['industry']}")
+
+r = call(4, "tools/call", {"name": "classify_reply", "arguments": {"reply_text": "Can we talk next week?"}})
+print("ROUTE:", json.loads(r["result"]["content"][0]["text"])["route"])
+
+proc.terminate()
+```
+
+```
+TRIGGER: Series B funding announcement (2025-01-10)
+ACCOUNT: Acme Corp | 250 employees | SaaS
+ROUTE: warm_sequence
+```
+
+Three JSON-RPC calls, one notification, four distinct GTM actions — context retrieval, enrichment, classification, routing. Any host that speaks MCP gets this workflow for free. Swap the SDR's Claude Desktop session for a ChatGPT agent tomorrow; the server does not change. Add a `score_lead` tool next week; every host discovers it automatically on the next `tools/list`. That is the N+M payoff: you write the GTM logic once, and the integration surface stops being your problem.
+
+[CITATION NEEDED — concept: Zone 11 mapping of MCP tool servers to reply classification and enrichment routing workflows]
+
+## Exercises
+
+**Exercise 1 (Medium):** Add a `score_lead` tool to the server that accepts `employee_count` (int) and `industry` (str) and returns a fit score from 0–100. Use these rules: SaaS with >200 employees scores 85, SaaS with ≤200 scores 70, all others score 50. Re-run `inspect.py` and confirm that `tools/list` now returns three tools. Then call `score_lead` with `{"employee_count": 250, "industry": "SaaS"}` and verify the score is 85.
+
+**Exercise 2 (Hard):** Switch the server from `stdio` to Streamable HTTP transport. Change `mcp.run(transport="stdio")` to `mcp.run(transport="streamable-http")` and start the server as a background process (`python server.py &`). Write a new client that connects to `http://localhost:8000/mcp` over HTTP, performs the same `initialize` → `notifications/initialized` → `tools/call` sequence, and prints the enrichment result. Confirm that the JSON-RPC message bodies are byte-for-byte identical to the `stdio` version — only the transport changed. Then kill the server process.
+
+## Key Terms
+
+- **Host** — The application running an LLM (Claude Desktop, ChatGPT, Cursor) that connects to MCP servers and surfaces their tools, resources, and prompts to the model.
+- **Server** — A process that exposes tools, resources, and prompts via MCP. One server typically wraps one data source or API surface.
+- **JSON-RPC 2.0** — The wire protocol MCP uses. Requests carry an `id` and expect a response; notifications carry no `id` and expect none.
+- **stdio transport** — Local transport where the host spawns the server as a subprocess and communicates over stdin/stdout. Zero-config; use for development and single-user tooling.
+- **Streamable HTTP** — Network transport where the server runs as an HTTP endpoint with server-sent events for streaming. Use when multiple hosts share one server or the server is remote.
+- **Tools** — Callable functions the model invokes with structured JSON arguments. The MCP analog of OpenAI's `tools` parameter and Anthropic's `tool_use` blocks.
+- **Resources** — Read-only data exposed by URI. The host lists available resources via `resources/list` and reads content via `resources/read`.
+- **initialize handshake** — The capability negotiation sequence (`initialize` request → server response → `notifications/initialized`) that must complete before any other method is called.
+
+## Sources
+
+- Model Context Protocol Specification, Anthropic, 2024–2025. https://modelcontextprotocol.io
+- MCP Python SDK (FastMCP). https://github.com/modelcontextprotocol/python-sdk
+- JSON-RPC 2.0 Specification. https://www.jsonrpc.org/specification
+- [CITATION NEEDED — concept: Zone 11 GTM application of MCP for reply classification routing and enrichment as shared tool services]

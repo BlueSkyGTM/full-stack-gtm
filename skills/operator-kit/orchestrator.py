@@ -49,8 +49,8 @@ OUTPUT_ROOT    = REPO / "stages/02-lesson-injection/output/hybrid-lessons"
 STATUS_PATH    = REPO / "stages/04-quiz-recall/output/../../02-lesson-injection/output/orchestrator-status.json"
 ENDPOINT       = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
 
-TASKMASTER_MODEL = "glm-5.2"   # 1M context, 131K output, max-effort reasoning — the overseer/judge
-HANDLER_MODEL    = "glm-5.1"   # text writer; "glm-5.1v" for vision tasks
+TASKMASTER_MODEL = "GLM-5.2"   # 1M context, 131K output, max-effort reasoning — the overseer/judge
+HANDLER_MODEL    = "GLM-5.1"   # text writer (proven casing); "GLM-5.1V" for vision tasks
 HANDLER_MAXTOK   = 32000       # 131K cap available; 32K is generous for a lean lesson
 WORK_BUCKETS     = {"close", "complete", "regen"}
 
@@ -253,7 +253,8 @@ def main():
             elif status == "failed": failed += 1; win.append(1)
             fr = sum(win) / len(win) if win else 0
             el = time.time() - start
-            print(f"  [{i}/{total}] {lid} -> {status} | {i/el:.1f}/s | fail={fr:.0%}" + (f" | {gap}" if gap else ""))
+            rate = i / el if el > 0 else 0
+            print(f"  [{i}/{total}] {lid} -> {status} | {rate:.1f}/s | fail={fr:.0%}" + (f" | {gap}" if gap else ""))
             if len(win) == 10 and fr > 0.30:
                 print(f"  [CIRCUIT BREAKER] {fr:.0%} fail — pausing 60s"); win.clear(); global_rate_pause(60)
             if i % 10 == 0 and not args.dry_run:

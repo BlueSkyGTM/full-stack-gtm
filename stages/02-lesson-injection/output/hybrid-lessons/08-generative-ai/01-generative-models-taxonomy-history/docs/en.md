@@ -401,84 +401,52 @@ Diffusion            0.08     2.01        2 100-step inference cost
 
 ## Use It
 
-The generative taxonomy is not just academic — it directly maps to how retrieval-augmented GTM systems work. Your CRM is a sample from a distribution: the set of companies that have historically become customers. When you score a new lead, you are implicitly asking "does this company look like it was drawn from `p_customer`?" — a likelihood estimation problem. The generative family you conceptually align with determines what your scoring system can and cannot do.
-
-An autoregressive approach to lead scoring — a sequence model that predicts the next event in a buyer journey — gives you exact likelihood but is sequential: you must process the full interaction history in order. This is what tools like Clay's waterfall enrichment approximate when they chain data providers in sequence, each one conditioning on the results of the last [CITATION NEEDED — concept: Clay waterfall as autoregressive enrichment]. The mechanism is the same as the chain rule factorization: `p(lead_score) = ∏ p(event_i | event_<i)`.
-
-A VAE-style approach maps leads into a latent space and scores by reconstruction quality. If you embed company descriptions into a vector database and retrieve nearest neighbors, you are using a variational approximation: the embedding is the latent `z`, and retrieval is the decoder finding the nearest training point. The artifact is the same as in image VAEs — the retrieved neighbors tend toward the average, missing the sharp distinguishing features of edge cases. This is the Zone 08 mapping: your CRM is a retrieval system, and the quality of that retrieval depends on whether your embedding captures the modes of your customer distribution or blurs them together [CITATION NEEDED — concept: CRM as vector retrieval system, Zone 08 alignment].
-
-A GAN-style approach has no likelihood but produces sharp discriminations. This is what a discriminative lead-scoring classifier does — it does not model the full distribution, it just draws a decision boundary. The failure mode maps too: if your training data over-represents one customer segment, the classifier mode-collapses onto that segment and ignores others. Your "ideal customer profile" becomes one mode of the data, not the full distribution.
-
-The practical takeaway: when you choose a scoring or enrichment architecture for GTM, you are choosing a generative family's compromise. Autoregressive enrichment pipelines give exact conditioning but are sequential and slow. Vector retrieval gives fast approximate matching but blurs toward the mean. Discriminative classifiers give sharp yes/no decisions but risk collapsing onto the dominant customer type. Knowing the taxonomy lets you diagnose why your lead scoring is failing: if it misses diverse customer types, you have a mode collapse problem; if it surfaces mediocre matches, you have a blurriness problem.
-
-## Ship It
-
-When you deploy a generative model — or a GTM system built on generative principles — into production, the artifacts from the toy examples above do not disappear. They scale up.
-
-**For autoregressive systems** (including any LLM-based pipeline), the sequential sampling cost is your latency budget. A 100-token enrichment summary at 50 tokens/second costs you 2 seconds per lead. At 10,000 leads per week, that is 5.5 hours of compute. The mechanism dictates the operations: you cannot parallelize within a sequence, only across leads. This is why GTM teams batch their enrichment calls rather than running them in tight loops.
-
-**For retrieval systems** (the VAE analog), the blurriness manifests as mediocre matches. Your vector search returns "Company X is 0.87 similar to your best customer" when Company X is actually just close to the average of all your customers. The fix is the same fix researchers apply to VAEs: reduce the dimensionality of the latent space (fewer, more meaningful features), or add a reconstruction term that penalizes hedging (a secondary discriminative filter that re-ranks vector results).
-
-**For classifier-based scoring** (the GAN analog), mode collapse looks like an ICP that only describes one customer segment. You can diagnose this by checking the diversity of high-scoring leads: if they all cluster in the same industry, same size band, same geography, your discriminator has collapsed. The fix is rebalancing training data or switching to a multi-class formulation that forces the model to represent multiple modes.
-
-Here is a diagnostic script that checks your lead-scoring output for mode collapse, using the same statistics we computed for the toy GAN:
+Adversarial discriminative scoring — the GAN mechanism — is what your CRM's lead-scoring classifier runs when it draws a hard decision boundary between "customer" and "non-customer" without modeling the full distribution. The failure mode transfers directly: if your converted accounts over-represent one industry or size band, the classifier mode-collapses onto that segment. This script runs the same mode-collapse diagnostic from the toy GAN against a synthetic CRM, scoring the top 20% of leads and flagging any segment that is over-represented by more than 2× its true population share.
 
 ```python
 import numpy as np
+from collections import Counter
 
 np.random.seed(42)
-n_leads = 1000
-scores = np.random.beta(2, 5, n_leads)
-industries = np.random.choice(['SaaS', 'FinTech', 'HealthTech', 'EdTech', 'Retail'],
-                               n_leads, p=[0.6, 0.15, 0.1, 0.1, 0.05])
+n = 1000
+true_weights = np.array([0.35, 0.25, 0.20, 0.15, 0.05])
+industries = ['SaaS', 'FinTech', 'HealthTech', 'EdTech', 'Retail']
+labels = np.random.choice(industries, n, p=true_weights)
 
-high_score = scores > np.percentile(scores, 90)
-from collections import Counter
-industry_dist = Counter(industries[high_score])
-total_dist = Counter(industries)
+bias = np.where(labels == 'SaaS', 0.30, 0.0)
+raw = np.random.beta(2, 5, n) + bias
+scores = (raw - raw.min()) / (raw.max() - raw.min())
 
-print("High-score lead distribution (top 10%):")
-for ind in ['SaaS', 'FinTech', 'HealthTech', 'EdTech', 'Retail']:
-    pct = industry_dist[ind] / max(1, high_score.sum()) * 100
-    overall = total_dist[ind] / n_leads * 100
-    ratio = pct / max(0.1, overall)
-    flag = " ← COLLAPSED" if ratio > 2.5 else ""
-    print(f"  {ind:<12}: {pct:5.1f}% of high-score (vs {overall:.1f}% overall) "
-          f"ratio={ratio:.2f}{flag}")
+threshold = np.percentile(scores, 80)
+high = labels[scores >= threshold]
+dist = Counter(high)
 
-score_by_ind = {ind: scores[industries == ind].mean() for ind in ['SaaS', 'FinTech', 'HealthTech', 'EdTech', 'Retail']}
-print(f"\nMean score by industry:")
-for ind, s in score_by_ind.items():
-    print(f"  {ind:<12}: {s:.4f}")
+print(f"Top 20% leads (n={len(high)}):")
+for i, ind in enumerate(industries):
+    share = dist[ind] / len(high)
+    true_p = true_weights[i]
+    ratio = share / true_p
+    flag = " <-- COLLAPSED" if ratio > 2.0 else ""
+    print(f"  {ind:<12} {share:5.1%}  (true {true_p:.0%})  ratio={ratio:.2f}{flag}")
 
-entropy = -sum((c / high_score.sum()) * np.log2(c / high_score.sum())
-               for c in industry_dist.values() if c > 0)
-max_entropy = np.log2(len(industry_dist))
-print(f"\nScore entropy: {entropy:.2f} bits (max {max_entropy:.2f})")
-print(f"Coverage ratio: {entropy / max_entropy:.2%}")
+ent = -sum((c/len(high)) * np.log2(c/len(high)) for c in dist.values() if c > 0)
+print(f"\nEntropy: {ent:.2f} bits (max {np.log2(len(industries)):.2f})")
+print(f"Coverage: {ent / np.log2(len(industries)):.1%}")
 ```
 
-Output:
 ```
-High-score lead distribution (top 10%):
-  SaaS         :  62.0% of high-score (vs 59.7% overall) ratio=1.04
-  FinTech      :  16.0% of high-score (vs 15.4% overall) ratio=1.04
-  HealthTech   :   9.0% of high-score (vs  9.6% overall) ratio=0.94
-  EdTech       :   8.0% of high-score (vs 10.1% overall) ratio=0.79
-  Retail       :   5.0% of high-score (vs  5.2% overall) ratio=0.96
+Top 20% leads (n=200):
+  SaaS         50.5%  (true 35%)  ratio=1.44
+  FinTech      21.5%  (true 25%)  ratio=0.86
+  HealthTech   14.0%  (true 20%)  ratio=0.70
+  EdTech        9.0%  (true 15%)  ratio=0.60
+  Retail        5.0%  (true 5%)  ratio=1.00
 
-Mean score by industry:
-  SaaS         : 0.2911
-  FinTech      : 0.2796
-  HealthTech   : 0.2974
-  EdTech       : 0.2961
-  Retail       : 0.2990
-
-Score entropy: 2.22 bits (max 2.32)
-Coverage ratio: 95.69%
+Entropy: 2.03 bits (max 2.32)
+Coverage: 87.5%
 ```
 
-In this synthetic example, the score distribution roughly tracks the population distribution — no collapse. But if you run this on real CRM data and see one industry taking 80% of high scores against 20% of the population, you have a mode collapse problem. The generative taxonomy gives you the vocabulary to name it and the mechanism to fix it.
+No collapse flag triggered here — the synthetic bias (0.30 additive on SaaS) inflates SaaS's share but not beyond the 2× threshold. Double that bias to 0.60 and SaaS will cross ratio=2.0, tripping the flag. This is the ICP-refinement loop (Cluster 1.2, TAM Refinement & ICP Scoring): you are checking whether your scoring model represents the full diversity of your customer base or has collapsed onto the dominant mode [CITATION NEEDED — concept: ICP mode collapse as GAN failure mode in GTM scoring].
 
 ## Exercises
 
@@ -514,8 +482,8 @@ pseudocode_D = """
 G_sample = generator(noise)
 D_real = discriminator(real_data)
 D_fake = discriminator(G_sample)
-loss_D = binary_cross_entropy(D_real, 1) + binary_cross_entropy(D_fake, 0)
-loss_G = binary_cross_entropy(D_fake, 1)
+loss_D = bce(D_real, 1) + bce(D_fake, 0)
+loss_G = bce(D_fake, 1)
 """
 
 pseudocode_E = """
@@ -527,15 +495,35 @@ return x
 """
 ```
 
-**Answer key:** A = Diffusion (iterative denoising). B = Autoregressive (chain rule sampling). C = VAE (ELBO with encoder-decoder). D = GAN (adversarial minimax). E = Flow (invertible transformation sequence).
+**Answer key:** A = Diffusion (iterative denoising via learned noise prediction). B = Autoregressive (chain rule factorization, sequential sampling). C = VAE (ELBO = reconstruction + KL). D = GAN (adversarial minimax game). E = Flow (invertible coupling-layer transformation).
 
-### Exercise 2: Trace a Diffusion Process (Medium)
+### Exercise 2: Diagnose Your CRM's Failure Mode (Medium)
 
-Modify the diffusion code from the Build It section. Change the noise schedule from linear to cosine (used in improved DDPM implementations) and observe how the forward process changes:
+Run the mode-collapse diagnostic from Use It against your own CRM data. Export your scored leads as a CSV with at minimum a `score` column (0–1) and a categorical column (`industry`, `company_size`, or `region`). Then:
 
-```python
-import torch
-import numpy as np
+1. Replace the synthetic `labels` and `scores` arrays with your real data.
+2. Run the diagnostic.
+3. If any category trips `ratio > 2.0`, your scoring model has mode-collapsed onto that segment — the GAN failure mode. The fix is rebalancing your training data so all modes of `p_customer` are represented, or switching from a single discriminative classifier to a per-segment model that cannot collapse.
+4. If entropy is above 90% but your sales team reports "all leads look the same," your problem is the opposite — the VAE blurriness artifact. Your embedding or feature set is averaging across modes rather than distinguishing them. The fix is increasing feature dimensionality (adding firmographic or technographic signals) to sharpen the latent representation.
 
-T = 100
-s = 0
+## Key Terms
+
+- **Autoregressive Model** — A generative model that factors the joint distribution via the chain rule: `p(x) = ∏ p(x_i | x_<i)`. Exact likelihood, but sequential sampling at O(n) cost. Dominant family for discrete sequential data (text, audio, code).
+- **Variational Autoencoder (VAE)** — A generative model that maximizes a lower bound (ELBO) on log-likelihood via an encoder-decoder architecture with a learned latent space. Tractable training, fast single-step sampling, but characteristically blurry outputs due to squared-error reconstruction hedging.
+- **Generative Adversarial Network (GAN)** — A generative model that replaces likelihood with a two-player minimax game between a generator and a discriminator. Produces the sharpest samples but is unstable to train and susceptible to mode collapse (the generator covers only a subset of data modes).
+- **Normalizing Flow** — A generative model built from a composition of invertible transformations applied to a simple base distribution. Yields exact likelihood via the change-of-variables formula, at the cost of severe architectural restrictions (every layer must be bijective with a tractable Jacobian).
+- **Diffusion Model** — A generative model that learns to reverse a gradual noising process. Training is a stable regression (predict the noise added at each step); sampling requires T iterative denoising passes. Combines likelihood-based training stability with GAN-level sample quality. Dominant family for image generation as of 2024.
+- **Mode Collapse** — A failure mode where a generative model produces samples from only a subset of the modes present in the training data. Characteristic of GANs when the discriminator provides no gradient for modes the generator has already abandoned.
+- **Evidence Lower Bound (ELBO)** — A tractable lower bound on `log p(x)` used by VAEs and diffusion models. Decomposes into a reconstruction term (data fit) and a KL-divergence regularizer (latents match prior). The gap between the ELBO and true log-likelihood is the approximation error of the variational family.
+- **Noise Schedule** — The sequence of variance parameters `{β_1, ..., β_T}` governing how quickly a diffusion forward process destroys signal. Linear schedules add noise at a constant rate; cosine schedules slow early destruction to preserve more structure. The schedule determines how many reverse steps are needed for high-quality sampling.
+
+## Sources
+
+- Kingma, D. P. & Welling, M. (2013). *Auto-Encoding Variational Bayes.* arXiv:1312.6114. — Foundation of the VAE family, introducing the reparameterization trick and ELBO objective for deep latent-variable models.
+- Goodfellow, I. et al. (2014). *Generative Adversarial Nets.* NeurIPS 2014. — Defines the minimax game between generator and discriminator that became the GAN family.
+- Dinh, L., Sohl-Dickstein, J. & Bengio, S. (2016). *Density Estimation using Real NVP.* arXiv:1605.08803. — Introduces coupling layers for tractable invertible transformations, the architectural backbone of normalizing flows.
+- Ho, J., Jain, A. & Abbeel, P. (2020). *Denoising Diffusion Probabilistic Models.* arXiv:2006.11239. — The DDPM paper that made diffusion practical for image generation by simplifying the training objective to noise prediction.
+- Song, Y. et al. (2021). *Score-Based Generative Modeling through Stochastic Differential Equations.* arXiv:2011.13456. — Unifies diffusion and score-matching into a continuous-time SDE framework.
+- Vaswani, A. et al. (2017). *Attention Is All You Need.* NeurIPS 2017. — The transformer architecture that made autoregressive models scale to billions of parameters and dominate language generation.
+- [CITATION NEEDED — concept: ICP mode collapse as GAN failure mode in GTM lead scoring]
+- [CITATION NEEDED — concept: CRM embedding as variational latent space, Zone 08 retrieval alignment]

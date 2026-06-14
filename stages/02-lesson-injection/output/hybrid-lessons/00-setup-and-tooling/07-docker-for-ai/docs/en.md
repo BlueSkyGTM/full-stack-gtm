@@ -295,81 +295,54 @@ docker-ai-redis-1          redis:7-alpine      Up             0.0.0.0:6379->6379
 
 ## Use It
 
-The GTM infrastructure cluster — specifically cold email and outbound deliverability infrastructure (Handbook §1.4) — has the exact same containerization problem as AI serving. An outbound stack includes a Python enrichment pipeline that calls Apollo, ZoomInfo, and 6sense APIs; a lead-scoring model that runs inference on enriched data; a Salesforce sync worker that writes results via `simple-salesforce`; and potentially multiple SMTP relay agents running on different IP addresses with different DKIM/SPF configurations. Each component has its own Python dependency tree, its own API client versions, and its own rate-limiting logic. Running them on the same host without isolation creates dependency conflicts — the `requests` version that ZoomInfo's SDK needs clashes with the one Salesforce's SDK expects.
+Containerized PyTorch neural network inference is the deployment pattern for lead-likelihood scoring in outbound infrastructure (GTM Infrastructure cluster, §1.4). The same Dockerfile and Compose pattern from Build It packages the model that scores whether a prospect fits your ICP. Enrichment data from Apollo, ZoomInfo, or 6sense flows in as feature vectors; the containerized model returns a score; a sync worker writes the result to Salesforce or HubSpot. The container is the boundary that prevents `requests==2.31` in the enrichment service from clashing with `requests==2.28` in the Salesforce SDK.
 
-Docker Compose is the deployment unit for this stack. Each outbound component becomes a service in `compose.yaml`, just like the inference server and Redis in the Build It example. The enrichment pipeline is a container with its own `requests`, `httpx`, and API client libraries. The lead-scoring model is the same FastAPI inference server you just built — it loads model weights from a volume mount and serves predictions at `/predict`. The Salesforce sync worker is a container with `simple-salesforce` and its own credential injection. They communicate over the Compose bridge network, and you scale individual services by changing `deploy.replicas` or running `docker compose up --scale enrichment=3`.
+Create this `compose.gtm.yaml` alongside the Build It artifacts and run it:
 
-The container image is also the reproducibility boundary for outbound infrastructure. Cold email deliverability depends on precise DNS configurations (SPF, DKIM, DMARC records), IP reputation, and sending domain warmup state. If your email-sending agent's behavior changes because someone updated the `aiosmtplib` package on the host, your deliverability metrics shift and you cannot reproduce the previous sending pattern. Containerizing the email agent locks the sending logic, the library versions, and the configuration into one image tagged with a semantic version. When deliverability drops, you diff the image tags — not the host's `pip freeze`.
+```yaml
+services:
+  lead-scorer:
+    build: .
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./models:/models:ro
+    environment:
+      - MODEL_PATH=/models/lead_score_v2.pt
+      - SCORE_THRESHOLD=0.72
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
-A practical pattern for GTM teams: build the lead-scoring container exactly as shown above, mount a volume with the model weights and the enriched lead data, and point the prediction endpoint at incoming leads. The `/health` endpoint confirms GPU availability before you route traffic. The volume mount means you can swap model weights without rebuilding the image — just replace the file on the host and restart the container. This is the same hot-swap pattern used for AI model deployment in production inference clusters.
-
-## Ship It
-
-Production deployment of containerized AI services introduces three concerns that local development does not exercise: image distribution, GPU scheduling on shared hosts, and version rollback.
-
-**Image distribution.** Your local image exists only on your build machine. To deploy it, you push to a registry — Docker Hub, Amazon ECR, Google Artifact Registry, or a private registry. The registry stores each layer separately and deduplicates across images. When you push a new version that changes only the `COPY app.py` layer (the last layer), the registry transfers only that layer — typically kilobytes, not gigabytes. Tag images with semantic versions, not `latest`:
+  enrichment-webhook:
+    image: python:3.11-slim
+    command: >
+      python -c "
+      import urllib.request, json;
+      data = json.dumps({'features': [0.8, 0.3, 0.1, 0.5, 0.9, 0.2, 0.7, 0.4, 0.6, 0.15]}).encode();
+      req = urllib.request.Request('http://lead-scorer:8000/predict', data=data, headers={'Content-Type': 'application/json'});
+      resp = urllib.request.urlopen(req);
+      print('Lead score:', json.loads(resp.read()))
+      "
+    depends_on:
+      lead-scorer:
+        condition: service_healthy
+```
 
 ```bash
-docker tag ai-inference your-registry.com/ai-inference:1.2.0
-docker tag ai-inference your-registry.com/ai-inference:1.2.0-$(git rev-parse --short HEAD)
-docker push your-registry.com/ai-inference:1.2.0
+docker compose -f compose.gtm.yaml up --build
 ```
 
-**Multi-stage builds for smaller images.** The Dockerfile in Build It uses the `-runtime` CUDA base, which omits compilers. But if you need `flash-attn` — which compiles CUDA kernels at install time — you need a builder stage with the `-devel` base (which includes `nvcc`, `gcc`, and CUDA headers). You compile in the builder, copy the installed wheel, and the final image stays small:
-
-```dockerfile
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS builder
-
-RUN apt-get update \
-    && apt-get install -y python3.10 python3-pip python3.10-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --user --no-cache-dir \
-    torch==2.3.0 \
-    flash-attn==2.5.8 --no-build-isolation
-
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
-
-RUN apt-get update \
-    && apt-get install -y python3.10 \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /root/.local /root/.local
-
-ENV PATH=/root/.local/bin:$PATH
-ENV PYTHONPATH=/root/.local/lib/python3.10/site-packages
-
-RUN pip install --no-cache-dir fastapi==0.111.0 uvicorn[standard]==0.30.1 pydantic==2.7.1
-
-WORKDIR /app
-COPY app.py ./
-
-CMD ["python3", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-Compare image sizes:
-
-```bash
-docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep ai-inference
-```
-
-The multi-stage image is typically 1–2 GB smaller than the single-stage equivalent because the final image does not carry `gcc`, `nvcc`, or Python development headers.
-
-**GPU scheduling.** On a host with multiple GPUs, `--gpus all` gives the container access to every GPU. For production, pin specific devices so containers do not contend for the same GPU memory. In Compose, use `count: 1` (lets the runtime pick any free GPU) or specify `device_ids: ["0"]` to pin. For multi-tenant GPU hosts, Kubernetes with the NVIDIA GPU Operator handles scheduling — but that is a separate lesson. The container pattern remains identical: the image is the same, only the orchestrator changes.
-
-**Rollback.** Because each image version is immutable and tagged, rollback is pulling and running the previous tag. If version 1.2.0 produces degraded inference (wrong logits, OOM on longer sequences), `docker run your-registry.com/ai-inference:1.1.4` restores the previous runtime in seconds. This is the same version discipline that applies to outbound infrastructure — if a new enrichment container version produces different lead scores, you roll back to the previous image tag and investigate the diff.
+The enrichment-webhook service resolves `lead-scorer` via Compose DNS — no hardcoded IP addresses. The `:ro` volume mount means you can swap `models/lead_score_v2.pt` on the host and restart the container to deploy a new model version without rebuilding the image. The healthcheck gates the webhook from firing predictions until the model server is ready. [CITATION NEEDED — concept: GTM Infrastructure cluster §1.4 containerized lead-scoring deployment patterns]
 
 ## Exercises
 
-**Exercise 1: Swap the CUDA base.** Change the Dockerfile's `FROM` line from `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` to `nvidia/cuda:12.1.1-cudnn-runtime-ubuntu22.04`. Rebuild, run `verify_gpu.py`, and observe what changes. Specifically: does PyTorch still install? Does `torch.cuda.is_available()` return True? What CUDA version does `torch.version.cuda` report? Write down the image size difference.
+**Exercise 1: Swap the CUDA base.** Change the Dockerfile's `FROM` line from `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` to `nvidia/cuda:12.1.1-cudnn-runtime-ubuntu22.04`. Rebuild, run `verify_gpu.py`, and observe what changes. Does PyTorch still install without errors? Does `torch.cuda.is_available()` return True? What CUDA version does `torch.version.cuda` report? Run `docker images` before and after to capture the image size difference — write it down.
 
-**Exercise 2: Add a volume for model weights.** Create a file `models/config.json` on your host with `{"model_name": "linear-test", "version": "0.1"}`. Modify `app.py` to read this file at startup and include the model name in the `/health` response. Rebuild and run with `-v $(pwd)/models:/models`. Confirm the health endpoint returns the config. Then change the JSON on the host (without rebuilding the image) and restart the container — confirm the new config is picked up. This demonstrates the hot-swap pattern.
-
-**Exercise 3: Add a worker service.** Extend `compose.yaml` with a third service: a Python worker that reads prediction requests from a Redis queue, calls the inference server's `/predict` endpoint, and writes results back to Redis. You need a queue producer (a script that pushes JSON requests to a Redis list) and a consumer (a script that pops requests, calls the API, and pushes responses). Verify the full flow: producer pushes, worker pulls, worker calls inference, worker pushes result.
-
-**Exercise 4: Multi-stage size analysis.** Build both the single-stage Dockerfile (from Build It) and the multi-stage Dockerfile (from Ship It). Run `docker history <image>` on each and identify which layers dominate the image size. Calculate the percentage saved by multi-stage build. The `docker history` output shows each layer's size — the `RUN apt-get install` and `RUN pip install torch` layers should be the largest.
-
-**Exercise 5: CPU-only fallback.** Modify the Dockerfile to build a separate CPU-only image that does not require the NVIDIA runtime. Use a build argument (`ARG VARIANT=cuda`) to switch between `nvidia/cuda` and `python:3.10-slim` base images. Build both variants and confirm that `verify_gpu.py` prints "No GPU detected — running CPU-only" for the slim variant. This is the pattern for building images that run on both GPU and non-GPU hosts.
+**Exercise 2: Add a volume for model weights.** Create a file `models/config.json` on your host with `{"model_name": "linear-test", "version": "0.1"}`. Modify `app.py` to read this file at startup and include the model name and version in the `/health` response. Rebuild and run with `-v $(pwd)/models:/models`. Confirm the health endpoint returns the config. Then change the JSON on the host without rebuilding the image, restart the container with `docker restart`, and confirm the new config is picked up — this is the hot-swap pattern you will use to deploy new model versions in production.
 
 ## Key Terms
 
@@ -377,12 +350,23 @@ The multi-stage image is typically 1–2 GB smaller than the single-stage equiva
 
 **Image** — A read-only stack of filesystem layers. The build artifact. Each Dockerfile instruction creates one layer. Images are immutable — you tag new versions, you do not edit existing ones.
 
-**Layer** — A filesystem diff produced by one Dockerfile instruction. Stored as a tar archive. Layers are shared across images and deduplicated by the registry during push/pull.
+**Layer** — A filesystem diff produced by one Dockerfile instruction. Stored as a tar archive. Layers are shared across images and deduplicated by the registry during push and pull.
 
 **Union filesystem** — The mechanism that stacks read-only layers and presents them as a single filesystem to the container. OverlayFS is the default on modern Docker installations.
 
-**NVIDIA Container Toolkit** — A set of hooks (`nvidia-container-toolkit`, `nvidia-container-runtime`) that the Docker runtime calls at container start to mount host GPU device files and driver libraries into the container's namespace.
+**NVIDIA Container Toolkit** — A set of hooks that the Docker runtime calls at container start to mount host GPU device files and driver libraries into the container's namespace. The container uses the host's kernel driver but its own bundled CUDA userspace libraries.
 
-**Volume mount** — A host directory or Docker-managed volume mapped into the container's filesystem. Bypasses the union filesystem — reads and writes go directly to the host. Used for model weights, datasets, and output persistence.
+**Volume mount** — A host directory or Docker-managed volume mapped into the container's filesystem. Bypasses the union filesystem — reads and writes go directly to the host. Used for model weights, datasets, and output persistence across container restarts.
 
-**Multi-stage build** — A
+**Multi-stage build** — A Dockerfile pattern that uses multiple `FROM` instructions to separate the build environment (compilers, dev headers) from the runtime image. `COPY --from=builder` pulls artifacts between stages without carrying the builder's layers into the final image.
+
+**Docker Compose** — A declarative YAML format for defining multi-service stacks. Creates a user-defined bridge network and registers each service name as a DNS hostname, so services reach each other by name without hardcoded IP addresses.
+
+## Sources
+
+- NVIDIA Container Toolkit installation and runtime configuration: [NVIDIA Container Toolkit Documentation](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/index.html)
+- Docker multi-stage builds: [Docker Documentation — Multi-stage builds](https://docs.docker.com/build/building/multi-stage/)
+- Docker Compose service configuration including GPU device reservations: [Docker Documentation — Compose file reference](https://docs.docker.com/compose/compose-file/)
+- PyTorch CUDA version compatibility matrix: [PyTorch Documentation — Get Started](https://pytorch.org/get-started/locally/)
+- Union filesystem (OverlayFS) and storage driver internals: [Docker Documentation — Storage drivers](https://docs.docker.com/storage/storagedriver/)
+- [CITATION NEEDED — concept: GTM Infrastructure cluster §1.4 containerized lead-scoring deployment patterns for outbound enrichment and Salesforce sync]

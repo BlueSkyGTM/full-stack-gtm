@@ -152,298 +152,60 @@ The silent audio will produce non-empty output. Depending on the model size and 
 
 ## Use It
 
-The structured-field extraction we are about to build is the front-end of Zone 3 — Signal Processing & Enrichment. In a GTM stack, conversation audio is raw signal that must be converted into structured fields before any enrichment, scoring, or routing logic can act on it. [CITATION NEEDED — concept: Whisper-based call analytics pipeline in GTM enrichment workflows] The same way Clay's waterfall enriches a domain into a company profile, Whisper enriches a WAV file into objections, pricing signals, and next steps. The mechanism is transcription followed by pattern extraction — the AI concept is the encoder-decoder's cross-attention producing text from acoustic features, and the GTM application is turning that text into CRM fields.
-
-Here is a practical extraction pipeline that takes a transcribed sales call and pulls structured fields:
+The encoder-decoder's cross-attention maps acoustic features to text tokens — this GTM slice transcribes a synthetic sales call and extracts structured fields (pricing, competitors, next steps) suitable for CRM enrichment. [CITATION NEEDED — concept: Whisper-based call analytics pipeline in GTM enrichment workflows]
 
 ```python
-import re
-import json
+import re, json
 from gtts import gTTS
 import whisper
 
-call_script = """
-Hey Sarah, thanks for taking the call. So looking at what we discussed last time, the main concern was around implementation timeline. You mentioned your team needs this live by Q3. I think we can work with that. On pricing, the enterprise tier is fifteen thousand per year with a two-year commitment. If you need month-to-month, it goes up to eighteen hundred per month. I know you are also looking at Competitor X — their pricing is similar but they do not have the API access you need. The next step would be to get you a security questionnaire response by Friday. Can you confirm who else needs to sign off on the legal side?
-"""
+script = (
+    "Hi Sarah, our enterprise plan is fifteen thousand per year. "
+    "We are evaluating Competitor X but they lack API access. "
+    "Next step: I will send the security doc by Friday. "
+    "My VP of Sales needs to sign off before we move forward."
+)
+gTTS(script, lang="en").save("call.mp3")
 
-tts = gTTS(text=call_script, lang="en", slow=False)
-tts.save("sales_call.mp3")
-
-model = whisper.load_model("base")
-result = model.transcribe("sales_call.mp3", task="transcribe")
-transcript = result["text"]
-
-print("=== TRANSCRIPT ===")
-print(transcript)
-
-pricing_patterns = [
-    (r'\$?(\d[\d,]*)\s*(?:per\s*year|annually|/year)', "annual_price"),
-    (r'\$?(\d[\d,]*)\s*(?:per\s*month|monthly|/mo)', "monthly_price"),
-    (r'(\d[\d,]*)\s*(?:per\s*year|annually)', "annual_price"),
-]
-
-timeline_patterns = [
-    r'\b(Q[1-4])\b',
-    r'\bby\s+(\w+day)\b',
-    r'\bby\s+(Friday|Monday|Tuesday|Wednesday|Thursday|Saturday|Sunday)\b',
-    r'\bnext\s+(\w+)\b',
-]
-
-competitor_patterns = [
-    r'\b(?:looking at|evaluating|considering|comparing against)\s+([A-Z][a-zA-Z\s]+?)(?:\s+[-—,]|$)',
-]
-
-next_step_patterns = [
-    r'(?:next step|next steps|action item|follow.?up)[:\s]+(.*?)(?:\.|$)',
-    r'(?:I will|I\'ll|we will|we\'ll)\s+(.*?)(?:\.|$)',
-    r'(?:can you|could you)\s+(.*?)(?:\?|$)',
-]
-
-objection_keywords = [
-    "concern", "worried", "issue", "problem", "hesitant",
-    "expensive", "budget", "timeline", "too long", "complicated",
-]
-
-extracted = {
-    "pricing": {},
-    "timeline": [],
-    "competitors": [],
-    "next_steps": [],
-    "objections": [],
-}
-
-for pattern, price_type in pricing_patterns:
-    matches = re.findall(pattern, transcript, re.IGNORECASE)
-    if matches:
-        extracted["pricing"][price_type] = matches
-
-for pattern in timeline_patterns:
-    matches = re.findall(pattern, transcript, re.IGNORECASE)
-    extracted["timeline"].extend(matches)
-
-for pattern in competitor_patterns:
-    matches = re.findall(pattern, transcript)
-    extracted["competitors"].extend(matches)
-
-for pattern in next_step_patterns:
-    matches = re.findall(pattern, transcript, re.IGNORECASE)
-    extracted["next_steps"].extend(matches)
-
-sentences = re.split(r'[.!?]+', transcript)
-for sent in sentences:
-    for keyword in objection_keywords:
-        if keyword.lower() in sent.lower():
-            extracted["objections"].append(sent.strip())
-            break
-
-extracted["pricing"] = {k: v for k, v in extracted["pricing"].items() if v}
-extracted = {k: v for k, v in extracted.items() if v}
-
-print("\n=== EXTRACTED STRUCTURED FIELDS ===")
-print(json.dumps(extracted, indent=2))
+result = whisper.load_model("base").transcribe("call.mp3")
+t = result["text"]
 
 crm_record = {
-    "call_id": "call_2024_001",
-    "transcript": transcript,
+    "call_id": "call_001",
     "language": result["language"],
-    "duration_seconds": result["segments"][-1]["end"] if result["segments"] else 0,
-    "extracted_fields": extracted,
+    "transcript": t,
+    "pricing": re.findall(r"([\d,]+)\s*(?:per\s*year|annually)", t, re.I),
+    "competitors": re.findall(r"evaluating\s+([A-Z]\w+)", t),
+    "next_steps": re.findall(r"next step[:\s]+(.*?)(?:\.|$)", t, re.I),
+    "decision_makers": re.findall(r"(VP|CTO|CEO)[\w\s]*sign.?off", t, re.I),
 }
 
-print("\n=== CRM-READY RECORD ===")
 print(json.dumps(crm_record, indent=2))
 ```
 
-The output is a structured record with pricing details, timeline references, competitor mentions, next steps, and objection-flagged sentences. This is the raw material that feeds into deal scoring, routing rules, and account-based marketing orchestration. The encoder-decoder's cross-attention produced the acoustic-to-text mapping; the regex layer on top produces the text-to-field mapping. Both are signal transformations — one from waveform to language, one from language to CRM schema.
+The regex layer on top of Whisper's text output is the text-to-field mapping — pricing strings become numeric fields, competitor names become account flags, next-step sentences become task records. This is the same pattern as Clay's waterfall enrichment: raw input in, structured record out. The difference is the input modality — audio instead of a domain string.
 
-## Ship It
+## Exercises
 
-A production call-processing pipeline needs to handle a directory of recordings, fail gracefully on corrupt files, and write output that downstream systems can consume. This is the same pattern as a batch enrichment waterfall: process many inputs, log what succeeded, log what failed, write structured output.
+**Exercise 1 — Multilingual Detection (Easy)**
 
-```python
-import os
-import json
-import re
-import logging
-from pathlib import Path
-from datetime import datetime
+Generate a gTTS clip in Spanish (`lang="es"`) with a sentence like *"Hola, el precio es quince mil por año."` Run Whisper with `task="transcribe"` and confirm the detected language is Spanish. Then run the same file with `task="translate"` and verify the output is English. Print both results side by side. Modify the CRM extraction regexes to handle Spanish number formats (e.g., "quince mil") and confirm the pricing field still populates.
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("transcription_pipeline.log"),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+**Exercise 2 — Silence Filter Pipeline (Hard)**
 
-import whisper
+Build a function called `filter_hallucinated_segments` that takes a Whisper result dict and returns only segments where `no_speech_prob` is below 0.5 and `avg_logprob` is above -1.0. Generate three test files: (a) a normal speech clip, (b) ten seconds of pure silence, (c) a speech clip with five seconds of silence appended. Transcribe all three, run the filter, and print the before/after segment counts. Document which segments were removed and whether any legitimate speech was incorrectly suppressed. Then integrate the filter into the CRM extraction pipeline from Use It so that hallucinated text never reaches the structured fields.
 
-INTENT_PATTERNS = {
-    "pricing_discussion": [
-        r"\b(?:price|pricing|cost|budget|expensive|afford)\b",
-        r"\$\d+",
-        r"\d+\s*(?:per\s*month|per\s*year|/mo|/yr|annually|monthly)",
-    ],
-    "competitor_mentioned": [
-        r"\b(?:competitor|alternative|comparing|evaluating|looking at)\b",
-        r"\b(?:vs\.?|versus)\b",
-    ],
-    "objection_raised": [
-        r"\b(?:concern|worried|issue|problem|hesitant|risk)\b",
-        r"\b(?:not sure|unsure|skeptical)\b",
-    ],
-    "next_step_committed": [
-        r"\b(?:next step|follow.?up|action item|send over|get back)\b",
-        r"\b(?:schedule|calendar|book)\b",
-    ],
-    "decision_maker_referenced": [
-        r"\b(?:CEO|CTO|CFO|VP|director|head of|my boss|sign.?off|approval)\b",
-    ],
-}
+## Key Terms
 
-ENTITY_PATTERNS = {
-    "email": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-    "phone": r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
-    "date": r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?\b',
-    "money": r'\$[\d,]+(?:\.\d{2})?(?:\s*(?:per\s*)?(?:year|month|day|week|annually|monthly))?',
-    "url": r'https?://[^\s]+',
-}
+- **Log-Mel Spectrogram** — 2D representation of audio with time on one axis and 80 Mel-scaled frequency bins on the other; the "image" Whisper's encoder processes.
+- **Convolutional Stem** — Two Conv1D layers (filter width 3, stride 2) that downsample the spectrogram from 3,000 to 1,500 frames before the encoder, cutting attention complexity by roughly 4x.
+- **Cross-Attention** — Decoder mechanism that attends to encoder acoustic embeddings, bridging what was heard (encoder output) with what is being generated (decoder text tokens).
+- **Task Tokens** — Special prefix tokens (`<|en|>`, `<|transcribe|>`, `<|translate|>`) that condition the decoder for a specific output behavior in a single forward pass.
+- **Autoregressive Generation** — Token-by-token text production where each new token is conditioned on all previously generated tokens plus the encoder's acoustic representation via cross-attention.
+- **Hallucination (ASR)** — Fabricated transcript text produced when the decoder, receiving uninformative acoustic embeddings from silence or noise, falls back on its training distribution and generates plausible-sounding but nonexistent speech.
 
-def classify_intents(transcript):
-    intents = {}
-    transcript_lower = transcript.lower()
-    for intent_name, patterns in INTENT_PATTERNS.items():
-        matches = []
-        for pattern in patterns:
-            found = re.findall(pattern, transcript, re.IGNORECASE)
-            matches.extend(found)
-        if matches:
-            intents[intent_name] = {
-                "match_count": len(matches),
-                "examples": matches[:5],
-            }
-    return intents
+## Sources
 
-def extract_entities(transcript):
-    entities = {}
-    for entity_type, pattern in ENTITY_PATTERNS.items():
-        matches = re.findall(pattern, transcript)
-        if matches:
-            entities[entity_type] = list(set(matches))
-    return entities
-
-def transcribe_file(model, file_path):
-    try:
-        result = model.transcribe(
-            str(file_path),
-            task="transcribe",
-            word_timestamps=False,
-        )
-        segments = []
-        for seg in result["segments"]:
-            segments.append({
-                "start": round(seg["start"], 2),
-                "end": round(seg["end"], 2),
-                "text": seg["text"].strip(),
-            })
-
-        transcript_text = result["text"].strip()
-        intents = classify_intents(transcript_text)
-        entities = extract_entities(transcript_text)
-
-        return {
-            "file": str(file_path),
-            "language": result["language"],
-            "language_probability": round(result.get("language_probability", 0), 4),
-            "transcript": transcript_text,
-            "segments": segments,
-            "intents": intents,
-            "entities": entities,
-            "processed_at": datetime.utcnow().isoformat() + "Z",
-            "status": "success",
-        }
-    except Exception as e:
-        logger.error(f"Failed to transcribe {file_path}: {e}")
-        return {
-            "file": str(file_path),
-            "status": "failed",
-            "error": str(e),
-            "processed_at": datetime.utcnow().isoformat() + "Z",
-        }
-
-def run_batch_pipeline(input_dir, output_dir, model_size="base"):
-    input_path = Path(input_dir)
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    if not input_path.exists():
-        logger.error(f"Input directory does not exist: {input_dir}")
-        return
-
-    audio_extensions = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".webm"}
-    audio_files = [
-        f for f in input_path.iterdir()
-        if f.suffix.lower() in audio_extensions
-    ]
-
-    if not audio_files:
-        logger.warning(f"No audio files found in {input_dir}")
-        return
-
-    logger.info(f"Found {len(audio_files)} audio files. Loading model '{model_size}'...")
-    model = whisper.load_model(model_size)
-
-    results = []
-    succeeded = 0
-    failed = 0
-
-    for audio_file in audio_files:
-        logger.info(f"Processing: {audio_file.name}")
-        result = transcribe_file(model, audio_file)
-        results.append(result)
-
-        if result["status"] == "success":
-            succeeded += 1
-            individual_output = output_path / f"{audio_file.stem}.json"
-            with open(individual_output, "w") as f:
-                json.dump(result, f, indent=2)
-            logger.info(f"  → Wrote {individual_output}")
-            logger.info(f"  → Language: {result['language']}, Intents: {list(result['intents'].keys())}")
-        else:
-            failed += 1
-
-    summary = {
-        "pipeline_run": datetime.utcnow().isoformat() + "Z",
-        "input_directory": str(input_path),
-        "output_directory": str(output_path),
-        "model": model_size,
-        "total_files": len(audio_files),
-        "succeeded": succeeded,
-        "failed": failed,
-        "results": results,
-    }
-
-    summary_path = output_path / "batch_summary.json"
-    with open(summary_path, "w") as f:
-        json.dump(summary, f, indent=2)
-
-    logger.info(f"\nPipeline complete: {succeeded} succeeded, {failed} failed")
-    logger.info(f"Summary: {summary_path}")
-    return summary
-
-from gtts import gTTS
-
-demo_dir = Path("call_recordings")
-demo_dir.mkdir(exist_ok=True)
-
-calls = [
-    ("call_001_discovery", "Hi, this is Alex from TechCo. We are looking at your platform for our sales team of about fifty people. What does pricing look like? We are currently using Salesforce and HubSpot. Can you send over a one-pager? I would need to get my VP of Sales involved before we move forward."),
-    ("call_002_objection", "Thanks for the demo. Honestly, our main concern is the implementation timeline. Our last vendor took six months and it was a disaster. Also, eighteen thousand per year feels steep compared to what we budgeted. Is there any flexibility? We are also evaluating Competitor Y next week."),
-    ("call_003_closing", "Great, so we are aligned on the enterprise plan at twelve thousand per year. Next steps: I will send the security questionnaire by Wednesday, and you will introduce me to your CTO for final sign-off. Can we target a go-live date of March fifteenth?"),
-]
-
-for filename, script in calls:
-    tts = gTTS(text=script, lang="en", slow=False)
-    tts.save
+- Radford, A., Kim, J.W., Xu, T., Brockman, G., McLeavey, C., & Sutskever, I. (2022). *Robust Speech Recognition via Large-Scale Weak Supervision.* arXiv:2212.04356. https://arxiv.org/abs/2212.04356
+- Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L., & Polosukhin, I. (2017). *Attention Is All You Need.* arXiv:1706.03762. https://arxiv.org/abs/1706.03762
+- [CITATION NEEDED — concept: Whisper-based call analytics pipeline in GTM enrichment workflows]

@@ -211,4 +211,119 @@ if not success:
     print(f"    exec: {'PASS' if success else 'FAIL'} — {msg}")
 
 print(f"\n  Final state: {env.state}")
-print(f"  Library size: {library.size()} skills\n
+print(f"  Library size: {library.size()} skills\n")
+
+print("=== PHASE 3: New task — craft a wooden pickaxe (compounding) ===\n")
+
+task2 = "craft a wooden pickaxe tool for mining stone blocks"
+print(f"Task: {task2}")
+print(f"\nThe library now has 5 skills. Retrieval surfaces the sword skill")
+print(f"because 'wooden' and 'craft' dominate the embedding:\n")
+
+results = library.retrieve(task2, k=5)
+for name, score, skill in results:
+    marker = " ← weapon skill transfers" if name == "craft_wooden_sword" else ""
+    print(f"  {name} (cosine: {score:.3f}){marker}")
+print()
+
+pickaxe_code = """def craft_wooden_pickaxe():
+    craft_planks()
+    craft_sticks()
+    open_inventory()
+    place('planks', slot=0, count=3)
+    place('stick', slot=3, count=2)
+    extract('wooden_pickaxe')"""
+
+library.add("craft_wooden_pickaxe", "craft a wooden pickaxe tool using planks and sticks", pickaxe_code)
+
+print("  First execution attempt:")
+env.reset()
+success, msg = env.execute(library.skills["craft_wooden_pickaxe"])
+print(f"    exec: {'PASS' if success else 'FAIL'} — {msg}")
+
+if not success:
+    print("\n  [ITERATIVE REFINEMENT] Need more planks than the sword required — adapting...\n")
+    env.reset()
+    for step in ["find_wood", "find_wood", "craft_planks", "craft_planks", "craft_sticks"]:
+        s = library.skills[step]
+        success, msg = env.execute(s)
+        print(f"    {step}: {'PASS' if success else 'FAIL'} — {msg}")
+
+    print("\n  Retry target skill:")
+    success, msg = env.execute(library.skills["craft_wooden_pickaxe"])
+    print(f"    exec: {'PASS' if success else 'FAIL'} — {msg}")
+
+print(f"\n  Final state: {env.state}")
+print(f"  Library size: {library.size()} skills")
+print(f"\n  Compounding check: the pickaxe reused find_wood, craft_planks,")
+print(f"  and craft_sticks — zero new primitives invented. Only the")
+print(f"  composition changed.")
+```
+
+Run this end-to-end. Three things to observe in the output:
+
+1. **Phase 2 retrieval** ranks `craft_planks` and `craft_sticks` highest for the sword task — their descriptions share tokens with "craft" and "planks/sticks." The sword skill was unknown but its prerequisites were retrievable.
+
+2. **Phase 3 retrieval** surfaces `craft_wooden_sword` as a strong match for the pickaxe task — not because swords relate to pickaxes, but because both descriptions share "wooden," "craft," "planks," and "sticks." Semantic retrieval generalizes across tool types.
+
+3. **The refinement loop differs between phases.** The sword needed one `find_wood`; the pickaxe needed two because it consumes more planks. The agent didn't re-plan from scratch — it adjusted the prerequisite chain and reused every existing skill.
+
+## Use It
+
+The AI mechanism is embedding-based semantic retrieval: each enrichment playbook is stored as a skill with a description embedding, and new company descriptions trigger cosine-similarity matching to surface the closest prior playbook. This is the pattern for reusable enrichment workflows — the GTM equivalent of Voyager's skill library. [CITATION NEEDED — concept: enrichment playbook reuse as skill-library pattern in GTM]
+
+The mapping is direct. In Voyager, "find wood" is a verified code block stored with a description embedding. In GTM enrichment, "resolve domain, pull firmographics, score ICP fit" is a verified workflow stored with a description embedding. When a new account arrives, the system retrieves the closest prior playbook and adapts it rather than building from zero.
+
+```python
+playbook_lib = SkillLibrary()
+
+playbook_lib.add(
+    "enrich_saas_company",
+    "enrich software company profile resolve domain check firmographics pull technographic stack score ICP fit",
+    "def enrich_saas_company():\n    resolve_domain()\n    pull_firmographics()\n    pull_technographics()\n    score_icp_fit()"
+)
+
+playbook_lib.add(
+    "enrich_ecommerce_company",
+    "enrich ecommerce retail company profile resolve domain check firmographics identify platform stack like shopify magento",
+    "def enrich_ecommerce_company():\n    resolve_domain()\n    pull_firmographics()\n    pull_technographics()"
+)
+
+playbook_lib.add(
+    "enrich_fintech_company",
+    "enrich financial technology company profile resolve domain check compliance certifications pull funding data score fit",
+    "def enrich_fintech_company():\n    resolve_domain()\n    pull_firmographics()\n    check_compliance()\n    pull_funding()\n    score_icp_fit()"
+)
+
+new_lead = "enrich cloud software startup profile resolve domain check firmographics technographic stack and ICP scoring"
+print(f"New lead: {new_lead}\n")
+print("Retrieved playbooks:")
+for name, score, skill in playbook_lib.retrieve(new_lead, k=2):
+    print(f"  {name} (cosine: {score:.3f})")
+    print(f"    → reuse: {skill.code.split(chr(10))[0]}")
+```
+
+The SaaS playbook surfaces first because "software," "technographic," "domain," and "ICP" overlap heavily. The fintech playbook scores lower because "compliance" and "funding" dilute the signal. This is the same cosine-similarity mechanism from Build It — the only change is that descriptions describe enrichment workflows instead of crafting recipes.
+
+Where compounding occurs: every enriched account that triggers a new playbook variant (say, a two-word domain instead of a one-word domain, requiring a different resolution step) adds a skill to the library. The next similar account retrieves that variant and skips the discovery cost. Over hundreds of accounts, the library converges on the playbooks that actually work for each company shape.
+
+## Exercises
+
+**Exercise 1 — Threshold-Gated Retrieval (Medium).** Modify `SkillLibrary.retrieve()` to accept a `min_score` parameter (default 0.0). When every retrieved skill scores below `min_score`, return an empty list and print `"NO MATCH — treating as novel task"`. Then test: create a fresh library with one skill ("enrich saas company"), query it with "book a restaurant reservation," and confirm the system reports no match instead of returning a low-similarity false positive. Explain why a threshold matters for GTM enrichment specifically — what goes wrong if you act on a 0.08 cosine match?
+
+**Exercise 2 — Skill Composition Graph (Hard).** Extend the system so each `Skill` stores a `prerequisites` list (names of other skills it calls). Build a method `library.composition_chain(skill_name)` that returns the full dependency tree — `craft_wooden_sword` returns `[find_wood, craft_planks, craft_sticks]` at the leaves. Then add a `library.execution_plan(task)` method that: (1) retrieves the top skill for the task, (2) walks its dependency tree, (3) returns an ordered execution list. Test with the pickaxe task and verify the output matches the refinement loop from Phase 3. The goal: make the implicit refinement logic explicit and queryable.
+
+## Key Terms
+
+- **Skill library** — a persistent store of verified programs indexed by embedding vectors over their natural-language descriptions, supporting semantic retrieval and composition.
+- **Iterative prompting mechanism** — Voyager's generate-execute-refine loop: the LLM writes code, the environment executes it, and on failure the error message is fed back as context for the next generation attempt.
+- **Automatic curriculum** — a component that reads agent state and proposes the next task at appropriate difficulty given current capabilities, creating a learning progression.
+- **Semantic retrieval** — finding stored items by cosine similarity between embedding vectors rather than exact keyword match, enabling transfer across structurally similar situations.
+- **Self-verification** — the step where the agent checks whether execution produced the expected state change before committing the skill to the library.
+- **Lifelong learning** — the property that an agent accumulates capabilities across sessions rather than resetting, so later tasks build on earlier solutions.
+- **Cosine similarity** — the dot product of two normalized vectors, measuring directional alignment; the standard metric for comparing embedding vectors in retrieval.
+
+## Sources
+
+- Wang, G., Xie, Y., Jiang, Y., Mandlekar, A., Xiao, C., Zhu, Y., & Anandkumar, A. (2024). *Voyager: An Open-Ended Embodied Agent with Large Language Models.* arXiv:2305.16291. — primary source for the three-component architecture, skill library design, and iterative prompting mechanism.
+- [CITATION NEEDED — concept: enrichment playbook reuse as skill-library pattern in GTM]

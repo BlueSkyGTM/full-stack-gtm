@@ -142,9 +142,7 @@ The output will show that "how much does it cost?", "pricing for our team," and 
 
 ## Use It
 
-The GTM redirect here lands on **Signal Machine** territory — specifically, routing inbound leads by intent detection without keyword lists or regex patterns. An embedding-based classifier does this by computing the centroid of pre-labeled lead texts and assigning new leads to the nearest centroid by cosine similarity. This is the mechanism behind signal-based inbound routing where the 80/20 GTM Engineering Playbook emphasizes that the essential machinery is capturing and acting on intent signals, not manually triaging every form fill [CITATION NEEDED — concept: Signal Machine inbound routing in 80/20 GTM Playbook].
-
-Here is the mechanism. You have three outbound sequences: a demo-request sequence (fast-track to AE), a technical-question sequence (route to solutions engineer), and a partner-inquiry sequence (route to partnerships team). Each sequence has historical examples of lead text that correctly triggered it. You embed every example, average the embeddings per sequence to get a centroid vector, and store the three centroids. When a new lead arrives, you embed its text and compute cosine similarity against all three centroids. The highest-scoring centroid wins. No regex, no keyword list, no LLM call in the hot path.
+Centroid-based cosine classification — embedding pre-labeled lead examples, averaging them into a single representative vector per intent class, then routing new leads by nearest centroid — is the embedding alternative to keyword-based inbound triage. This is Signal Machine routing for intent capture: no regex, no keyword lists, no LLM call in the hot path [CITATION NEEDED — concept: Signal Machine inbound lead routing, 80/20 GTM Engineering Playbook].
 
 ```python
 import numpy as np
@@ -152,217 +150,58 @@ from sentence_transformers import SentenceTransformer
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-labeled_examples = {
-    "demo_request": [
-        "I'd like to see the product in action before we commit",
-        "Can your team walk us through a live demonstration?",
-        "We want to schedule a demo for our leadership team",
-        "Show me how this works for our use case",
-        "Interested in seeing the platform — can we book a call?"
-    ],
-    "technical_question": [
-        "How does your API handle rate limiting and pagination?",
-        "What is the latency for real-time webhook delivery?",
-        "Do you support SSO via SAML 2.0?",
-        "Can we export data via the API in bulk?",
-        "What are the API rate limits on the enterprise plan?"
-    ],
-    "partner_inquiry": [
-        "We are interested in a co-marketing partnership",
-        "Can we explore a reseller arrangement in EMEA?",
-        "Our agency would like to become a certified partner",
-        "Looking for integration opportunities for joint customers",
-        "We want to discuss a technology partnership for Q3"
-    ]
+intents = {
+    "demo": ["show me the product", "book a demo", "walk us through it", "see it in action"],
+    "tech": ["API rate limits?", "how does auth work", "webhook delivery latency", "bulk export"],
+    "partner": ["reseller in EMEA", "co-marketing partnership", "certified partner", "technology integration"]
 }
 
 centroids = {}
-for label, examples in labeled_examples.items():
+for label, examples in intents.items():
     embs = model.encode(examples, normalize_embeddings=True)
-    centroid = embs.mean(axis=0)
-    centroid = centroid / np.linalg.norm(centroid)
-    centroids[label] = centroid
-
-print("CENTROID NORMS (should be ~1.0):")
-for label, vec in centroids.items():
-    print(f"  {label}: {np.linalg.norm(vec):.4f}")
-print()
-
-new_leads = [
-    "What does it cost to roll this out to 200 seats?",
-    "We need to integrate your API with our data pipeline",
-    "Our firm wants to resell your platform in Germany",
-    "Can someone show the product to our VP of Engineering?",
-    "Do you have a REST API for bulk data export?",
-    "We are a systems integrator looking to partner"
-]
-
-THRESHOLD = 0.45
-
-print(f"{'LEAD TEXT':<55} {'PREDICTED':<18} {'SCORE':<8} {'ACTION'}")
-print("=" * 95)
-
-for lead in new_leads:
-    lead_emb = model.encode([lead], normalize_embeddings=True)
-    scores = {label: (lead_emb @ vec.T)[0][0] for label, vec in centroids.items()}
-    
-    best_label = max(scores, key=scores.get)
-    best_score = scores[best_label]
-    
-    if best_score >= THRESHOLD:
-        action = "ROUTED"
-    else:
-        action = "MANUAL REVIEW"
-    
-    print(f"{lead:<55} {best_label:<18} {best_score:.4f}   {action}")
-
-print()
-print("FULL SCORE BREAKDOWN:")
-for lead in new_leads[:3]:
-    lead_emb = model.encode([lead], normalize_embeddings=True)
-    scores = {label: (lead_emb @ vec.T)[0][0] for label, vec in centroids.items()}
-    print(f"\n  '{lead}'")
-    for label, score in sorted(scores.items(), key=lambda x: -x[1]):
-        bar = "█" * int(score * 50)
-        print(f"    {label:<18} {score:.4f} {bar}")
-```
-
-The threshold is the critical tuning parameter. Set it at 0.30 and everything routes aggressively — high recall, low precision, some demo requests land in the technical queue. Set it at 0.60 and only confident matches route automatically — high precision, low recall, ambiguous leads fall to manual review. The 80/20 principle from the GTM playbook applies: the threshold is the 20% of the configuration that determines 80% of the routing quality [CITATION NEEDED — concept: threshold tuning for lead routing precision/recall tradeoff].
-
-The negation failure mode appears here too. A lead saying "we are not interested in a demo right now" will still score high on the demo_request centroid because the embedding captures topic similarity, not intent polarity. This is why the two-stage retriever pattern from the exercise hooks matters: embeddings handle recall (surface relevant candidates), then an LLM judge or rule-based filter handles precision (confirm the intent direction).
-
-## Ship It
-
-Production embedding systems fail on four dimensions that the demo code above ignores entirely. First, model versioning: when Voyage releases Embed v4 or BGE ships M4, switching models means every vector in your index is invalid. The old vectors and new vectors live in different geometric spaces — cosine similarity across them is meaningless. You must re-embed the entire corpus and swap atomically, or run dual indexes during migration. Pin your model version in configuration and treat re-embedding as a migration with a rollback plan.
-
-Second, batching. The `model.encode()` calls above embed one or twelve sentences at a time. In production, you batch 64-256 passages per API call to amortize network overhead. For hosted APIs, batching also determines your cost — most providers charge per token regardless of batch size, but round-trip latency drops linearly with batch size up to the provider's max batch limit. For local models, GPU memory is the constraint: a 7B-parameter embedding model processing 256 passages at 512 tokens each needs ~8GB of VRAM for the attention matrices alone.
-
-Third, storage and retrieval. Embeddings are not a database. They are a similarity index that tells you which vectors are close to your query vector. They do not filter by date, region, company size, or any other metadata your GTM stack depends on. Every production vector store pairs vector search with metadata filtering: pre-filter the candidate set by metadata (e.g., "leads from US companies, created in last 30 days"), then run vector search on the filtered set. This is why sqlite-vss, pgvector, Pinecone, and Weaviate all support metadata pre-filtering — without it, you retrieve semantically similar leads from 2023 that are completely irrelevant.
-
-```python
-import sqlite3
-import json
-import numpy as np
-import time
-from sentence_transformers import SentenceTransformer
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-conn = sqlite3.connect(":memory:")
-conn.execute("""
-    CREATE TABLE leads (
-        id INTEGER PRIMARY KEY,
-        text TEXT NOT NULL,
-        region TEXT NOT NULL,
-        created_days_ago INTEGER NOT NULL,
-        embedding BLOB NOT NULL
-    )
-""")
+    centroids[label] = embs.mean(axis=0) / np.linalg.norm(embs.mean(axis=0))
 
 leads = [
-    ("I want to see a demo of the analytics dashboard", "US", 2),
-    ("How does your API handle authentication?", "US", 5),
-    ("Interested in a reseller partnership in Germany", "EU", 1),
-    ("Can we schedule a product walkthrough?", "US", 3),
-    ("What are the rate limits on enterprise tier?", "EU", 7),
-    ("We want to co-sell with your team in EMEA", "EU", 4),
-    ("Show me the reporting features", "US", 1),
-    ("Does the API support bulk export?", "APAC", 10),
-    ("Looking for a technology partnership", "APAC", 2),
-    ("We need a demo for our leadership team", "US", 6),
-    ("How does webhook delivery work?", "EU", 3),
-    ("Can our agency become a certified partner?", "US", 8),
-    ("Pricing for 500 seats", "US", 1),
-    ("What does the enterprise plan cost?", "EU", 2),
-    ("Investment required for a 200-seat rollout", "APAC", 5),
+    "cost to roll out to 200 seats",
+    "connect your API to our pipeline",
+    "resell your platform in Germany",
+    "demo for our leadership team"
 ]
 
-texts = [l[0] for l in leads]
-embeddings = model.encode(texts, normalize_embeddings=True)
+for lead in leads:
+    emb = model.encode([lead], normalize_embeddings=True)
+    scores = {l: float(emb @ v.T) for l, v in centroids.items()}
+    best = max(scores, key=scores.get)
+    action = "ROUTED" if scores[best] >= 0.45 else "MANUAL REVIEW"
+    print(f"{lead:<40} {best:<10} {scores[best]:.3f}  {action}")
+```
 
-for i, (text, region, days_ago) in enumerate(leads):
-    emb_bytes = embeddings[i].astype(np.float32).tobytes()
-    conn.execute(
-        "INSERT INTO leads (id, text, region, created_days_ago, embedding) VALUES (?, ?, ?, ?, ?)",
-        (i, text, region, days_ago, emb_bytes)
-    )
-conn.commit()
-print(f"Inserted {len(leads)} leads into SQLite")
-print()
+Tune the threshold (0.45 here) to control the precision/recall tradeoff: lower routes aggressively with occasional misroutes, higher routes only confident matches and sends the rest to manual review. The negation failure mode persists — "we are NOT interested in a demo" will still score high on the demo centroid because embeddings capture topic, not intent polarity. When polarity matters, add an LLM judge as a second-stage filter on the candidates the centroid classifier surfaces.
 
-def vector_search(query, limit=5, region_filter=None, max_age_days=None):
-    query_emb = model.encode([query], normalize_embeddings=True)[0]
-    
-    sql = "SELECT id, text, region, created_days_ago, embedding FROM leads"
-    conditions = []
-    params = []
-    
-    if region_filter:
-        conditions.append("region = ?")
-        params.append(region_filter)
-    if max_age_days:
-        conditions.append("created_days_ago <= ?")
-        params.append(max_age_days)
-    
-    if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
-    
-    rows = conn.execute(sql, params).fetchall()
-    
-    results = []
-    for row in rows:
-        lead_emb = np.frombuffer(row[4], dtype=np.float32)
-        score = float(np.dot(query_emb, lead_emb))
-        results.append((score, row[0], row[1], row[2], row[3]))
-    
-    results.sort(key=lambda x: -x[0])
-    return results[:limit], len(rows)
+## Exercises
 
-query = "I want to see the product"
+**Exercise 1 — Adversarial Failure-Mode Suite (Medium)**
 
-print("=" * 75)
-print(f"QUERY: '{query}'")
-print("=" * 75)
+Construct ten query pairs that target each failure mode from the Concept section: three negation pairs ("I want to subscribe" vs "I want to cancel"), four temporal-order pairs ("Acme acquired Beta" vs "Beta acquired Acme"), and three long-tail jargon pairs using fictional product names. Embed each pair with `all-MiniLM-L6-v2`, compute cosine similarity, and print the results in a table. For each pair, record whether the similarity score exceeds 0.60 — your "would this misroute a lead?" threshold. Then write a one-paragraph analysis: which failure mode produces the highest false-similarity scores, and what compensating mechanism (metadata filter, re-ranker, LLM judge) would catch each one.
 
-print("\n[1] NO METADATA FILTER — all 15 leads scanned")
-t0 = time.perf_counter()
-results, scanned = vector_search(query, limit=5)
-elapsed = (time.perf_counter() - t0) * 1000
-print(f"    Scanned {scanned} records in {elapsed:.2f}ms")
-for score, lead_id, text, region, age in results:
-    print(f"    [{score:.4f}] #{lead_id} ({region}, {age}d ago) {text}")
+**Exercise 2 — Matryoshka Dimension Sweep (Hard)**
 
-print("\n[2] METADATA PRE-FILTER: region=EU, age<=5 days")
-t0 = time.perf_counter()
-results, scanned = vector_search(query, limit=5, region_filter="EU", max_age_days=5)
-elapsed = (time.perf_counter() - t0) * 1000
-print(f"    Scanned {scanned} records in {elapsed:.2f}ms")
-for score, lead_id, text, region, age in results:
-    print(f"    [{score:.4f}] #{lead_id} ({region}, {age}d ago) {text}")
+Swap the model from `all-MiniLM-L6-v2` to `nomic-ai/nomic-embed-text-v1.5` (which supports matryoshka truncation). Re-embed the 12-sentence corpus from Build It. For each truncation level in `[64, 128, 256, 512, 768]`, slice the first N dimensions of every embedding, re-normalize the truncated vectors, and run the same three queries ("how much does it cost?", "pricing for our team", "investment required to get started"). At each level, compute recall@3 — the fraction of the full-dimensionality top-3 results that still appear in the truncated top-3. Plot recall@3 vs dimension count. Identify the smallest dimension where recall@3 stays at or above 0.89 (i.e., at most one result changes across all three queries). That dimension is your candidate for a hot-path index in production.
 
-print("\n[3] METADATA PRE-FILTER: region=US, age<=3 days")
-t0 = time.perf_counter()
-results, scanned = vector_search(query, limit=5, region_filter="US", max_age_days=3)
-elapsed = (time.perf_counter() - t0) * 1000
-print(f"    Scanned {scanned} records in {elapsed:.2f}ms")
-for score, lead_id, text, region, age in results:
-    print(f"    [{score:.4f}] #{lead_id} ({region}, {age}d ago) {text}")
+## Key Terms
 
-print("\n" + "=" * 75)
-print("STORAGE ANALYSIS")
-print("=" * 75)
-vec_dim = embeddings.shape[1]
-bytes_per_vec = vec_dim * 4
-n_leads = len(leads)
-print(f"Vector dimension: {vec_dim} (float32)")
-print(f"Bytes per vector: {bytes_per_vec}")
-print(f"Total vectors: {n_leads}")
-print(f"Total embedding storage: {n_leads * bytes_per_vec:,} bytes ({n_leads * bytes_per_vec / 1024:.1f} KB)")
-print(f"At 100k leads: {100000 * bytes_per_vec / 1024 / 1024:.1f} MB")
-print(f"At 1M leads: {1000000 * bytes_per_vec / 1024 / 1024 / 1024:.2f} GB")
-print()
-print("With matryoshka truncation to 256 dims (if model supported):")
-mat_bytes = 256 * 4
-print(f"  Bytes per vector: {mat_bytes}")
-print(f"  Storage savings: {(1 - mat_bytes/bytes_per_vec)*100:.0f}%")
-print(f"  At 1M leads: {1000000 * mat_bytes / 1024 / 1024
+- **Embedding**: A fixed-length dense float vector (384–3,072 dimensions) produced by a transformer encoder, where cosine similarity between vectors approximates semantic relatedness between source texts.
+- **Contrastive Learning**: The fine-tuning objective that pulls positive text pairs together and pushes negative pairs apart in vector space, using easy negatives (random) and hard negatives (surface-similar but meaning-different).
+- **Matryoshka Representation Learning (MRL)**: A training technique where the first N dimensions of the output vector form a valid lower-resolution embedding for any N, enabling dimension truncation for storage and latency tradeoffs without re-embedding.
+- **Cosine Similarity**: The cosine of the angle between two vectors; for L2-normalized vectors it reduces to the dot product. Range: [-1, 1], where 1 means identical direction.
+- **Hard Negative Mining**: The strategy of selecting negative training examples that share surface features with the anchor text but differ in meaning. This is the primary differentiator between BGE, Voyage, and Nomic model families.
+- **Centroid Classification**: A routing method that averages embeddings of pre-labeled examples into one representative vector per class, then assigns new inputs by nearest centroid via cosine similarity.
+- **Lexical Gap**: The inability of string-matching methods (BM25, keyword rules) to connect texts that share no tokens but share meaning — the core problem embeddings solve.
+
+## Sources
+
+- Reimers, N. & Gurevych, I. (2019). "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks." *EMNLP 2019*. The architecture behind `sentence-transformers` and the `all-MiniLM-L6-v2` model used in Build It.
+- Kusupati, A. et al. (2022). "Matryoshka Representation Learning." *NeurIPS 2022*. The MRL technique enabling adaptive dimensionality in BGE-M3, Nomic, and text-embedding-3-large.
+- Chen, J. et al. (2024). "BGE M3-Embedding: Multi-Lingual, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation." *arXiv:2402.03216*. The BGE-M3 model producing dense, sparse, and multi-vector outputs.
+- `sentence-transformers` library documentation and `all-MiniLM-L6-v2` model card on Hugging Face.
+- [CITATION NEEDED — concept: Signal Machine inbound lead routing and threshold tuning, 80/20 GTM Engineering Playbook]

@@ -1,46 +1,183 @@
 # Parallel Tool Calls and Streaming with Tools
 
 ## Learning Objectives
-
-1. Implement parallel tool calls using the Anthropic Messages API and handle multi-tool-use response blocks in a single turn.
-2. Reconstruct complete tool-call arguments from streaming `input_json_delta` chunks, keyed by content block index.
-3. Compare wall-clock latency of sequential versus parallel tool execution with measured output.
-4. Build a streaming tool-use loop that reconstructs arguments, executes tools concurrently, and returns results within a single streamed exchange.
+1. **Implement** parallel tool execution in an OpenAI API request.
+2. **Differentiate** between sequential and parallel API tool call responses.
+3. **Construct** a streaming parser to handle concurrent tool call JSON deltas.
+4. **Evaluate** latency improvements when parallelizing independent API lookups.
 
 ## The Problem
 
-When an enrichment agent needs to look up a company's funding round, tech stack, and headcount, the naive approach makes three round trips to the model. Each trip looks like this: the model decides to call one tool, your code executes it, you send the result back, the model reads the result and decides to call the next tool. Three independent lookups become serialized across three full model round trips. The wall-clock cost is roughly three times the single-call latency plus three times the executor latency. For a GTM enrichment pipeline processing a hundred accounts, that multiplier turns a two-minute batch into a six-minute batch.
+You are building an automated account research agent. For every inbound lead, the agent must gather three data points: current employee headcount, recent funding news, and core product offerings. 
 
-The model already knows it needs all three pieces of data. The constraint is the request-response contract: the non-parallel pattern forces the model to ask one question at a time, wait for the answer, then ask the next. The Anthropic Messages API lifts this constraint by allowing multiple `tool_use` content blocks in a single response. The model emits all three calls at once. Your code executes them concurrently and returns all three results in a single follow-up message. One model round trip instead of three. Executor time becomes the maximum of the three calls, not the sum.
+If you prompt a standard LLM to use tools to find this information, a naive implementation processes requests sequentially. The model decides to call the `get_headcount` tool, waits for your server to return the result, reads it, then decides to call the `get_funding` tool, waits again, and finally calls the `get_products` tool. 
 
-Streaming adds a second dimension. If you stream the model's response — which you want for latency-sensitive interfaces — tool-call arguments arrive as fragments. With a single tool call, reconstruction is straightforward: concatenate the fragments, parse at the end. With parallel tool calls, fragments from different tools interleave on the wire. Block 0 gets a few characters of JSON, then block 1 gets a few characters, then block 0 gets more. You must track which fragment belongs to which block index, accumulate per index, and parse each accumulated string independently. Get the bookkeeping wrong and you merge two tools' arguments into one garbled JSON string.
+If each external API lookup takes 2 seconds, your agent takes 6 seconds to process a single account. If you are processing 500 accounts in a batch enrichment job, sequential tool calling adds 50 minutes of pure wait time. In go-to-market (GTM) workflows, latency compounds. Slow enrichment means delayed handoffs to Account Executives and missed conversion windows.
 
 ## The Concept
 
-Parallel tool calling works because the model's output is a list of content blocks, not a single function invocation. When you send `messages.create()` with a `tools` array, the model can respond with `stop_reason: "tool_use"` and a `content` list containing multiple entries of type `tool_use`. Each entry has its own `id`, `name`, and fully parsed `input` dictionary. Your code iterates the list, dispatches each call, collects results, and appends them all as `tool_result` blocks in the next message. The model receives all results at once and produces its final answer. There is no `parallel_tool_calls: true` flag in the Anthropic API — the model decides to parallelize when the calls are independent. (OpenAI's API exposes this as an explicit `parallel_tool_calls` parameter you can disable.)
+Modern LLMs (like GPT-4o) support **parallel tool calls**. When you pass a prompt and a list of available tools, the model analyzes the dependencies. If it determines that multiple tool calls are independent of each other—meaning the result of call A does not influence the arguments for call B—it will return an array of tool calls in a single generation cycle.
 
-Streaming changes the parsing surface. With `stream=True`, the response arrives as server-sent events. Each `content_block_start` event signals a new block beginning at a specific index. Each `content_block_delta` event carries an `input_json_delta` with a `partial_json` string — a fragment of the tool's arguments JSON. These fragments are not valid JSON on their own. You concatenate them per index and only parse once `content_block_stop` fires for that index. With multiple parallel calls, the stream interleaves: start block 0, start block 1, delta for block 0, delta for block 1, delta for block 0 again, stop block 1, stop block 0. A dictionary keyed by block index is the standard accumulator.
+Instead of a back-and-forth ping-pong match, the interaction looks like this:
+
+1. You provide the prompt and available tools.
+2. The LLM halts text generation and returns a single response containing three distinct `tool_calls` objects.
+3. Your application executes all three tool calls concurrently (e.g., using Python's `asyncio` or a thread pool).
+4. You return all three results to the model in a single follow-up message.
+5. The LLM synthesizes the results and generates its final text response.
+
+When you combine this with **streaming**, the architecture becomes slightly more complex but provides immediate feedback. Streaming means the API yields chunks of data (deltas) as they are generated. When handling parallel tool calls via streaming, the API interleaves the JSON arguments for the different tools. 
+
+Each streamed chunk contains an `index` property. If the model is calling two tools in parallel, the first chunk for tool A has `index: 0`. The first chunk for tool B has `index: 1`. You must accumulate these string fragments in a list, ordered by their index, before passing them to your JSON parser.
 
 ```mermaid
 sequenceDiagram
-    participant Code as Your Code
-    participant API as Anthropic API
-    participant T1 as get_funding
-    participant T2 as get_tech_stack
-    participant T3 as get_headcount
-
-    Note over Code,API: Non-Streaming Parallel
-    Code->>API: create(tools=[funding, tech, head], prompt)
-    API-->>Code: stop_reason=tool_use, content=[TU×3]
-    par concurrent execution
-        Code->>T1: execute
-        Code->>T2: execute
-        Code->>T3: execute
+    participant App as Your Application
+    participant LLM as LLM API
+    
+    App->>LLM: Prompt + Tool Definitions
+    Note over LLM: Model evaluates request<br/>Identifies 2 independent tasks
+    
+    LLM-->>App: Streams deltas (Index 0: get_headcount)
+    LLM-->>App: Streams deltas (Index 1: get_funding)
+    
+    Note over App: Accumulate strings by index<br/>Parse JSON when complete
+    
+    par Concurrent Execution
+        App->>App: Execute get_headcount("Acme")
+    and
+        App->>App: Execute get_funding("Acme")
     end
-    T1-->>Code: result
-    T2-->>Code: result
-    T3-->>Code: result
-    Code->>API: create(tool_results=[r1, r2, r3])
-    API-->>Code: final text answer
+    
+    App->>LLM: Submit both tool results simultaneously
+    LLM-->>App: Streams final synthesized response
+```
 
-    Note
+## Build It
+
+To observe how the API streams parallel tool calls, you need to inspect the raw chunks. This script defines two tools and forces the model to call both. It demonstrates how the `index` property routes the streamed JSON fragments to the correct buffer.
+
+This code uses the OpenAI Python SDK. You must set your `OPENAI_API_KEY` environment variable before running it.
+
+```python
+import openai
+import os
+
+client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_headcount",
+            "description": "Get the employee headcount for a company",
+            "parameters": {
+                "type": "object",
+                "properties": {"company": {"type": "string"}},
+                "required": ["company"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_funding",
+            "description": "Get the recent funding rounds for a company",
+            "parameters": {
+                "type": "object",
+                "properties": {"company": {"type": "string"}},
+                "required": ["company"]
+            }
+        }
+    }
+]
+
+messages = [{"role": "user", "content": "Look up the headcount and funding for Acme Corp."}]
+
+stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=messages,
+    tools=tools,
+    stream=True
+)
+
+accumulated_args = {}
+
+for chunk in stream:
+    delta = chunk.choices[0].delta
+    
+    if delta.tool_calls:
+        for tc in delta.tool_calls:
+            idx = tc.index
+            
+            if idx not in accumulated_args:
+                accumulated_args[idx] = {"name": "", "arguments": ""}
+                
+            if tc.function.name:
+                accumulated_args[idx]["name"] = tc.function.name
+                
+            if tc.function.arguments:
+                accumulated_args[idx]["arguments"] += tc.function.arguments
+
+for idx, tool_data in sorted(accumulated_args.items()):
+    print(f"Tool Index {idx}: {tool_data['name']}")
+    print(f"Raw Arguments String: {tool_data['arguments']}")
+    print("-" * 20)
+```
+
+When you run this code, you will see that the API returns the function names and their JSON arguments as fragmented strings, grouped by their specific execution `index`.
+
+## Use It
+
+This implements concurrent data retrieval, a mechanism foundational for Cluster 1.1 Account & Domain Enrichment. In practice, GTM engineers use this to query disjointed data providers (like Clearbit, Apollo, and Hunter) at the exact same time during an enrichment workflow.
+
+```python
+import openai
+import os
+import json
+
+client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+def mock_execute(name, args):
+    if name == "get_sdr_count": return json.dumps({"count": 12})
+    if name == "get_tech_stack": return json.dumps({"crm": "Salesforce"})
+
+tools = [
+    {"type": "function", "function": {"name": "get_sdr_count", "parameters": {"type": "object", "properties": {"domain": {"type": "string"}}, "required": ["domain"]}}},
+    {"type": "function", "function": {"name": "get_tech_stack", "parameters": {"type": "object", "properties": {"domain": {"type": "string"}}, "required": ["domain"]}}}
+]
+
+messages = [{"role": "user", "content": "How many SDRs does stripe.com have, and what CRM do they use?"}]
+response = client.chat.completions.create(model="gpt-4o", messages=messages, tools=tools)
+msg = response.choices[0].message
+msg.tool_calls = msg.tool_calls or []
+
+messages.append(msg)
+for tc in msg.tool_calls:
+    result = mock_execute(tc.function.name, tc.function.arguments)
+    messages.append({"role": "tool", "tool_call_id": tc.id, "name": tc.function.name, "content": result})
+
+final = client.chat.completions.create(model="gpt-4o", messages=messages)
+print(final.choices[0].message.content)
+```
+
+By allowing the model to request both the SDR count and the tech stack simultaneously, your application architecture mirrors a multi-threaded waterfall. You reduce round-trips and lower the time-to-insight for your sales representatives.
+
+## Exercises
+
+**Exercise 1 (Easy):** Modify the code in the *Build It* section. Add a third tool called `get_industry` and update the prompt to ask for all three data points. Observe how the `accumulated_args` dictionary now manages three distinct indices.
+
+**Exercise 2 (Medium):** Write an `if/else` statement inside the execution loop of the *Use It* code that catches a `KeyError` if the LLM attempts to call a tool you have not defined locally. Print an error message to the terminal instead of crashing the application.
+
+**Exercise 3 (Hard):** Convert the *Use It* code from a standard synchronous request to a streaming request. Parse the streamed tool calls, reconstruct the JSON, pass the results back to the model, and stream the final text answer to the terminal token-by-token. 
+
+## Key Terms
+
+*   **Parallel Tool Calls:** A mechanism where the LLM returns multiple independent tool execution requests in a single response generation cycle.
+*   **Streaming Deltas:** Small chunks of data (tokens) yielded continuously by the API as the model generates them, rather than waiting for the entire payload to finish.
+*   **Index Property:** In a streamed response containing parallel tool calls, the integer assigned to each specific tool call so the developer can route JSON fragments to the correct buffer.
+*   **Round-Trip:** A complete cycle of a client sending a request to a server and receiving a response. Parallelizing tool calls reduces the number of required round-trips for multi-step lookups.
+
+## Sources
+
+*   OpenAI Platform Documentation: Function Calling / Parallel Function Calling [CITATION NEEDED — concept: exact URL for OpenAI API reference on parallel tool streaming behavior]

@@ -1,0 +1,5 @@
+## Ship It
+
+The budget allocation code above is production-adjacent. To ship it for real, you would pull channel performance data from your analytics stack (or a Clay enrichment table), parameterize the constraints from a config file, and run the solver on a schedule — quarterly budget reviews, or weekly reallocation if your channels have short feedback loops. The output feeds directly into spending decisions: this channel gets more, this one gets less, and you can defend every dollar with a mathematical argument.
+
+The harder integration is organizational. Convex optimization gives you the optimal answer *given your model*. If your expected-return-per-dollar estimates are wrong — stale conversion rates, attribution gaps, channels with delayed payoff structures — the solver optimizes the wrong objective with full mathematical confidence. The GTM lesson here is that optimization quality is bounded by model quality. Personalization, follow-up cadence, channel mix — these are all optimization around a core that either works or does not. The solver cannot fix a bad product or a bad ICP. It can only allocate your resources optimally given the returns you observe.

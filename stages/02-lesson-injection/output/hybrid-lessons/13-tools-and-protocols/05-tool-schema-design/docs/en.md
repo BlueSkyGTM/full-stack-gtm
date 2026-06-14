@@ -156,7 +156,7 @@ The `include_fields` parameter uses an array of enums. This pattern lets the mod
 
 ## Use It
 
-Tool schema design directly governs enrichment workflows where a model orchestrates multiple data providers in sequence. In a GTM enrichment waterfall, each provider is a tool the model may call — Apollo, Clearbit, ZoomInfo, or a custom HTTP integration. The schema for each step determines whether the model passes the right identifier to the right provider or passes a company name into a field that expects a domain. Clay implements this waterfall pattern: each enrichment step in a Clay table is a tool with its own schema, and the model or workflow engine selects providers based on what data is available [CITATION NEEDED — concept: Clay tool schema format for HTTP API integrations].
+Tool schema design governs enrichment workflows built on LLM function calling, where the model selects and invokes external data providers in sequence. In a GTM enrichment waterfall, each provider is a tool the model may call — Apollo, Clearbit, ZoomInfo, or a custom HTTP integration. The schema for each step determines whether the model passes the right identifier to the right provider or passes a company name into a field that expects a domain. Clay implements this waterfall pattern: each enrichment step in a Clay table is a tool with its own schema, and the model or workflow engine selects providers based on what data is available [CITATION NEEDED — concept: Clay tool schema format for HTTP API integrations].
 
 The `enrich_contact` schema below demonstrates how constraints prevent the most common enrichment failure: passing the wrong identifier type. The `identifier_type` enum forces the model to classify its input before the call executes. The `data_source` enum with an `"auto"` option lets the model defer provider selection to the waterfall runtime when it cannot determine which provider fits.
 
@@ -223,4 +223,100 @@ write_back = {
                     "enum": ["new", "contacted", "qualified", "unqualified"]
                 }
             },
-            "
+            "required": ["name", "email"],
+            "additionalProperties": False
+        }
+    }
+}
+
+registry = [enrich_contact["function"], write_back["function"]]
+print(f"Tool registry: {len(registry)} tools")
+for t in registry:
+    req = t["parameters"]["required"]
+    props = list(t["parameters"]["properties"].keys())
+    print(f"  {t['name']}  required={req}  params={props}")
+```
+
+The runnable slice below exercises function-calling validation against both schemas. The model emits JSON arguments; the validator checks them against the schema constraints before any provider is called. This is the enrichment waterfall gate — Cluster 1.3, Contact & Account Enrichment.
+
+```python
+import re
+
+def validate_call(schema, call):
+    params = schema["function"]["parameters"]
+    errors = []
+    for field in params.get("required", []):
+        if field not in call:
+            errors.append(f"MISSING required: {field}")
+    for key, value in call.items():
+        spec = params["properties"].get(key)
+        if spec is None:
+            errors.append(f"UNKNOWN field: {key}")
+            continue
+        if "enum" in spec and value not in spec["enum"]:
+            errors.append(f"ENUM reject: {key}='{value}' not in {spec['enum']}")
+        if "pattern" in spec and not re.match(spec["pattern"], str(value)):
+            errors.append(f"PATTERN reject: {key}='{value}'")
+    return errors if errors else ["PASS"]
+
+simulated_calls = [
+    (enrich_contact, {"identifier": "jane@stripe.com", "identifier_type": "email"}, "valid email"),
+    (enrich_contact, {"identifier": "jane", "identifier_type": "phone"}, "bad enum + bad value"),
+    (write_back, {"name": "Jane Doe", "email": "jane@stripe.com", "status": "qualified"}, "valid write-back"),
+    (write_back, {"name": "Jane", "email": "not-an-email"}, "pattern fail on email"),
+]
+
+for schema, call, label in simulated_calls:
+    result = validate_call(schema, call)
+    print(f"  [{label}]  {result}")
+```
+
+```
+  [valid email]  ['PASS']
+  [bad enum + bad value]  ["ENUM reject: identifier_type='phone' not in ['linkedin', 'email']"]
+  [valid write-back]  ['PASS']
+  [pattern fail on email]  ["PATTERN reject: email='not-an-email'"]
+```
+
+The second and fourth calls never reach a provider. The `enum` constraint on `identifier_type` catches `phone` before Apollo or Clearbit is queried, and the `pattern` on `email` rejects the malformed string before the CRM API returns a 400. In a live enrichment waterfall, these rejections surface as retry prompts to the model — the model sees the validation error, corrects its output, and re-emits. This is the function-calling feedback loop: schema constraints do not just filter, they steer the model toward valid calls on the next turn.
+
+## Exercises
+
+**Exercise 1 (Medium) — Fix the registry.** You inherit a tool registry with three badly designed schemas. For each one, rewrite the name using a verb-noun pattern, rewrite the description using the "Use when X. Do not use for Y." structure, and add at least one parameter constraint (`enum`, `pattern`, or `minimum`/`maximum`) that was missing.
+
+```python
+broken_tools = [
+    {"name": "data", "description": "get data from crm",
+     "parameters": {"type": "object", "properties": {"id": {"type": "string"}}}},
+    {"name": "send", "description": "send email",
+     "parameters": {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}}},
+    {"name": "update", "description": "update stuff",
+     "parameters": {"type": "object", "properties": {"record_id": {"type": "string"}, "status": {"type": "string"}}}},
+]
+```
+
+For the `send` tool specifically: what pattern should constrain the `to` field? What `enum` should constrain `status` on the `update` tool? Run your rewritten schemas through the `validate_call` function from the Use It section with two sample inputs per tool — one that should pass and one that should fail. Print the results.
+
+**Exercise 2 (Hard) — Design a disambiguation pair.** A model has access to both `search_companies` (keyword-based, returns a list) and `lookup_company_by_domain` (exact match, returns one record). Both are "company lookups." Write both schemas so that a user query like "find companies in fintech" routes to `search_companies` while "what is Stripe's industry" routes to `lookup_company_by_domain`. The differentiation must live entirely in the description and parameter constraints — you cannot add routing logic. Test your design by writing five user queries as strings and manually predicting which tool each should trigger. Then have a partner (or a second LLM call) read only the schemas and predict the routing. Compare results. Where they diverge, revise the descriptions.
+
+## Key Terms
+
+**Function calling** — The API mechanism where an LLM receives tool schemas in its context window, selects a tool, and emits JSON arguments conforming to that schema. The runtime validates and executes the JSON. The model itself never runs the tool.
+
+**Tool selection accuracy** — The percentage of queries where the model chooses the correct tool from a registry. Measured by running a benchmark set of queries against the schema set and comparing model selections to ground-truth labels.
+
+**Verb-noun naming** — A convention where tool function names start with an action verb (`lookup_`, `enrich_`, `write_`, `delete_`) followed by the entity and disambiguator (`_company_by_domain`). Reduces collisions in registries above 10 tools.
+
+**JSON Schema constraint** — A declarative rule on a parameter that restricts valid values: `type`, `enum`, `pattern`, `minimum`, `maximum`, `required`, `additionalProperties`. Injected into the model's context and enforced by the runtime before execution.
+
+**Enrichment waterfall** — A GTM pattern where multiple data providers are queried in sequence for the same record, falling back to the next provider if the previous one returns no result or low confidence. Each provider step is a tool in the registry.
+
+**`additionalProperties: false`** — A JSON Schema directive that rejects any parameter key not explicitly listed in `properties`. Prevents the model from inventing fields the downstream API does not accept.
+
+## Sources
+
+- Composio. (2025). *Field guide: tool schema design for AI agents* [CITATION NEEDED — concept: Composio internal benchmark on naming and description impact, 10–20 percentage-point accuracy swing].
+- Databricks. (2025). *Agent patterns: tool selection accuracy* [CITATION NEEDED — concept: Databricks documentation reporting 62% → 89% accuracy gain from description rewrites on a 50-tool registry].
+- OpenAI. (2024). *Function calling guide: JSON Schema support in the Chat Completions API*. https://platform.openai.com/docs/guides/function-calling
+- Anthropic. (2024). *Tool use with Claude: defining tools and parameter schemas*. https://docs.anthropic.com/en/docs/build-with-claude/tool-use
+- JSON Schema Specification. (2020). *Draft 2020-12: validation keywords*. https://json-schema.org/draft/2020-12/json-schema-validation

@@ -129,78 +129,7 @@ The decomposition output confirms what the synthetic generator built in: the tre
 
 ## Use It
 
-**GTM Redirect:** Pipeline velocity forecasting — Zone 2 (Signal Processing). Every weekly pipeline total is a time series observation, and the lag features you engineer here are the same features a CRM dashboard needs to forecast next quarter. [CITATION NEEDED — concept: pipeline velocity time series forecasting in GTM topic map]
-
-Build lag features and rolling statistics on a synthetic weekly pipeline dataset that mimics CRM data. This is the Zone 2 data structure pattern: every pipeline snapshot is a JSON object with a timestamp, and the temporal ordering of those snapshots encodes whether deals are accelerating, stalling, or regressing. The lag features you build here are the columns in that JSON — `lag_1` is "last week's pipeline," `rolling_mean_4` is "trailing 4-week average pipeline."
-
-```python
-import numpy as np
-import pandas as pd
-
-np.random.seed(42)
-
-n_weeks = 104
-dates = pd.date_range(start='2022-01-03', periods=n_weeks, freq='W')
-
-trend = np.linspace(50000, 180000, n_weeks)
-seasonality = 15000 * np.sin(2 * np.pi * np.arange(n_weeks) / 52)
-noise = np.random.normal(0, 8000, n_weeks)
-pipeline = trend + seasonality + noise
-
-df = pd.DataFrame({
-    'week': dates,
-    'pipeline_value': pipeline
-}).set_index('week')
-
-df['lag_1'] = df['pipeline_value'].shift(1)
-df['lag_4'] = df['pipeline_value'].shift(4)
-df['lag_13'] = df['pipeline_value'].shift(13)
-
-df['rolling_mean_4'] = df['pipeline_value'].shift(1).rolling(window=4).mean()
-df['rolling_mean_13'] = df['pipeline_value'].shift(1).rolling(window=13).mean()
-df['rolling_std_4'] = df['pipeline_value'].shift(1).rolling(window=4).std()
-
-df['pct_change_1'] = df['pipeline_value'].pct_change(periods=1)
-df['pct_change_4'] = df['pipeline_value'].pct_change(periods=4)
-
-print("=== Pipeline Data with Engineered Features (first 15 rows) ===")
-display_cols = ['pipeline_value', 'lag_1', 'rolling_mean_4', 'rolling_std_4', 'pct_change_1']
-print(df[display_cols].head(15).round(0))
-print()
-
-corr_cols = ['pipeline_value', 'lag_1', 'lag_4', 'lag_13',
-             'rolling_mean_4', 'rolling_mean_13', 'pct_change_1', 'pct_change_4']
-corr_matrix = df[corr_cols].corr()
-print("=== Correlation with Target (pipeline_value) ===")
-print(corr_matrix['pipeline_value'].sort_values(ascending=False).round(4))
-print()
-
-split_idx = int(len(df) * 0.8)
-train = df.iloc[:split_idx]
-test = df.iloc[split_idx:]
-print("=== Temporal Train/Test Split ===")
-print(f"Train: {train.index[0].date()} to {train.index[-1].date()} ({len(train)} weeks)")
-print(f"Test:  {test.index[0].date()} to {test.index[-1].date()} ({len(test)} weeks)")
-print(f"Train pipeline mean: ${train['pipeline_value'].mean():,.0f}")
-print(f"Test pipeline mean:  ${test['pipeline_value'].mean():,.0f}")
-print(f"Train pipeline std:  ${train['pipeline_value'].std():,.0f}")
-print(f"Test pipeline std:   ${test['pipeline_value'].std():,.0f}")
-
-naive_pred = train['pipeline_value'].iloc[-1]
-naive_mae = (test['pipeline_value'] - naive_pred).abs().mean()
-print(f"\nNaive baseline (predict last train value): MAE = ${naive_mae:,.0f}")
-print(f"Naive baseline error as % of test mean: {naive_mae/test['pipeline_value'].mean()*100:.1f}%")
-```
-
-The correlation output tells you which lags carry the most predictive signal. In this synthetic data, `lag_1` and `rolling_mean_4` will show the highest correlation with the target because the trend is smooth and recent values are most informative. In real CRM data, the correlation structure will differ — if deal cycles are 13 weeks long, `lag_13` might dominate. The point is to measure, not assume.
-
-The temporal split output reveals a critical reality: the test period's mean pipeline ($160K+) is substantially higher than the train period's mean ($100K). This is the distribution shift that breaks random-split models. A model trained on the first 80% of this data and evaluated on the last 20% faces a genuine extrapolation challenge — the trend has moved the target distribution upward. This is exactly the scenario you face when forecasting next quarter's pipeline from historical CRM exports.
-
-## Ship It
-
-Walk-forward validation is the evaluation framework that prevents temporal leakage in production. Instead of a single train/test split, the model is retrained at each step on all available data up to time *t*, then predicts *t+1*. This simulates exactly what happens in deployment: each week, you have one more observation, you retrain, and you forecast the next period.
-
-The comparison between walk-forward MAE and the naive baseline (predict last observed value) tells you whether your feature engineering adds value. If the model cannot beat "predict last week's pipeline," the lag features are not capturing signal beyond what pure persistence provides.
+Autoregressive lag feature engineering — shifting the target backward to create `lag_1`, `lag_4`, and `rolling_mean_4` columns — converts temporal dependency into tabular features that a `LinearRegression` model consumes for walk-forward pipeline forecasting. This maps to Zone 2 (Signal Processing): weekly CRM pipeline snapshots are the time series, and the lag features you build here are exactly what a revenue dashboard needs to forecast next week's open pipeline. [CITATION NEEDED — concept: pipeline velocity time series forecasting in GTM topic map]
 
 ```python
 import numpy as np
@@ -209,92 +138,57 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error
 
 np.random.seed(42)
+weeks = pd.date_range('2023-01-01', periods=80, freq='W')
+pipeline = np.linspace(50, 150, 80) + 20 * np.sin(np.arange(80) / 4) + np.random.normal(0, 8, 80)
+df = pd.DataFrame({'pipeline': pipeline}, index=weeks)
 
-n_weeks = 104
-dates = pd.date_range(start='2022-01-03', periods=n_weeks, freq='W')
-trend = np.linspace(50000, 180000, n_weeks)
-seasonality = 15000 * np.sin(2 * np.pi * np.arange(n_weeks) / 52)
-noise = np.random.normal(0, 8000, n_weeks)
-pipeline = trend + seasonality + noise
-
-df = pd.DataFrame({'pipeline_value': pipeline}, index=dates)
-df['lag_1'] = df['pipeline_value'].shift(1)
-df['lag_4'] = df['pipeline_value'].shift(4)
-df['rolling_mean_4'] = df['pipeline_value'].shift(1).rolling(4).mean()
-df['rolling_std_4'] = df['pipeline_value'].shift(1).rolling(4).std()
+df['lag_1'] = df['pipeline'].shift(1)
+df['lag_4'] = df['pipeline'].shift(4)
+df['roll_mean_4'] = df['pipeline'].shift(1).rolling(4).mean()
 df = df.dropna()
 
-features = ['lag_1', 'lag_4', 'rolling_mean_4', 'rolling_std_4']
-target = 'pipeline_value'
+split = 55
+feat = ['lag_1', 'lag_4', 'roll_mean_4']
+X_tr, y_tr = df[feat].iloc[:split], df['pipeline'].iloc[:split]
+X_te, y_te = df[feat].iloc[split:], df['pipeline'].iloc[split:]
 
-initial_train = 60
-step = 1
+model = LinearRegression().fit(X_tr, y_tr)
+preds = model.predict(X_te)
+mae = mean_absolute_error(y_te, preds)
+naive = mean_absolute_error(y_te, [y_tr.iloc[-1]] * len(y_te))
 
-wf_predictions = []
-wf_actuals = []
-wf_dates = []
-naive_predictions = []
-
-for i in range(initial_train, len(df)):
-    train_slice = df.iloc[:i]
-    test_row = df.iloc[i]
-
-    model = LinearRegression()
-    model.fit(train_slice[features], train_slice[target])
-    pred = model.predict(test_row[features].values.reshape(1, -1))[0]
-
-    naive_pred = train_slice[target].iloc[-1]
-
-    wf_predictions.append(pred)
-    wf_actuals.append(test_row[target])
-    wf_dates.append(df.index[i])
-    naive_predictions.append(naive_pred)
-
-wf_mae = mean_absolute_error(wf_actuals, wf_predictions)
-naive_mae = mean_absolute_error(wf_actuals, naive_predictions)
-
-wf_errors = [abs(a - p) for a, p in zip(wf_actuals, wf_predictions)]
-naive_errors = [abs(a - p) for a, p in zip(wf_actuals, naive_predictions)]
-
-print("=== Walk-Forward Validation Results ===")
-print(f"Total forecasts: {len(wf_predictions)}")
-print(f"Training window: expanding from {initial_train} to {initial_train + len(wf_predictions) - 1}")
-print(f"\nModel MAE:  ${wf_mae:,.0f}")
-print(f"Naive MAE:  ${naive_mae:,.0f}")
-improvement = (1 - wf_mae / naive_mae) * 100
-print(f"Improvement over naive: {improvement:+.1f}%")
-print(f"\nModel error as % of mean actual: {wf_mae / np.mean(wf_actuals) * 100:.1f}%")
-
-results = pd.DataFrame({
-    'actual': wf_actuals,
-    'model_pred': wf_predictions,
-    'naive_pred': naive_predictions,
-    'model_error': wf_errors,
-    'naive_error': naive_errors,
-}, index=pd.DatetimeIndex(wf_dates))
-
-print("\n=== Last 10 Forecast Steps ===")
-print(results.tail(10).round(0))
-
-expanding_errors = []
-window_sizes = list(range(initial_train, initial_train + 20))
-for w in window_sizes:
-    if w >= len(df):
-        break
-    train_slice = df.iloc[:w]
-    test_row = df.iloc[w]
-    m = LinearRegression()
-    m.fit(train_slice[features], train_slice[target])
-    p = m.predict(test_row[features].values.reshape(1, -1))[0]
-    expanding_errors.append(abs(test_row[target] - p))
-
-print(f"\n=== Error Trend (first 20 steps) ===")
-print(f"First 5 steps avg error:  ${np.mean(expanding_errors[:5]):,.0f}")
-print(f"Last 5 steps avg error:   ${np.mean(expanding_errors[-5:]):,.0f}")
+print(f"Model MAE: ${mae:.1f}K | Naive MAE: ${naive:.1f}K | Improvement: {(1-mae/naive)*100:+.1f}%")
+print(f"Coefficients: lag_1={model.coef_[0]:.3f}, lag_4={model.coef_[1]:.3f}, roll_mean_4={model.coef_[2]:.3f}")
+print(f"Intercept: {model.intercept_:.2f}")
 ```
 
-The walk-forward output shows whether the model's error is stable as the training window grows. If early-step errors are high and later-step errors decrease, the model benefits from more data — it is learning genuine structure. If errors are flat or increasing, the feature set is not capturing the underlying pattern, and you need richer features (longer lags, seasonal indicators, external regressors).
+The improvement percentage is the only metric that matters. If the model beats the naive baseline (predict last observed value), the lag features encode structure beyond pure persistence. If it does not, the temporal signal in the data is weaker than the trend, and you need richer features — longer lags, seasonal indicators, or external regressors like marketing spend. The coefficients tell you which lag depth carries the most weight: a dominant `lag_4` coefficient suggests a monthly cycle, while a dominant `lag_1` suggests week-to-week momentum drives the series.
 
-The improvement percentage over the naive baseline is the single most important metric in this entire lesson. If it is near zero or negative, your engineered features add no value beyond persistence. In that case, the issue is rarely the model — it is that your features do not encode the right temporal structure. Go back to the ACF analysis and check whether your lag depths match the autocorrelation peaks.
+## Exercises
 
-##
+### Exercise 1 — Decomposition Sensitivity (Easy)
+
+Modify the Build It code to run `seasonal_decompose` with `period=4` instead of `period=12`. Compare the residual standard deviation between the two runs. Does the misspecified period inflate or deflate the residual? Then modify the synthetic series to use `seasonality = 5 * np.sin(2 * np.pi * np.arange(n_points) / 4)` (matching the new period) and re-run. Report the residual std in both cases and explain why matching the period parameter to the true seasonal cycle matters.
+
+### Exercise 2 — Walk-Forward Feature Ablation (Hard)
+
+Using the pipeline dataset from Use It, implement an expanding-window walk-forward validation loop (train on all data up to week *t*, predict week *t+1*, advance). Run it three times with different feature sets: (a) `['lag_1']` only, (b) `['lag_1', 'lag_4']`, (c) `['lag_1', 'lag_4', 'roll_mean_4']`. For each, compute walk-forward MAE and improvement over the naive baseline. Which feature set provides the largest marginal improvement over the previous set? At what point does adding features stop helping — or does it always help? Report your findings as a printed table.
+
+## Key Terms
+
+- **Autocorrelation (ACF):** Correlation between a series and a lagged copy of itself. High ACF at lag *k* means the value *k* periods ago is predictive of the current value.
+- **Stationarity:** A property where the mean, variance, and autocorrelation structure of a series do not change over time. Required by most classical time series models as a precondition.
+- **Augmented Dickey-Fuller (ADF) Test:** A hypothesis test where the null hypothesis is that a unit root exists (non-stationary). A p-value below 0.05 rejects the null and concludes the series is stationary.
+- **Differencing:** The transformation `y'(t) = y(t) - y(t-1)`. First-order differencing removes a linear trend; each order sacrifices one observation.
+- **Lag Feature:** A shifted copy of the target variable used as a model input. `lag_1 = y(t-1)` makes the prior period's value a column the model can consume at time *t*.
+- **Rolling Window Statistic:** An aggregate (mean, std) computed over a sliding window of recent values, shifted by one to prevent including the current observation.
+- **Walk-Forward Validation:** An evaluation protocol that retrains the model at each step on all data up to time *t* and predicts *t+1*. Simulates production deployment where new data arrives sequentially.
+- **Temporal Leakage:** Future information appearing in training data through improper splits or unshifted features. The most common failure mode in time series ML.
+
+## Sources
+
+1. Hyndman, R.J. & Athanasopoulos, G. (2021). *Forecasting: Principles and Practice*, 3rd edition, OTexts. Chapters 1.4–1.7 (time series patterns, decomposition), 6.1–6.2 (stationarity and differencing), and 5.7 (time series cross-validation). https://otexts.com/fpp3/
+2. statsmodels documentation: `seasonal_decompose` (moving average decomposition), `adfuller` (Augmented Dickey-Fuller test). https://www.statsmodels.org/stable/tsa.html
+3. scikit-learn documentation: `LinearRegression`, `mean_absolute_error`. https://scikit-learn.org/stable/modules/linear_model.html
+4. [CITATION NEEDED — concept: cold calling multi-channel sequencing meeting rates]
+5. [CITATION NEEDED — concept: pipeline velocity time series forecasting in GTM topic map]

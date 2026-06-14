@@ -131,192 +131,38 @@ This code produces five observable outputs: the original pixel grid, the VQ code
 
 ## Use It
 
-In Emu3's autoregressive pipeline, each generated token carries a probability from the softmax over the vocabulary. That probability is not just a sampling parameter — it is a health signal. When the model is confident, the distribution is sharply peaked (low entropy). When it is uncertain — typically because the prompt is out of distribution or the sequence has drifted into an unlikely region — entropy rises and the top probability drops. Monitoring per-token entropy across a generation run gives you a degradation signal before the output reaches the user.
-
-This is the same observability principle that applies to GTM outreach sequences. In a multi-step email cadence, each touch is conditioned on the prior touches — the sequence is autoregressive. The reply rate at step *t* is your probability signal. When reply rates hold steady across steps, the sequence is healthy. When reply rate drifts downward at step 3 or 4, the sequence has entered an unlikely region of the response distribution — the copy is mismatched to the audience, the cadence is too aggressive, or the targeting has degraded. This tracing setup monitors your sequence performance in real time; reply rate drift is your model degradation signal, the same way token entropy drift flags a degrading generation pipeline.
+The autoregressive next-token prediction mechanism — where each token's softmax probability is a confidence signal that degrades as the sequence drifts into unlikely regions — maps directly to multi-step GTM outbound cadences, where each touch is conditioned on prior touches and reply rate is the probability signal. [CITATION NEEDED — concept: GTM outbound cadence step-by-step conditioning model] When reply rate collapses at step 4 of a 6-step sequence, the cadence has entered the same low-probability region that an Emu3 generation enters when token entropy spikes at position 3000. The detection method is identical: compare a recent window against a baseline, compute the percentage drift, alert when it crosses a threshold.
 
 ```python
 import numpy as np
 
 np.random.seed(42)
 
-def simulate_generation_entropy(steps, drift_start=None, drift_magnitude=0.0):
-    entropies = []
-    top_probs = []
-    for t in range(steps):
-        base_entropy = 1.2 + 0.3 * np.sin(t * 0.5)
-        if drift_start and t >= drift_start:
-            base_entropy += drift_magnitude * (t - drift_start)
-        noise = np.random.normal(0, 0.15)
-        entropy = max(0.1, base_entropy + noise)
-        entropies.append(entropy)
-        effective_temp = 1.0 / (1.0 + entropy * 0.3)
-        top_p = 1.0 / (1.0 + np.exp(-(2.0 - entropy)))
-        top_probs.append(top_p)
-    return entropies, top_probs
+reply_rates = [0.12, 0.11, 0.13, 0.10, 0.09, 0.06, 0.04, 0.03, 0.02]
+baseline = np.mean(reply_rates[:4])
+recent = np.mean(reply_rates[-4:])
 
-token_entropies, token_top_probs = simulate_generation_entropy(12)
-print("=== Emu3-Style Token Generation Health ===")
-print(f"{'Step':>4}  {'Entropy':>8}  {'Top-1 Prob':>10}  {'Status':>8}")
-print("-" * 40)
-for i, (e, p) in enumerate(zip(token_entropies, token_top_probs)):
-    status = "OK" if e < 2.0 else ("WARN" if e < 2.8 else "DEGRADE")
-    print(f"{i+1:4d}  {e:8.3f}  {p:10.4f}  {status:>8}")
-
-reply_rates = [0.12, 0.11, 0.13, 0.10, 0.09, 0.06, 0.04, 0.03, 0.02, 0.02, 0.01, 0.01]
-print("\n=== GTM Sequence Health (Reply Rate = Sequence Probability Signal) ===")
 print(f"{'Step':>4}  {'Reply%':>7}  {'Delta':>7}  {'Status':>8}")
-print("-" * 38)
+print("-" * 35)
 prev = reply_rates[0]
-for i, rate in enumerate(reply_rates):
-    delta = rate - prev
-    status = "OK" if rate > 0.07 else ("WATCH" if rate > 0.04 else "DEGRADE")
-    print(f"{i+1:4d}  {rate*100:6.1f}%  {delta*100:+6.1f}%  {status:>8}")
-    prev = rate
+for i, r in enumerate(reply_rates):
+    delta = (r - prev) / prev * 100 if prev > 0 else 0
+    status = "OK" if r > 0.07 else ("WATCH" if r > 0.04 else "DEGRADE")
+    print(f"{i+1:4d}  {r:6.1%}  {delta:+6.1f}%  {status:>8}")
+    prev = r
 
-baseline_entropy = np.mean(token_entropies[:4])
-recent_entropy = np.mean(token_entropies[-4:])
-entropy_drift = (recent_entropy - baseline_entropy) / baseline_entropy * 100
-print(f"\nToken entropy drift (first 4 vs last 4 steps): {entropy_drift:+.1f}%")
-
-baseline_reply = np.mean(reply_rates[:4])
-recent_reply = np.mean(reply_rates[-4:])
-reply_drift = (recent_reply - baseline_reply) / baseline_reply * 100
-print(f"Reply rate drift (first 4 vs last 4 steps): {reply_drift:+.1f}%")
-
-if reply_drift < -30:
-    print("ALERT: Sequence degradation detected. Reply rate has dropped >30% from baseline.")
-    print("Root cause candidates: targeting drift, cadence fatigue, copy mismatch.")
+drift = (recent - baseline) / baseline * 100
+print(f"\nBaseline (steps 1-4): {baseline:.1%}  Recent (steps 6-9): {recent:.1%}")
+print(f"Drift: {drift:+.1f}%  ->  {'ALERT: pause cadence, audit copy and ICP fit' if drift < -30 else 'HEALTHY'}")
 ```
 
-The code runs both signals side by side. Token entropy drift flags a generation pipeline losing confidence. Reply rate drift flags a GTM sequence losing engagement. Both are detected by the same method: compare a recent window against a baseline window, compute the percentage change, and alert when the delta crosses a threshold. Zone 12 observability is not about logging everything — it is about picking the one signal per pipeline stage that predicts failure and watching it continuously.
-
-## Ship It
-
-Deploying an Emu3-style pipeline in production means instrumenting the generation loop to emit per-token signals that downstream monitors can aggregate. The critical engineering decisions are: what to log per token (entropy, top-1 probability, rank of sampled token), how to aggregate (sliding window mean, percentile, drift ratio), and when to alert (absolute threshold vs. relative-to-baseline ratio). Getting this wrong means either drowning in noise or missing slow degradation that compounds over thousands of generations.
-
-For GTM sequence pipelines, the shipping question is identical. Your outreach tool — whether it is a Clay waterfall, a Salesloft cadence, or a custom sequence runner — emits per-step reply rates, bounce rates, and meeting-booked rates. The pipeline health monitor compares each step's recent performance against its historical baseline. When step 4 of a 6-step cadence drops from 8% reply to 2% reply, that is the GTM equivalent of a generation pipeline whose token entropy spiked at position 4096 — the sequence has entered a low-probability region and the output quality is degrading.
-
-```python
-import numpy as np
-from collections import deque
-
-np.random.seed(123)
-
-class GenerationHealthMonitor:
-    def __init__(self, window_size=50, alert_drift_pct=-25.0, min_samples=20):
-        self.baseline = deque(maxlen=window_size)
-        self.recent = deque(maxlen=window_size)
-        self.alert_drift = alert_drift_pct
-        self.min_samples = min_samples
-        self.alerts = []
-
-    def record(self, token_entropy, top_prob):
-        signal = token_entropy * (1.0 - top_prob)
-        if len(self.baseline) < self.baseline.maxlen:
-            self.baseline.append(signal)
-        else:
-            self.recent.append(signal)
-
-    def check_drift(self):
-        if len(self.recent) < self.min_samples:
-            return None
-        b_mean = np.mean(self.baseline)
-        r_mean = np.mean(self.recent)
-        drift_pct = (r_mean - b_mean) / b_mean * 100
-        if drift_pct < self.alert_drift:
-            alert = {
-                "type": "DEGRADATION",
-                "baseline_signal": round(b_mean, 4),
-                "recent_signal": round(r_mean, 4),
-                "drift_pct": round(drift_pct, 1),
-            }
-            self.alerts.append(alert)
-            return alert
-        return None
-
-class SequenceHealthMonitor:
-    def __init__(self, window_size=50, alert_drift_pct=-25.0, min_samples=20):
-        self.baseline = deque(maxlen=window_size)
-        self.recent = deque(maxlen=window_size)
-        self.alert_drift = alert_drift_pct
-        self.min_samples = min_samples
-
-    def record(self, replied, total_sent):
-        rate = replied / max(total_sent, 1)
-        if len(self.baseline) < self.baseline.maxlen:
-            self.baseline.append(rate)
-        else:
-            self.recent.append(rate)
-
-    def check_drift(self):
-        if len(self.recent) < self.min_samples:
-            return None
-        b = np.mean(self.baseline)
-        r = np.mean(self.recent)
-        drift = (r - b) / b * 100
-        if drift < self.alert_drift:
-            return {
-                "type": "SEQUENCE_DEGRADATION",
-                "baseline_reply": round(b, 4),
-                "recent_reply": round(r, 4),
-                "drift_pct": round(drift, 1),
-            }
-        return None
-
-gen_monitor = GenerationHealthMonitor(window_size=30, min_samples=15)
-for i in range(60):
-    entropy = 1.5 if i < 30 else 1.5 + (i - 30) * 0.08
-    top_p = 0.7 if i < 30 else max(0.3, 0.7 - (i - 30) * 0.015)
-    gen_monitor.record(entropy, top_p)
-    alert = gen_monitor.check_drift()
-
-print("=== Generation Pipeline Health Report ===")
-if gen_monitor.alerts:
-    a = gen_monitor.alerts[-1]
-    print(f"Status: DEGRADED")
-    print(f"Baseline signal: {a['baseline_signal']}")
-    print(f"Recent signal:   {a['recent_signal']}")
-    print(f"Drift: {a['drift_pct']}%")
-    print(f"Action: Increase classifier-free guidance scale or switch to top-k sampling")
-else:
-    print("Status: HEALTHY")
-
-seq_monitor = SequenceHealthMonitor(window_size=30, min_samples=15)
-for i in range(60):
-    rate = 0.10 if i < 30 else max(0.02, 0.10 - (i - 30) * 0.003)
-    sent = 100
-    replied = int(rate * sent)
-    seq_monitor.record(replied, sent)
-    alert = seq_monitor.check_drift()
-
-print("\n=== GTM Sequence Health Report ===")
-sa = seq_monitor.check_drift()
-if seq_monitor.recent:
-    b_mean = np.mean(seq_monitor.baseline)
-    r_mean = np.mean(seq_monitor.recent)
-    drift = (r_mean - b_mean) / b_mean * 100
-    print(f"Baseline reply rate: {b_mean:.1%}")
-    print(f"Recent reply rate:   {r_mean:.1%}")
-    print(f"Drift: {drift:.1f}%")
-    if drift < -25:
-        print(f"Status: DEGRADED")
-        print(f"Action: Pause step 4+, audit copy, re-check ICP targeting fit")
-    else:
-        print(f"Status: HEALTHY")
-```
-
-The two monitors share the same architecture: a fixed-size baseline window, a rolling recent window, and a drift ratio check. The generation monitor uses entropy scaled by `(1 - top_prob)` as its signal — high entropy plus low top probability means the model is guessing. The sequence monitor uses reply rate as its signal — a drop means the audience is not engaging. Both trigger at the same threshold (-25% from baseline) because the failure mode is the same: the pipeline has entered a region of low output quality and every additional step deepens the loss.
+The output traces step-level degradation the same way a generation log traces token-level entropy. Step 5 is the inflection — reply rate drops from 9% to 6%, then to 4%, then to 2%. The baseline-to-recent drift of roughly −67% trips the alert. In Emu3, you would intervene by raising the classifier-free guidance scale or switching to top-k sampling. In GTM, you intervene by pausing steps 6+, auditing copy against the ICP, and checking whether the targeting criteria have drifted from the segment that produced the baseline reply rates. [CITATION NEEDED — concept: GTM cadence pause-and-audit best practices]
 
 ## Exercises
 
-**Exercise 1 — Tokenizer compression trade-off:** Modify the codebook size in the Build It code from 16 to 8, then to 64. For each setting, record the reconstruction MSE and the number of unique codes actually used. At what codebook size does the MSE plateau? What does this tell you about the information bottleneck in VQ tokenization?
+**Exercise 1 — Tokenizer compression trade-off:** Modify the codebook size in the Build It code from 16 to 8, then to 64. For each setting, record the reconstruction MSE and the number of unique codes actually used. At what codebook size does the MSE plateau? What does this tell you about the information bottleneck in VQ tokenization — and why does Emu3 invest in a high-capacity visual codebook rather than using a smaller one and relying on the transformer to compensate?
 
-**Exercise 2 — Sampling strategy comparison:** Replace the argmax prediction in the Build It code with three sampling strategies: greedy (argmax), temperature sampling at τ=0.7, and top-k sampling with k=4. Generate 20 images with each strategy and compute the average pixel variance across generations. Which strategy produces the most diverse outputs? Which produces the highest average reconstruction quality when compared to the original?
-
-**Exercise 3 — Drift detection sensitivity:** In the Ship It monitor code, change the window size from 30 to 10, then to 100. For each window size, determine how many samples into the degradation phase the alert fires. Plot the detection latency (samples until first alert) against window size. What is the trade-off between detection speed and false-positive rate?
-
-**Exercise 4 — Spatiotemporal tokenization simulation:** Extend the VQ encoder from 2D image patches to 3D video patches. Create a synthetic 4×4×3 video tensor (height × width × frames), encode each spatiotemporal patch into a single code using a temporal-averaging approach, and compare the number of tokens produced by frame-by-frame encoding vs. 3D patch encoding. How much sequence length does spatiotemporal tokenization save for a 3-frame video?
+**Exercise 2 — Drift detection sensitivity on a GTM cadence:** Take the reply-rate list in the Use It code and replace it with three synthetic sequences: (a) a healthy cadence that holds steady at 10–12% across all steps, (b) a gradual-decline cadence that drops 1 percentage point per step, and (c) a cliff-drop cadence that holds at 11% for 5 steps then collapses to 2%. For each sequence, compute the baseline-to-recent drift percentage. Which sequence type triggers the alert earliest? Which type would a fixed-threshold monitor (alert if reply < 5%) miss entirely? What does this tell you about relative-drift detection vs. absolute-threshold detection in production GTM monitoring?
 
 ## Key Terms
 
@@ -324,4 +170,19 @@ The two monitors share the same architecture: a fixed-size baseline window, a ro
 
 **VQ tokenizer (vector-quantized tokenizer):** An encoder-decoder network that maps continuous image or video patches to discrete integer codes from a learned codebook, then decodes codes back to pixels. Emu3 uses SBER-MoVQGAN for images and a 3D variant for video.
 
-**Causal attention mask:** The constraint that
+**Causal attention mask:** The constraint that token at position *t* can only attend to tokens at positions *1…t*, preventing the model from seeing future context. This is what makes generation autoregressive — each prediction depends only on what has been produced so far.
+
+**Classifier-free guidance (CFG):** An inference technique that runs two forward passes — one conditioned on the text prompt, one unconditional — and interpolates between their output distributions. Higher guidance scale pushes the output closer to the conditional distribution, improving prompt adherence at the cost of diversity. Emu3 uses CFG at inference despite training with no auxiliary classifier.
+
+**KV-cache:** A memory optimization for autoregressive transformers that stores the key and value tensors from all prior positions so that each new token prediction requires computing only one new position's attention rather than recomputing the entire sequence. Without KV-caching, generating 4096 visual tokens would be quadratic in cost.
+
+**Spatiotemporal tokenization:** Extending 2D spatial VQ patches into 3D blocks that span height, width, and time. A single code represents a patch of pixels across multiple video frames, capturing motion and temporal consistency. This reduces the token sequence length for video compared to frame-by-frame encoding.
+
+## Sources
+
+- Wang, J., et al. "Emu3: Next-Token Prediction is All You Need." arXiv:2409.18869, September 2024. Published in *Nature* (2024).
+- Team Chameleon. "Chameleon: Mixed-Modal Early-Fusion Foundation Models." Meta AI, arXiv:2405.09818, May 2024.
+- Esser, P., Rombach, R., and Ommer, B. "Taming Transformers for High-Resolution Image Synthesis." (VQ-GAN, the foundational VQ tokenizer architecture Emu3 builds upon.) arXiv:2012.09841, December 2020.
+- Ho, J., et al. "Denoising Diffusion Probabilistic Models." (The diffusion baseline Emu3 claims to surpass.) arXiv:2006.11239, December 2020.
+- [CITATION NEEDED — concept: SBER-MoVQGAN specific architecture and codebook details used in Emu3]
+- [CITATION NEEDED — concept: GTM outbound cadence monitoring and reply-rate drift detection best practices]

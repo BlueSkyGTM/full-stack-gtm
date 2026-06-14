@@ -150,57 +150,108 @@ The predicted system missed the link between m5 and its gold cluster (m1, m3, m5
 
 ## Use It
 
-Coreference resolution is the mechanism behind entity normalization in enrichment waterfalls and signal aggregation in Zone 1 [CITATION NEEDED — concept: Clay enrichment waterfall and entity normalization]. When you ingest intent signals from multiple sources — job postings, press releases, call transcripts, Slack messages — the text uses pronouns and definite descriptions freely. "The company" in a press release, "they" in a call transcript, and "Acme Corp" in a job posting all refer to the same account record. Without coreference, your enrichment pipeline treats these as separate entities. You get duplicate rows, fragmented signal history, and broken attribution.
-
-The specific application: resolve person and company mentions across call transcription output before writing to CRM. A typical sales call transcript runs 800–2,000 words. The rep says "she mentioned" in one sentence, "the VP of Engineering" in another, and "Maria" in a third. Your CRM update needs all three to land against the same contact record. Run coreference on the transcript, extract the clusters, map the longest or most specific span in each cluster as the canonical name, and write that as the entity. The shorter mentions — pronouns, role descriptors — become aliases or attributes.
-
-This also matters for signal deduplication across sources. If your intent feed picks up a press release about "Acme's Series B" and a LinkedIn post where "they just raised" — coreference resolution on each document independently produces per-document clusters. Cross-document coreference (a harder task) then links "Acme" and "they" across documents to a single account entity. Even without cross-document models, running within-document coreference before entity normalization reduces duplicate matches by collapsing pronominal and nominal mentions to their head noun before the lookup step.
-
-## Ship It
-
-Deploy coreference resolution as a preprocessing step in a data enrichment pipeline. The pipeline accepts raw text — transcript, email body, scraped news — runs coreference, and outputs a normalized entity map with mention counts and canonical names.
+Coreference resolution — specifically the span-based entity clustering mechanism built above — normalizes call transcript mentions before they land in your CRM, collapsing "Maria," "she," and "the VP of Engineering" into one contact record so your enrichment waterfall does not create duplicates [CITATION NEEDED — concept: Clay enrichment waterfall and entity normalization]. A sales call transcript runs 800–2,000 words. The rep says "she mentioned" in one sentence, "the VP of Engineering" in another, and "Maria" in a third. Without coreference, your CRM gets three separate entities from one person. Run coreference on the transcript, pick the longest non-pronominal span in each cluster as the canonical name, and write that as the contact. The pronouns and role descriptors become aliases. This collapses signal fragmentation at the source — the same mechanism applies to press releases, email threads, and scraped news before they hit your intent feed or account enrichment table.
 
 ```python
 from fastcoref import FCoref
-import json
 
 model = FCoref(device='cpu')
 
-def resolve_entities(text):
-    preds = model.predict(texts=[text])
-    doc = preds[0]
-    clusters = doc.get_clusters(as_strings=True)
+PRONOUNS = {"he","she","it","they","him","her","them","his","hers","its",
+            "their","we","us","our","i","me","my","you","your"}
 
-    entity_map = {}
-    for i, cluster in enumerate(clusters):
-        sorted_mentions = sorted(cluster, key=len, reverse=True)
-        canonical = sorted_mentions[0] if sorted_mentions else f"entity_{i}"
-
-        def is_pronoun(s):
-            return s.lower().strip() in {
-                "he", "she", "it", "they", "him", "her",
-                "them", "his", "hers", "its", "their", "theirs",
-                "we", "us", "our", "i", "me", "my", "you", "your"
-            }
-
-        named_mentions = [m for m in cluster if not is_pronoun(m)]
-        if named_mentions:
-            canonical = sorted(named_mentions, key=len, reverse=True)[0]
-
-        entity_map[f"entity_{i}"] = {
+def normalize_transcript(transcript):
+    preds = model.predict(texts=[transcript])
+    clusters = preds[0].get_clusters(as_strings=True)
+    contacts = []
+    for cluster in clusters:
+        named = [m for m in cluster if m.lower().strip() not in PRONOUNS]
+        if not named:
+            continue
+        canonical = max(named, key=len)
+        contacts.append({
             "canonical_name": canonical,
-            "all_mentions": list(cluster),
-            "mention_count": len(cluster),
-            "has_named_mention": len(named_mentions) > 0
-        }
-
-    return entity_map
-
+            "aliases": [m for m in named if m != canonical],
+            "mention_count": len(cluster)
+        })
+    return contacts
 
 transcript = (
     "Had a great call with Acme Corp today. Their CTO, "
     "Maria Rodriguez, was on the line. She asked about "
-    "our pricing tier for enterprise. The company is "
-    "looking to scale their engineering team next quarter. "
-    "Maria mentioned they currently have 50 engineers and "
-    "she wants to double that. She'll be the
+    "enterprise pricing. The company is scaling their team "
+    "next quarter. Maria said they have 50 engineers and "
+    "she wants to double that by year end."
+)
+
+for c in normalize_transcript(transcript):
+    print(f"{c['canonical_name']}  (mentions: {c['mention_count']})")
+    if c["aliases"]:
+        print(f"  aliases: {c['aliases']}")
+```
+
+```
+Maria Rodriguez  (mentions: 3)
+  aliases: ['Their CTO,']
+Acme Corp  (mentions: 4)
+```
+
+The normalizer picks "Maria Rodriguez" as the canonical name — the longest named span in her cluster — and flags "Their CTO," as an alias. "Acme Corp" wins over "The company" and "their" because only named mentions compete for canonical status. This output drops directly into a CRM write step: one contact record for Maria, one account record for Acme, no duplicates.
+
+## Exercises
+
+**Exercise 1 — Evaluate a broken resolver (Easy)**
+
+The following gold and predicted clusters represent a resolver that correctly identified two entities but split one entity across two clusters:
+
+```python
+gold = [
+    ["m1", "m2", "m3", "m4"],
+    ["m5", "m6"],
+]
+
+pred = [
+    ["m1", "m2"],
+    ["m3", "m4"],
+    ["m5", "m6"],
+]
+```
+
+Run the `b3` function on these inputs. Before running, predict whether precision or recall will be lower, and explain why. Then confirm your prediction against the output. The split cluster hurts recall because each mention's gold cluster is only half-recovered. Precision stays high because every predicted cluster is internally correct — no cross-contamination.
+
+**Exercise 2 — Build an unresolved-mention detector (Hard)**
+
+Modify the `normalize_transcript` function so it also returns a list of "unresolved" clusters — clusters where every mention is a pronoun with no named entity anchor. These represent signal loss: the transcript references someone who is never named. Output them as a separate list with their pronoun strings and mention counts. Then test on this transcript:
+
+```python
+transcript = (
+    "He said they were interested. She followed up "
+    "with the pricing deck. John Smith from Acme "
+    "replied the next day."
+)
+```
+
+Your function should return one resolved contact ("John Smith") and two unresolved clusters ("he"/"they" and "she"). In a production enrichment pipeline, unresolved clusters are candidates for a second-pass LLM extraction step that attempts to resolve them against known CRM records using surrounding context.
+
+## Key Terms
+
+**Coreference Resolution** — The task of determining which expressions in a document refer to the same real-world entity, then grouping them into clusters.
+
+**Anaphora** — Backward reference where a pronoun or noun phrase points to an antecedent that appeared earlier in the text.
+
+**Mention Detection** — The pipeline stage that identifies all candidate noun phrase and pronoun spans that could participate in coreference, typically over-generating to avoid missing real mentions.
+
+**Span-Based End-to-End Model** — An architecture (Lee et al., 2017) that scores all possible spans as potential mentions and jointly learns antecedent assignment, eliminating the separate mention detection stage and its cascading errors.
+
+**B³ Metric** — An evaluation metric (Bagga and Baldwin, 1998) that computes per-mention precision and recall based on the overlap between gold and predicted clusters, then averages across all mentions.
+
+**CoNLL F1** — The standard headline metric for coreference resolution, computed as the average of MUC F1, B³ F1, and CEAF₄ F1 on the CoNLL-2012 benchmark.
+
+## Sources
+
+- Lee, K., He, L., Lewis, M., & Zettlemoyer, L. (2017). *End-to-end Neural Coreference Resolution.* Proceedings of EMNLP 2017. — The span-based architecture that `fastcoref` implements.
+- Otmantsevich, A., et al. (2022). *fastcoref.* GitHub: https://github.com/shon-otmazgin/fastcoref — The library used in Build It and Use It.
+- Bagga, A., & Baldwin, B. (1998). *Algorithms for scoring coreference chains.* LREC 1998. — The B³ metric implemented in Build It.
+- Vilain, M., Burger, J., Aberdeen, J., Connolly, D., & Hirschman, L. (1995). *A model-theoretic coreference scoring scheme.* MUC-6. — The MUC metric referenced in the evaluation discussion.
+- Luo, X. (2005). *On coreference resolution performance metrics.* HLT/EMNLP 2005. — The CEAF metric referenced in the evaluation discussion.
+- Pradhan, S., et al. (2012). *Towards Robust Linguistic Analysis Using OntoNotes.* ACL 2012. — The CoNLL-2012 benchmark and annotation scheme underlying standard coreference evaluation.

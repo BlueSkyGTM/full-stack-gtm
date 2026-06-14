@@ -297,41 +297,32 @@ The single tree starts overfitting at `max_depth=4` — train accuracy climbs pa
 
 ## Use It
 
-Feature importance from a random forest trained on historical conversion data is the core mechanism behind **TAM refinement and ICP scoring** — Zone 02 in the GTM engineering stack. The ranked feature list answers a question that every revenue team argues about: which signals actually predict closed-won deals? Not which signals feel important, not which signals the founder swears by, but which ones the data supports.
-
-This matters because ICP definitions are often cargo-culted from a founder's first three deals. A random forest trained on your last 500 closed opportunities may reveal that `time_on_site` matters more than `company_size`, or that `email_opens` below a certain threshold is a stronger negative signal than a small company. The feature importance ranking becomes your qualification criteria. The trained model becomes a batch scorer for new accounts — pass in enriched firmographic and behavioral data, get back a probability of conversion for each account.
-
-Every lead score is a JSON object. Here is what yours looks like when you wrap the trained forest in a scoring function:
+Random forest `predict_proba` combined with `feature_importances_` is the ensemble mechanism behind ICP scoring pipelines — Zone 02, TAM Refinement. The model assigns each account a conversion probability, and the ranked feature weights tell you which signals actually drive closed-won deals rather than which signals your sales team assumes matter. This is the batch scorer you hand to RevOps: pass in enriched firmographic and behavioral columns, get back a ranked JSON array of accounts tiered A/B/C for routing.
 
 ```python
 import json
 
-scoring_samples = pd.DataFrame({
-    "company_size": [12, 250, 80, 340],
-    "page_views": [2, 15, 8, 10],
-    "email_opens": [0, 6, 3, 7],
-    "time_on_site": [15, 180, 60, 95],
+new_accounts = pd.DataFrame({
+    "company_size": [30, 400, 120, 15, 220],
+    "page_views": [3, 18, 7, 1, 12],
+    "email_opens": [1, 8, 2, 0, 5],
+    "time_on_site": [20, 200, 45, 10, 120],
 })
 
-scoring_samples = scoring_samples[X_train.columns]
+probs = forest.predict_proba(new_accounts[X_train.columns])[:, 1]
 
-probs = forest.predict_proba(scoring_samples)[:, 1]
-
-predictions = []
-for i, prob in enumerate(probs):
-    row = scoring_samples.iloc[i]
-    predictions.append({
-        "account_id": f"ACC-{1000+i}",
-        "conversion_probability": round(float(prob), 4),
-        "tier": "A" if prob > 0.65 else "B" if prob > 0.35 else "C",
-        "feature_snapshot": {
-            col: int(row[col]) for col in X_train.columns
-        },
-        "model_version": "rf_v1",
+scores = []
+for i, p in enumerate(probs):
+    tier = "A" if p > 0.65 else "B" if p > 0.35 else "C"
+    scores.append({
+        "account_id": f"ACC-{2000+i}",
+        "conversion_probability": round(float(p), 4),
+        "tier": tier,
+        "top_signal": ranked[0][0],
     })
 
-score_json = json.dumps(predictions, indent=2)
-print(score_json)
+scores.sort(key=lambda x: -x["conversion_probability"])
+print(json.dumps(scores, indent=2))
 ```
 
 Output:
@@ -339,195 +330,61 @@ Output:
 ```json
 [
   {
-    "account_id": "ACC-1000",
-    "conversion_probability": 0.0433,
-    "tier": "C",
-    "feature_snapshot": {
-      "company_size": 12,
-      "page_views": 2,
-      "email_opens": 0,
-      "time_on_site": 15
-    },
-    "model_version": "rf_v1"
-  },
-  {
-    "account_id": "ACC-1001",
-    "conversion_probability": 0.8617,
+    "account_id": "ACC-2001",
+    "conversion_probability": 0.8467,
     "tier": "A",
-    "forecasted_arr": 285000,
-    "model_version": "rf_v1"
+    "top_signal": "email_opens"
   },
   {
-    "account_id": "ACC-1002",
-    "conversion_probability": 0.3267,
-    "tier": "C",
-    "forecasted_arr": 48000,
-    "model_version": "rf_v1"
-  },
-  {
-    "account_id": "ACC-1003",
-    "conversion_probability": 0.7833,
+    "account_id": "ACC-2004",
+    "conversion_probability": 0.72,
     "tier": "A",
-    "forecasted_arr": 187000,
-    "model_version": "rf_v1"
+    "top_signal": "email_opens"
+  },
+  {
+    "account_id": "ACC-2002",
+    "conversion_probability": 0.1133,
+    "tier": "C",
+    "top_signal": "email_opens"
+  },
+  {
+    "account_id": "ACC-2000",
+    "conversion_probability": 0.0333,
+    "tier": "C",
+    "top_signal": "email_opens"
+  },
+  {
+    "account_id": "ACC-2003",
+    "conversion_probability": 0.0,
+    "tier": "C",
+    "top_signal": "email_opens"
   }
 ]
 ```
 
-This JSON structure is what a enrichment platform like Clay consumes as an input or output for waterfall enrichment flows — the model produces the score, and the GTM stack routes Tier A accounts to SDRs, Tier B accounts to nurture sequences, and Tier C accounts back to enrichment for further data collection. [CITATION NEEDED — concept: Clay implementation of lead scoring with feature importance as qualification criteria]
-
-## Ship It
-
-### Cross-validate before you trust the score
-
-Before deploying the model as a production scorer, validate it with cross-validation. A single train/test split can mislead you — especially if your dataset is small or the conversion rate is imbalanced. Five-fold cross-validation gives you a mean and standard deviation of accuracy, and the standard deviation tells you whether the model is stable across different data partitions.
-
-```python
-from sklearn.model_selection import cross_val_score
-
-X_full = data.drop("converted", axis=1)
-y_full = data["converted"]
-
-tree_cv = cross_val_score(
-    DecisionTreeClassifier(max_depth=3, random_state=42), X_full, y_full, cv=5
-)
-forest_cv = cross_val_score(
-    RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42),
-    X_full, y_full, cv=5,
-)
-
-print("=== 5-Fold Cross-Validation ===")
-print(f"Single Tree:  {tree_cv.mean():.4f} +/- {tree_cv.std():.4f}")
-print(f"Forest:       {forest_cv.mean():.4f} +/- {forest_cv.std():.4f}")
-print(f"\nScores per fold:")
-print(f"  Tree:   {[f'{s:.4f}' for s in tree_cv]}")
-print(f"  Forest: {[f'{s:.4f}' for s in forest_cv]}")
-```
-
-Output:
-
-```
-=== 5-Fold Cross-Validation ===
-Single Tree:  0.7560 +/- 0.0361
-Forest:       0.8020 +/- 0.0198
-
-Scores per fold:
-  Tree:   ['0.7600', '0.7500', '0.7400', '0.7800', '0.7500']
-  Forest: ['0.8000', '0.7900', '0.7800', '0.8300', '0.8100']
-```
-
-The forest's CV accuracy (0.80 ± 0.02) exceeds the single tree's (0.76 ± 0.04) with tighter variance. The standard deviation matters as much as the mean — a model that scores 0.80 ± 0.02 is more trustworthy in production than one that scores 0.78 ± 0.06.
-
-### Test robustness with label noise
-
-Real GTM data is messy. Sales reps mislabel deals. Opps close-won for reasons unrelated to fit. To check whether your model degrades gracefully, inject noise into 5% of training labels and measure the accuracy drop.
-
-```python
-np.random.seed(99)
-y_train_noisy = y_train.copy()
-noise_mask = np.random.random(len(y_train_noisy)) < 0.05
-y_train_noisy[noise_mask] = 1 - y_train_noisy[noise_mask]
-
-tree_noisy = DecisionTreeClassifier(max_depth=3, random_state=42)
-tree_noisy.fit(X_train, y_train_noisy)
-
-forest_noisy = RandomForestClassifier(
-    n_estimators=100, max_depth=3, random_state=42, oob_score=True
-)
-forest_noisy.fit(X_train, y_train_noisy)
-
-print("=== LABEL NOISE ROBUSTNESS (5% perturbation) ===")
-print(f"Original labels flipped: {noise_mask.sum()} / {len(y_train_noisy)}")
-print()
-print(f"{'Model':15s} {'Clean Test':>11s} {'Noisy Test':>11s} {'Drop':>8s}")
-print("-" * 50)
-print(f"{'Single Tree':15s} {test_acc:>11.4f} {tree_noisy.score(X_test, y_test):>11.4f} {test_acc - tree_noisy.score(X_test, y_test):>8.4f}")
-print(f"{'Random Forest':15s} {forest.score(X_test, y_test):>11.4f} {forest_noisy.score(X_test, y_test):>11.4f} {forest.score(X_test, y_test) - forest_noisy.score(X_test, y_test):>8.4f}")
-
-print(f"\nForest OOB (noisy labels): {forest_noisy.oob_score_:.4f}")
-```
-
-Output:
-
-```
-=== LABEL NOISE ROBUSTNESS (5% perturbation) ===
-Original labels flipped: 16 / 350
-
-Model               Clean Test   Noisy Test     Drop
---------------------------------------------------
-Single Tree             0.7867       0.7333   0.0533
-Random Forest           0.8067       0.7800   0.0267
-
-Forest OOB (noisy labels): 0.7771
-```
-
-The single tree loses 5.3 percentage points under label noise. The forest loses only 2.7. This is the variance resistance from averaging in action — some trees in the forest saw the noisy labels, but most did not, and the majority vote washes out the corruption.
-
-### Batch scoring pipeline
-
-The final shipping artifact is a function that takes new account data as input, produces the JSON score objects, and ranks them for routing. This is the output that feeds into a Clay enrichment workflow or a CRM automation.
-
-```python
-def score_accounts(accounts_df, model, feature_columns, version="rf_v1"):
-    X = accounts_df[feature_columns]
-    probs = model.predict_proba(X)[:, 1]
-
-    results = []
-    for i, prob in enumerate(probs):
-        row = X.iloc[i]
-        tier = "A" if prob > 0.65 else "B" if prob > 0.35 else "C"
-        results.append({
-            "account_id": f"ACC-{2000+i}",
-            "conversion_probability": round(float(prob), 4),
-            "tier": tier,
-            "feature_snapshot": {col: int(row[col]) for col in feature_columns},
-            "model_version": version,
-        })
-
-    results.sort(key=lambda x: -x["conversion_probability"])
-    return results
-
-new_accounts = pd.DataFrame({
-    "company_size": [30, 400, 120, 15, 220, 75, 350, 45],
-    "page_views": [3, 18, 7, 1, 12, 9, 14, 5],
-    "email_opens": [1, 8, 2, 0, 5, 4, 6, 2],
-    "time_on_site": [20, 200, 45, 10, 120, 80, 150, 30],
-})
-
-ranked = score_accounts(new_accounts, forest, list(X_train.columns))
-
-print(f"{'Rank':>4s}  {'Account':>8s}  {'Prob':>6s}  {'Tier':>4s}  {'page_views':>10s} {'email_opens':>11s} {'company_size':>13s}")
-print("-" * 72)
-for rank, r in enumerate(ranked, 1):
-    fs = r["feature_snapshot"]
-    print(
-        f"{rank:>4d}  {r['account_id']:>8s}  {r['conversion_probability']:>6.4f}  {r['tier']:>4s}"
-        f"  {fs['page_views']:>10d} {fs['email_opens']:>11d} {fs['company_size']:>13d}"
-    )
-
-tier_counts = {"A": 0, "B": 0, "C": 0}
-for r in ranked:
-    tier_counts[r["tier"]] += 1
-print(f"\nTier distribution: A={tier_counts['A']}, B={tier_counts['B']}, C={tier_counts['C']}")
-```
-
-Output:
-
-```
-Rank   Account    Prob  Tier  page_views  email_opens  company_size
-------------------------------------------------------------------------
-   1  ACC-2001  0.9133     A          18            8           400
-   2  ACC-2006  0.8867     A          14            6           350
-   3  ACC-2004  0.8067     A          12            5           220
-   4  ACC-2005  0.5200     B           9            4            75
-   5  ACC-2002  0.1267     C           7            2           120
-   6  ACC-2007  0.0833     C           5            2            45
-   7  ACC-2000  0.0200     C           3            1            30
-   8  ACC-2003  0.0000     C           1            0            15
-
-Tier distribution: A=3, B=1, C=4
-```
+This JSON array is what a routing layer consumes: Tier A accounts get pushed to SDR outreach, Tier B enters a nurture sequence, Tier C goes back to enrichment for additional data collection. The `top_signal` field lets the SDR personalize the opening line — "saw your team's engagement with our pricing page" hits differently when the model confirms `email_opens` is the dominant predictor. [CITATION NEEDED — concept: Clay integration of model-scored lead routing with feature importance as ICP qualification criteria]
 
 ## Exercises
 
-1. **Compute Gini impurity by hand.** Write a function `gini(labels)` that takes a list of 0/1 labels and returns the Gini impurity. Verify it returns 0.0 for `[0, 0
+1. **Compute Gini impurity by hand.** Write a function `gini(labels)` that takes a list of 0/1 labels and returns the Gini impurity. Verify it returns 0.0 for `[0, 0, 0, 0]`, 0.5 for `[0, 0, 1, 1]`, and ~0.32 for `[0, 0, 0, 0, 1]`. Then write `information_gain(parent, left_child, right_child)` that computes the weighted impurity reduction from a split. Test it against the root split from Step 2 (`email_opens <= 3.5`) by manually partitioning `y_train` on that threshold and confirming the gain is positive.
+
+2. **Tune the forest and measure the payoff.** Rebuild the random forest from Step 3 but sweep three parameters independently: `n_estimators` in `[10, 50, 100, 200, 500]`, `max_features` in `[1, 2, 3, 4]` (where 4 means no subsampling — plain bagging), and `min_samples_leaf` in `[1, 5, 10, 20]`. For each parameter, hold the others at their defaults and record test accuracy and OOB score. Answer two questions: (a) at what `n_estimators` does test accuracy plateau? (b) does setting `max_features=4` (disabling feature subsampling) hurt test accuracy compared to `max_features=2`? This tells you whether decorrelation is actually helping on your specific dataset or whether plain bagging suffices.
+
+## Key Terms
+
+- **Gini impurity** — A measure of node purity ranging from 0 (all samples same class) to ~0.5 (binary, evenly mixed). The default splitting criterion in `scikit-learn`'s `DecisionTreeClassifier`.
+- **Information gain** — The weighted reduction in impurity from splitting a parent node into children. The tree selects the split that maximizes this value at every node.
+- **Bootstrap sample** — A random draw of $n$ rows from the training set *with replacement*, so ~63% of original rows appear at least once and the rest are duplicates. Each tree in a forest trains on its own bootstrap sample.
+- **Bagging (bootstrap aggregating)** — Training many models on different bootstrap samples and averaging their predictions. Reduces variance without increasing bias.
+- **Feature subsampling** — At each split, considering only a random subset of features (default $\sqrt{p}$ for classification). This decorrelates trees and is what distinguishes a random forest from plain bagging.
+- **Out-of-bag (OOB) error** — Each tree is evaluated on the ~37% of training rows it never saw (the rows not drawn in its bootstrap sample). Averaging OOB error across all trees gives a validation estimate without a separate holdout set.
+- **Feature importance** — The total impurity reduction attributed to each feature across all splits in all trees, normalized to sum to 1. In GTM terms, this is the ranked list of signals that actually predict conversion.
+
+## Sources
+
+- Breiman, L. (2001). *Random Forests*. Machine Learning, 45(1), 5–32. — The original paper defining the random forest algorithm, feature subsampling, and OOB error estimation.
+- Breiman, L. (1996). *Bagging Predictors*. Machine Learning, 24(2), 123–140. — The bootstrap aggregating framework that random forests build on.
+- Hastie, T., Tibshirani, R., & Friedman, J. (2009). *The Elements of Statistical Learning* (2nd ed.), Chapter 15: "Random Forests." Springer. — The standard textbook treatment of bias-variance decomposition, tree mechanics, and ensemble methods.
+- scikit-learn developers. *DecisionTreeClassifier API Reference*. https://scikit-learn.org/stable/modules/generated/sklearn.tree.DecisionTreeClassifier.html
+- scikit-learn developers. *RandomForestClassifier API Reference*. https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
+- [CITATION NEEDED — concept: Clay integration of model-scored lead routing with feature importance as ICP qualification criteria]

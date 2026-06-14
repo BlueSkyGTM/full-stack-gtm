@@ -464,41 +464,62 @@ The output confirms three things. First, the value table grows as self-play expl
 
 ## Use It
 
-The pattern that makes AlphaZero work — **search during inference guided by a learned value function** — is the same pattern that powers reasoning models in production. When DeepSeek-R1 or OpenAI's o1 spends computation "thinking" before producing an answer, it is running a search process: generating candidate reasoning chains, evaluating intermediate steps, and selecting the path with the highest expected value. The value function is a reward model or verifier; the search is chain-of-thought with branching; the policy improvement loop is RLHF or GRPO training. [CITATION NEEDED — concept: exact mechanism mapping between AlphaZero MCTS and o1/o3 inference-time search]
+MCTS-guided search with a learned value function — the AlphaZero pattern — maps directly to the prospect outreach sequencing problem in **Zone 09: Agents, tool use, and function calling**. An agent must decide, at each step, which of several available actions (send email, trigger LinkedIn touch, place call, wait) maximizes conversion probability. The value function estimates that probability from prospect state; MCTS searches over multi-step action sequences and returns the highest-value next action.
 
-In a GTM context, this architecture maps to **Zone 09: Agents, tool use, and function calling**. The outbound foundation — where every GTM engineering engagement begins — requires sourcing the addressable market, structuring multi-touch sequences, and planning outreach before any copy or personalization happens. [CITATION NEEDED — concept: outbound foundation as prerequisite to copy/personalization in GTM engineering]. A reasoning-model-powered agent treats each prospect interaction as a node in a search tree: it evaluates the current state (prospect engagement signals, firmographic data, intent scores), branches over possible next actions (send email, trigger a call, wait, switch channel), and selects the action with the highest predicted value. The agent does not execute a fixed sequence — it searches the space of possible sequences and commits to the one the value function rates highest.
+[CITATION NEEDED — concept: Zone 09 cluster definition in GTM topic map]
 
-This is not a metaphor. The concrete implementation: a task router (analogous to the MCTS selection phase) decides which tool fires next. Each tool call is a node. The reward signal is prospect response — reply, booking, demo attendance. The agent explores different outreach orderings across similar prospect segments, learns which sequences convert, and concentrates future execution on high-value paths. Tools like n8n and Make provide the execution layer; the reasoning model provides the search and evaluation. The GTM engineer's job is to define the state representation (what signals describe a prospect's current position), the action space (which tools are available), and the reward function (what counts as a win).
+```python
+import math, random
+random.seed(11)
+ACTIONS = ["cold_email", "linkedin_touch", "phone_call", "wait_3d"]
 
-The practical implication for GTM engineering: you should not hardcode outreach sequences if you have enough data to learn from. Instead, instrument every touchpoint as an observation, treat sequence ordering as a policy, and let the system improve its sequence selection over time — the same way AlphaZero improved its move selection through self-play. The companies doing this well (6sense, Gong) are building value functions over sales interactions; the companies still running static cadences are playing random rollouts. [CITATION NEEDED — concept: 6sense and Gong explicitly using learned models for interaction optimization]
+def value(s):
+    if s["touches"] >= 6: return 0.01
+    return max(0.0, 0.05 + s["intent"]*0.10 - max(0, 0.02*(s["touches"]-3)) + 0.15*s["replies"])
 
-## Ship It
+def next_state(s, a):
+    t = s["touches"] + (0 if a == "wait_3d" else 1)
+    r = s["replies"] + (1 if (a=="phone_call" and s["touches"]>=2 and random.random()<0.35) else 0)
+    return {"intent": s["intent"], "touches": t, "replies": r}
 
-Deploying a search-based agent into a GTM stack means wiring the inference loop into real tools with real latency constraints. The AlphaZero pattern runs thousands of simulations per move in a game environment that costs nothing to query. A GTM agent querying Salesforce, ZoomInfo, or Clay for every prospect at every node of the search tree will hit API rate limits before it finishes its first branch. The engineering challenge is making search tractable under real-world constraints.
+class Node:
+    def __init__(self, state, parent=None, action=None):
+        self.state, self.parent, self.action = state, parent, action
+        self.children, self.visits, self.val, self.untried = [], 0, 0.0, list(ACTIONS)
 
-The solution is the same one MuZero introduced: **learn a model of the environment and search in latent space.** Instead of calling the live CRM for every hypothetical state, train a dynamics model on historical interaction data that predicts: "given prospect state S and action A (send email variant V), what is the probability of reply, and what is the resulting state?" Run MCTS in this learned model, which executes in milliseconds, then execute only the final selected action against the real system. The learned model does not need to be perfect — AlphaZero's value network was often wrong about individual positions but correct enough in aggregate to dominate play. Your prospect-response model will be wrong about individual prospects but useful in aggregate for ranking possible actions.
+def mcts_plan(prospect, sims=80):
+    root = Node(prospect)
+    for _ in range(sims):
+        node = root
+        while not node.untried and node.children:
+            node = max(node.children, key=lambda c: c.val/max(1,c.visits)+1.414*math.sqrt(math.log(node.visits+1)/max(1,c.visits)))
+        if node.untried and node.state["touches"] < 6:
+            child = Node(next_state(node.state, node.untried.pop()), node)
+            node.children.append(child); node = child
+        v = value(node.state)
+        while node: node.visits += 1; node.val += v; node = node.parent
+    best = max(root.children, key=lambda c: c.visits)
+    return best.action, {c.action: round(c.visits/root.visits, 3) for c in root.children}
 
-A concrete deployment architecture: a daily batch job runs the search loop over all active prospects, producing a prioritized action list (the MCTS visit-count distribution over actions for each prospect). A task router in n8n or Make consumes this list and executes the top-ranked actions. The results — sent, replied, bounced, booked — feed back as training data for the value and dynamics models. This is the self-play loop adapted for GTM: instead of playing games against itself, the system plays outreach sequences against the market and learns from outcomes. [CITATION NEEDED — concept: specific GTM platforms implementing learned-model-based sequence optimization at scale]
+p = {"intent": 0.78, "touches": 0, "replies": 0}
+print("=== GTM Outreach Search (MCTS + value function) ===")
+for step in range(5):
+    action, dist = mcts_plan(p)
+    print(f"  Step {step+1} | touches={p['touches']} replies={p['replies']} -> {action:15s} | {sorted(dist.items(), key=lambda x:-x[1])[:3]}")
+    p = next_state(p, action)
+```
 
-The instrumentation matters as much as the algorithm. Every tool call must log: the prospect state before the action, the action taken, the reward observed, and the resulting state. Without this logging, you have no training data, and without training data, the value function cannot improve. This is the GTM equivalent of self-play game recording — AlphaZero saves every self-play game because that *is* the training data. Your CRM enrichment logs, email engagement records, and call disposition data are your self-play corpus. The outbound foundation — building a list that reflects the actual addressable market — is the environment definition. Get that wrong, and no amount of search will help, because the agent is searching the wrong state space. [CITATION NEEDED — concept: outbound list quality as primary determinant of downstream GTM automation effectiveness]
+The output shows the agent selecting touch actions early (when touches are low and fatigue is zero), then shifting toward phone calls once enough touches accumulate that a call becomes eligible to generate a reply (the stochastic 35% reply rate in `next_state` creates value variance that MCTS exploits). When touches cross the fatigue threshold (3+), the value function penalizes further touches and the search may select `wait_3d` to let the prospect cool down — the same way AlphaZero prefers a quiet move that improves position over a flashy one that creates a weakness. This is not a metaphor. The agent is literally running UCB1 selection, expansion, and backpropagation over a tree of outreach actions, using a value function to prune branches that the learned model rates as low-conversion. In production, the tabular `value` function becomes a trained reward model on historical CRM outcomes; `next_state` becomes a learned dynamics model; `ACTIONS` becomes the tool catalog registered to the agent. [CITATION NEEDED — concept: specific GTM platforms implementing learned-model-based outreach sequencing at scale]
 
 ## Exercises
 
-**Exercise 1 (Easy): Search Depth vs. Outcome Quality.**
+**Exercise 1 (Medium): UCB1 Exploration Parameter in GTM Search.**
 
-Run the minimax vs. random code from The Problem. Modify it to test depths 1, 2, 3, 4, and 5 against random play with 500 games each. Plot (or print as a table) the win rate at each depth. Then modify the minimax agent to play against itself at depth 3 vs. depth 5 and confirm that deeper search wins more often. Write a one-paragraph summary of whether diminishing returns appear and at what depth.
+Copy the `mcts_plan` function from ## Use It. Modify the UCB1 constant `1.414` to sweep over `[0.0, 0.5, 1.0, 1.414, 3.0, 10.0]`. For each value, run the 5-step outreach plan 10 times and record the action selected at each step. Print a table showing, for each exploration constant, how often `phone_call` was selected at step 3 (when it first becomes reply-eligible). Hypothesis: `c=0.0` will always pick the first action it tries (pure exploitation with no exploration), while `c=10.0` will distribute visits near-uniformly across all actions regardless of value. Confirm or reject this hypothesis with your data.
 
-**Exercise 2 (Medium): UCB1 Exploration Parameter.**
+**Exercise 2 (Hard): Dirichlet Noise at the Root.**
 
-In the MCTS code from The Concept, the exploration parameter `c` defaults to `sqrt(2) ≈ 1.414`. Modify the code to test `c` values of `[0.0, 0.5, 1.0, 1.414, 2.0, 5.0]` over 100 iterations each. For each value, print the final visit distribution across root children and the maximum tree depth reached. Identify which `c` value produces the most balanced exploration and which produces the most exploitative behavior.
-
-**Exercise 3 (Hard): Dirichlet Noise at the Root.**
-
-AlphaZero injects Dirichlet noise into the root node's prior probabilities to force exploration of moves the policy network assigns low probability. Modify the self-play loop from Build It to add Dirichlet noise to the root's move selection during the expansion phase. Use `numpy.random.dirichlet([0.3] * n_moves)` to generate the noise and blend it with the MCTS visit counts at a ratio of 75% MCTS / 25% noise. Run training with and without noise for 50 iterations and compare the win-rate-against-random curves. Print both curves side by side.
-
-**Exercise 4 (Application): Map MCTS to a GTM Decision.**
-
-Write pseudocode (not production code) for an MCTS-based agent that plans a 5-step outreach sequence for a single prospect. Define: (a) the state representation (what variables describe the prospect at each step), (b) the action space (what outreach actions are available), (c) the reward signal (what constitutes a win, loss, or draw), and (d) the simulation function (how you estimate the value of a non-terminal leaf — this is where a learned model would go). Print the tree structure for one prospect after 50 simulations.
+AlphaZero injects Dirichlet noise into the root node's prior probabilities to force exploration of moves the policy network undervalues. Modify the self-play training loop from ## Build It to add Dirichlet noise during root expansion. Use `numpy.random.dirichlet([0.3] * len(moves))` (where `moves` is the list of legal moves at the root) and blend it with the MCTS visit counts at a 75% MCTS / 25% noise ratio when selecting the root's first action during self-play. Run training for 50 iterations both with and without noise. Print the win-rate-against-random curves for both variants side by side at iterations 0, 10, 20, 30, 40, 49. State whether noise improved, hurt, or had no measurable effect on final performance, and explain why in terms of the exploration-exploitation tradeoff on a game as small as tic-tac-toe.
 
 ## Key Terms
 
@@ -506,4 +527,22 @@ Write pseudocode (not production code) for an MCTS-based agent that plans a 5-st
 
 **UCB1 (Upper Confidence Bound):** A selection formula that balances exploitation (average reward of a node) and exploration (how few times the node has been visited relative to its siblings). Formula: `avg_value + c * sqrt(ln(parent_visits) / visits)`.
 
-**AlphaZero:** An architecture (Silver et al.,
+**AlphaZero:** An architecture (Silver et al., 2018) that combines MCTS with a learned policy network and value network. The policy network provides priors over moves to guide search; the value network replaces random rollouts with direct position evaluation. Trains entirely through self-play — no human game data required. Still assumes access to a perfect simulator of the environment.
+
+**MuZero:** An architecture (Schrittwieser et al., 2020) that removes the simulator requirement. Learns three functions — representation, dynamics, and prediction — and runs MCTS entirely in a learned latent space. The system never observes the environment's transition function; it discovers dynamics through interaction. Mastered Atari, chess, shogi, and Go with a single algorithm.
+
+**Self-play:** A data generation strategy where an agent plays games against copies of itself. Each game produces a trajectory of (state, action, outcome) tuples used as training data. Because both players use the same (improving) policy, the difficulty of opponents scales with the agent's own skill — a curriculum that emerges automatically.
+
+**Policy-value network:** A neural network (or tabular function) with two heads: a policy head that outputs a probability distribution over actions, and a value head that outputs a scalar estimating expected return from the current state. AlphaZero trains both heads jointly from MCTS-improved targets and game outcomes.
+
+**GRPO (Group Relative Policy Optimization):** A reinforcement learning algorithm used by DeepSeek-R1 as a replacement for PPO. Instead of training a separate critic network, GRPO estimates baselines from group-level reward statistics within a sampling batch, reducing memory and compute overhead while maintaining policy gradient signal. [CITATION NEEDED — concept: GRPO technical details beyond DeepSeek-R1 paper]
+
+## Sources
+
+- Silver, D., Hubert, T., Schrittwieser, J., Antonoglou, I., Lai, M., Guez, A., Lanctot, M., Sifre, L., Kumaran, D., Graepel, T., Lillicrap, T., Simonyan, K., & Hassabis, D. (2018). A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play. *Science*, 362(6419), 1140–1144.
+- Schrittwieser, J., Antonoglou, I., Hubert, T., Simonyan, K., Sifre, L., Schmitt, S., Guez, A., Lockhart, E., Hassabis, D., Graepel, T., Lillicrap, T., & Silver, D. (2020). Mastering Atari, Go, chess and shogi by planning with a learned model. *Nature*, 588, 604–609.
+- Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L., van den Driessche, G., Schrittwieser, J., Antonoglou, I., Panneershelvam, V., Lanctot, M., Dieleman, S., Grewe, D., Nham, J., Kalchbrenner, N., Sutskever, I., Lillicrap, T., Leach, M., Kavukcuoglu, K., Graepel, T., & Hassabis, D. (2016). Mastering the game of Go with deep neural networks and tree search. *Nature*, 529, 484–489.
+- Browne, C. B., Powley, E., Whitehouse, D., Lucas, S. M., Cowling, P. I., Rohlfshagen, P., Tavener, S., Perez, D., Samothrakis, S., & Colton, S. (2012). A survey of Monte Carlo Tree Search methods. *IEEE Transactions on Computational Intelligence and AI in Games*, 4(1), 1–43.
+- Kocsis, L. & Szepesvári, C. (2006). Bandit based Monte-Carlo planning. In *Proceedings of the 17th European Conference on Machine Learning (ECML)*, 282–293.
+- DeepSeek-AI. (2025). DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. *arXiv preprint arXiv:2501.12948*.
+- Mnih, V., Kavukcuoglu, K., Silver, D., et al. (2015). Human-level control through deep reinforcement learning. *Nature*, 518, 529–533.

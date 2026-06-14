@@ -154,12 +154,66 @@ The OCR output is a wall of text. The column headers "ID", "Control Description"
 
 ## Use It
 
-Semantic fusion — the vision-language model's capacity to process page layout and text simultaneously — is the mechanism that makes enrichment waterfalls capable of ingesting unstructured document attachments. Inbound RFPs, security questionnaires, and vendor assessment documents arrive as PDFs with mixed content: compliance-control tables, architecture diagrams, and prose sections crammed into the same file. A Clay enrichment waterfall [CITATION NEEDED — concept: Clay document processing in enrichment waterfall] can invoke a document-understanding step that passes each uploaded attachment through a VLM extraction call, maps the resulting structured fields to account or deal records, and writes them back without manual data entry. The pipeline is: uploaded document → vision-language extraction → structured field mapping → write to CRM record.
+Cross-modal attention — the VLM's ability to bind visual layout features to text token embeddings in a single forward pass — is what enables a GTM enrichment waterfall to ingest document attachments and map their contents to deal records without manual transcription. This connects to GTM Cluster 3.1 (Account & Enrichment Waterfalls) [CITATION NEEDED — concept: Clay document processing in enrichment waterfall]: a prospect uploads a completed security questionnaire, each page renders to an image, the VLM extracts structured compliance fields, and the results score the deal's technical fit automatically.
 
-Consider a concrete GTM workflow. A prospect sends back a completed security questionnaire as a 12-page PDF. Each page contains a table of compliance controls with columns for requirement, evidence, and pass/fail status, plus an architecture diagram showing data flow between systems. Without document understanding, a RevOps analyst opens the PDF, reads each page, and manually types the pass/fail statuses into a spreadsheet. With the VLM extraction layer in the enrichment waterfall, each page is rendered to an image, sent to the model with a structured prompt, and the output — a JSON array of control objects — is written directly to a custom field on the deal record. The diagram pages produce a structured component list that feeds into a technical-fit scoring model. The analyst reviews exceptions (controls marked "Fail") instead of transcribing every cell.
+```python
+import anthropic, json
 
-The same mechanism applies to contract analysis during deal desk review. A redlined MSA arrives as a PDF with tracked changes, signature blocks, and amendment tables. The VLM sees the rendered pages and can extract: contract value, term length, auto-renewal clause presence, liability cap, and termination conditions — all as structured fields mapped to CPQ or deal-desk records. The model's ability to perceive layout is what makes this reliable: it can distinguish the liability cap clause from a similarly-worded paragraph elsewhere in the document because it sees the section heading, the numbering, and the spatial context surrounding the clause.
+client = anthropic.Anthropic()
 
-## Ship It
+def extract_compliance(page_b64):
+    resp = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": page_b64}},
+            {"type": "text", "text": "Extract compliance controls as JSON array. Each object: control_id, description, status (Pass/Fail/Partial). Return only JSON."}
+        ]}]
+    )
+    return json.loads(resp.content[0].text)
 
-Deploy
+def score_fit(controls):
+    passed = sum(1 for c in controls if c["status"] == "Pass")
+    total = len(controls)
+    return {"score_pct": round(passed / total * 100) if total else 0,
+            "passed": passed, "total": total,
+            "failed": [c["control_id"] for c in controls if c["status"] == "Fail"]}
+
+controls = extract_compliance(img_b64)
+fit = score_fit(controls)
+print(f"Technical Fit Score: {fit['score_pct']}% ({fit['passed']}/{fit['total']} passed)")
+print(f"Failed Controls: {', '.join(fit['failed']) or 'None'}")
+```
+
+The output — a fit score plus a list of failed control IDs — is what you write to a custom field on the deal record. Failed controls trigger an alert to the security reviewer; passed deals auto-advance through the stage gate. The analyst reviews exceptions instead of transcribing every cell. The same pattern applies to contract analysis during deal desk review: render the redlined MSA pages, prompt for structured fields (contract value, term length, auto-renewal, liability cap), and map them to CPQ records. The VLM distinguishes the liability-cap clause from a similarly-worded paragraph elsewhere because it perceives the section heading and numbering — spatial context that OCR flattens away.
+
+## Exercises
+
+**Exercise 1 — Diagram Topology Extraction (Medium).** Generate a new image containing a four-node architecture diagram (Client → Load Balancer → API Gateway → Database) with typed edge labels (HTTPS, gRPC, SQL). Prompt the VLM to extract the diagram as a JSON array of edge objects with `from`, `to`, and `protocol` fields. Then render the same diagram with crossed or overlapping arrows and compare extraction accuracy. Measure: how many edges does the model get right when the layout is clean versus cluttered? Report precision and recall for each configuration.
+
+**Exercise 2 — Fallback Chain Implementation (Hard).** Build a document-processing function that tries three strategies in order: (1) VLM extraction for structured JSON, (2) Tesseract OCR plus a regex heuristic to recover table rows if the VLM response fails JSON parsing or returns fewer than expected fields, (3) flag for human review with the page image saved to disk. Test the chain on the vendor assessment image plus a deliberately corrupted version (add Gaussian noise or reduce resolution to 150 DPI). Log which fallback tier each page hits and verify the degraded outputs still contain usable data. The goal: no page silently produces an empty result.
+
+## Key Terms
+
+**OCR (Optical Character Recognition)** — Software that detects character glyphs in a page image and emits a text string. Tesseract is the open-source reference implementation. OCR produces text but discards spatial structure, reading order, and graphical elements.
+
+**Layout Analysis** — The task of partitioning a page image into semantic regions (headers, paragraphs, tables, figures, footnotes) and assigning roles to each region. Models like LayoutLMv3 fuse text tokens, bounding-box coordinates, and image patches via cross-modal attention to classify regions.
+
+**Semantic Fusion** — The VLM mechanism where visual layout features and text token embeddings are bound together through cross-modal attention layers, allowing the model to reason about what a word means based on where it appears on the page. This is what lets a VLM perceive that "Status" is the column header above "Pass."
+
+**Vision-Language Model (VLM)** — A multimodal model that processes images and text in a shared representation space. Claude, GPT-4o, and Gemini all expose VLM capabilities through API image inputs. The model encodes the image into visual tokens that participate in the same attention mechanism as text tokens.
+
+**Bounding Box** — A rectangular coordinate tuple (x0, y0, x1, y1) defining a region on a page image. Layout analysis assigns bounding boxes to each detected region; OCR assigns them to each detected word. The coordinates are the bridge between pixel space and semantic space.
+
+**Reading Order** — The sequence in which text regions should be read to reconstruct the document's logical flow. Multi-column layouts, sidebars, and footnotes all break naive top-to-bottom scanning. Layout models attempt to recover reading order; OCR alone cannot.
+
+**Enrichment Waterfall** — A GTM data pipeline pattern that tries multiple data providers or extraction strategies in sequence, falling back from one to the next based on confidence thresholds or failure conditions. Document understanding can be a stage in this waterfall: VLM extraction first, OCR-plus-heuristics second, human review last.
+
+## Sources
+
+- Smith, R. (2007). "An Overview of the Tesseract OCR Engine." *ICDAR 2007*. — the original Tesseract architecture paper, still the reference for OCR-only pipelines.
+- Huang, Y. et al. (2022). "LayoutLMv3: Pre-training for Document AI with Unified Text and Image Masking." *ACM MM 2022*. — the three-stream (text + bbox + image) layout model that defines Layer 2.
+- Kim, G. et al. (2022). "OCR-Free Document Understanding Transformer (Donut)." *EMNLP 2022*. — the encoder-decoder approach that eliminates OCR error propagation by reading the image directly.
+- Blecher, L. et al. (2023). "Nougat: Neural Optical Understanding for Academic Documents." *arXiv:2308.13418*. — OCR-free model targeting academic PDFs with LaTeX output.
+- Anthropic (2025). "Claude API Documentation: Vision." — API reference for image inputs, base64 encoding, and supported media types. [https://docs.anthropic.com](https://docs.anthropic.com)
+- [CITATION NEEDED — concept: Clay document processing in enrichment waterfall] — specific documentation of Clay's native PDF/image attachment handling within enrichment waterfalls and the underlying VLM call pattern.

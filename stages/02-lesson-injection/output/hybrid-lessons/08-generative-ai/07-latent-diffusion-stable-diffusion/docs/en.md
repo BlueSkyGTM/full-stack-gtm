@@ -140,4 +140,69 @@ Compression:  48.0x fewer dimensions
   Saved: build_cfg_12.0.png
 ```
 
-The latent tensor stays at `[1, 4, 64, 64]` for all
+The latent tensor stays at `[1, 4, 64, 64]` for all 20 denoising steps — the U-Net never touches pixel space. Notice the standard deviation decay: σ drops from ~0.99 at `t=999` (nearly pure noise) to ~0.31 at `t=41` (structure resolved, detail remaining). That decay curve is the scheduler pulling noise out of the latent one step at a time. The two guidance-scale runs start from the same seed (σ identical at step 0), then diverge: by step 9 the `cfg=12.0` latents have a higher standard deviation (0.895 vs 0.742), meaning the model is pushing harder away from the unconditional trajectory. Open both output images side by side — the `cfg=3.0` image will look softer and more natural; the `cfg=12.0` image will have more contrast and prompt adherence but flatter, more saturated colors.
+
+## Use It
+
+Classifier-free guidance inside the latent diffusion pipeline gives you a controllable knob for producing visual creative variants at scale — the same mechanism (cross-attention steering + guidance interpolation) that generates art also generates on-brand ad creative, social posts, and landing-page hero images from structured prompt templates. This connects to content/creative production workflows: [CITATION NEEDED — concept: specific GTM cluster mapping for AI-generated ad creative in topic map].
+
+```python
+import json, hashlib, os, torch
+from datetime import datetime
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16, safety_checker=None
+).to("cuda")
+pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+
+product = "ceramic coffee mug in matte black"
+scenes = ["studio product shot on white seamless background", "lifestyle scene on wooden desk with morning window light", "minimalist flat lay on textured concrete surface"]
+os.makedirs("ad_variants", exist_ok=True)
+manifest = []
+
+for scene_idx, scene in enumerate(scenes):
+    for seed in [101, 202]:
+        prompt = f"a {product}, {scene}, commercial photography, high detail"
+        generator = torch.Generator("cuda").manual_seed(seed)
+        img = pipe(prompt=prompt, guidance_scale=7.5, num_inference_steps=20, generator=generator).images[0]
+        phash = hashlib.md5(prompt.encode()).hexdigest()[:8]
+        fname = f"ad_variants/variant_s{scene_idx}_seed{seed}_{phash}.png"
+        img.save(fname)
+        record = {"file": fname, "prompt": prompt, "guidance_scale": 7.5, "steps": 20, "seed": seed, "scheduler": "dpm_solver_multistep", "scene": scene, "ts": datetime.now().isoformat()}
+        json.dump(record, open(fname.replace(".png", ".json"), "w"), indent=2)
+        manifest.append(record)
+        print(f"Generated: {fname}")
+
+json.dump(manifest, open("ad_variants/manifest.json", "w"), indent=2)
+print(f"\n{len(manifest)} variants saved → ad_variants/manifest.json")
+```
+
+This script swaps the default PNDM scheduler for DPMSolverMultistep, which converges in 20 steps instead of 50 — a 2.5× speedup per image with no visible quality loss for product photography. Each image gets a JSON sidecar with its exact generation parameters. When you find a variant that performs well in an ad test, the manifest lets you reproduce it, iterate on it, or hand the parameters to a designer who can shoot a real photograph in the same composition. The seed + prompt + guidance scale + scheduler tuple is the full reproducibility contract.
+
+## Exercises
+
+**Exercise 1 — Compression ratio comparison (SD 1.5 vs SDXL).** Load SDXL (`stabilityai/stable-diffusion-xl-base-1.0`) alongside SD 1.5. For each model, encode a `1024×1024` random pixel tensor through the VAE and print the input dimensions, output latent dimensions, and compression ratio. Predict the ratio before running the code — SDXL generates at `1024×1024`, so what latent spatial resolution do you expect? Verify your prediction and explain why the channel count stays at 4.
+
+**Exercise 2 — Guidance-scale sweep with scheduler comparison.** Pick a single prompt and generate a 3×3 grid: rows are guidance scales `[2.0, 7.5, 15.0]`, columns are schedulers `[DDIM, DPM-Solver, Euler ancestral]`. Use the same seed for all nine generations. Save each image with its parameters in the filename. Write a short analysis (3–5 sentences) answering: which scheduler handles high guidance (15.0) without oversaturating? Which converges fastest at low guidance (2.0)? Does the scheduler choice or the guidance scale have a larger effect on composition?
+
+## Key Terms
+
+- **Latent space** — The compressed representation produced by a VAE encoder. In Stable Diffusion, a 512×512×3 image maps to a 64×64×4 latent tensor. The diffusion process operates entirely in this space.
+- **Variational Autoencoder (VAE)** — A two-part neural network: an encoder that compresses pixels to latents, a decoder that reconstructs pixels from latents. Trained independently of the diffusion U-Net, then frozen.
+- **Classifier-free guidance** — A sampling technique that interpolates between conditional and unconditional noise predictions using a guidance scale `s`. Higher `s` pushes output closer to the text prompt at the cost of naturalism.
+- **Cross-attention** — The mechanism inside the U-Net where text embeddings (keys/values) interact with latent features (queries). This is the physical pathway through which prompt tokens steer spatial regions of the generated image.
+- **Noise scheduler** — The function that controls how much Gaussian noise is added at each training timestep and how much is removed at each sampling step. Choice of scheduler (DDIM, DPM-Solver, Euler) determines step count and output characteristics.
+- **CLIP text encoder** — A frozen language model (Radford et al., 2021) that converts a text prompt into a 77-token × 768-dimensional embedding tensor consumed by the U-Net's cross-attention layers.
+
+## Sources
+
+- Rombach, A., Blattmann, A., Lorenz, D., Esser, P., & Ommer, B. (2022). *High-Resolution Image Synthesis with Latent Diffusion Models.* CVPR 2022.
+- Ho, J., Jain, A., & Abbeel, P. (2020). *Denoising Diffusion Probabilistic Models.* NeurIPS 2020.
+- Ho, J., & Salimans, T. (2022). *Classifier-Free Diffusion Guidance.* NeurIPS Workshop on Deep Generative Models.
+- Nichol, A., & Dhariwal, P. (2021). *Improved Denoising Diffusion Probabilistic Models.* ICML 2021.
+- Song, J., Meng, C., & Ermon, S. (2021). *Denoising Diffusion Implicit Models.* ICLR 2021.
+- Radford, A., et al. (2021). *Learning Transferable Visual Models From Natural Language Supervision.* ICML 2021.
+- Podell, D., et al. (2023). *SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis.* arXiv:2307.01952.
+- Esser, P., et al. (2024). *Scaling Rectified Flow Transformers for High-Resolution Image Synthesis.* ICML 2024.
+- Black Forest Labs. (2024). *FLUX.1: A 12B Parameter Rectified Flow Transformer.* Technical Report.

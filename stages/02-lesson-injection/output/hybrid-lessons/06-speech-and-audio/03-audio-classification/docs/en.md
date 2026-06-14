@@ -170,12 +170,11 @@ The AST processes the raw waveform through the feature extractor (which computes
 
 The embedding-based classification that routes inbound leads in a Signal Machine (Zone 06) follows the same architecture pattern as audio classification: raw input → feature extraction → classifier → routing decision. In text-based GTM, Claygent classifies a company as "product vs service" or "enterprise vs SMB" using GPT via OpenAI API [CITATION NEEDED — concept: Clay classification pipeline for company typing]. In audio-based GTM, the pipeline classifies call recordings: does this segment contain a competitor mention, a pricing objection, or a buying signal?
 
-Conversation intelligence platforms — Gong, Chorus, Fireflies — run audio classification on every minute of every sales call. The classification target depends on the GTM motion. For inbound-led outbound (the Zone 06 use case), you classify calls to detect which inbound conversations indicate high buying intent, then route those accounts into priority sequences before they go cold. The "Signal Machine" pattern: audio classification detects the signal, the classification output triggers a workflow, the workflow routes the lead.
+Conversation intelligence platforms — Gong, Chorus, Fireflies — run audio classification on every minute of every sales call [CITATION NEEDED — concept: conversation intelligence audio processing architecture]. The classification target depends on the GTM motion. For inbound-led outbound (the Zone 06 use case), you classify calls to detect which inbound conversations indicate high buying intent, then route those accounts into priority sequences before they go cold. The "Signal Machine" pattern: audio classification detects the signal, the classification output triggers a workflow, the workflow routes the lead.
 
 The mechanism is identical to the k-NN vs AST tradeoff you just built. A simple MFCC + logistic regression pipeline can classify "silence vs speech vs loud noise" in under 1ms per frame on a CPU — fast enough to run real-time call quality monitoring on thousands of concurrent calls. An AST model classifies "competitor mention vs pricing objection vs buying signal" with higher accuracy but requires GPU inference and a 50ms+ budget per segment. Most production systems layer both: the cheap classifier gates which segments get sent to the expensive classifier.
 
 ```python
-import librosa
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
@@ -207,4 +206,62 @@ gate = Pipeline([
     ('scaler', StandardScaler()),
     ('knn', KNeighborsClassifier(n_neighbors=7))
 ])
-gate.fit
+gate.fit(X, y_labels)
+
+test_segments = np.vstack([
+    simulate_call_segment_features('agent_talking', n=3),
+    simulate_call_segment_features('prospect_talking', n=4),
+    simulate_call_segment_features('silence', n=2),
+])
+
+predictions = gate.predict(test_segments)
+route_to_ast = [p in ('prospect_talking', 'overlap_shouting') for p in predictions]
+
+print("Call segment gate (CPU, ~0.3ms each):")
+for i, (pred, route) in enumerate(zip(predictions, route_to_ast)):
+    action = "→ route to AST (GPU)" if route else "→ discard"
+    print(f"  Segment {i+1}: {pred:20s} {action}")
+print(f"\nTotal segments: {len(predictions)}")
+print(f"Forwarded to expensive model: {sum(route_to_ast)} ({sum(route_to_ast)/len(predictions)*100:.0f}%)")
+print(f"GPU compute saved: {len(predictions) - sum(route_to_ast)} segments skipped")
+```
+
+This is the two-tier architecture production conversation intelligence systems use. The k-NN gate runs on every segment in real time — it costs fractions of a millisecond and uses no GPU. Only segments where the prospect is actually speaking get forwarded to the transformer for intent classification. If a 30-minute call has 900 one-second segments and the prospect speaks for 12 minutes, the gate filters 540 segments before the AST ever sees them. That is the difference between a deployment that costs $0.02 per call and one that costs $0.20 per call, at scale.
+
+## Exercises
+
+### Exercise 1 (Easy): MFCC Dimensionality Sweep
+
+Using the synthetic dataset from Step 2, vary `n_mfcc` across `[5, 8, 13, 20, 30, 40]` by regenerating the class centers to match each dimensionality. For each value, run 5-fold cross-validation and print the mean accuracy. Answer two questions: (1) At what dimensionality does accuracy plateau? (2) Does higher dimensionality ever *decrease* accuracy, and if so, why? Hint: think about what happens to the distance metric when you add dimensions that carry only noise.
+
+### Exercise 2 (Hard): Build the Two-Stage Gate-and-Classify Pipeline
+
+Simulate a 60-second sales call as 60 one-second segments. Generate segment labels using a realistic distribution: 40% silence, 30% agent talking, 20% prospect talking, 10% overlap. Build two classifiers: (1) the k-NN gate from the Use It section that classifies all 60 segments, and (2) a simulated "AST intent classifier" that only receives prospect-talking segments and randomly assigns one of `['buying_signal', 'pricing_objection', 'neutral']` with weighted probabilities. Measure: how many segments does the gate filter out before the AST runs? What is the total simulated compute cost if the gate costs 0.3ms per segment and the AST costs 50ms per segment? Compare this to sending all 60 segments directly to the AST.
+
+## Key Terms
+
+**MFCC (Mel-Frequency Cepstral Coefficients):** A compact audio representation (typically 13–40 dimensions per 25ms frame) produced by applying a discrete cosine transform to log-mel spectral features. Designed so that Euclidean distance between MFCC vectors correlates with perceived auditory similarity.
+
+**Log-Mel Spectrogram:** A 2D time-frequency representation where frequency is mapped to the perceptual mel scale and amplitude is log-scaled. Serves as the input image for both CNN-based and transformer-based audio classifiers.
+
+**Audio Spectrogram Transformer (AST):** A transformer architecture adapted from ViT that splits a log-mel spectrogram into 16×16 patches, processes them with global self-attention, and classifies via a `[CLS]` token. No convolution, no recurrence — pure attention over the full time-frequency grid.
+
+**BEATs (Bootstrap, Encode, Attend, Time-series):** An audio model that learns discrete audio tokens through masked audio prediction on unlabeled data, then fine-tunes on labeled tasks. Self-supervised pre-training enables strong few-shot transfer with minimal labeled examples.
+
+**k-NN (k-Nearest Neighbors):** A distance-based classifier that assigns labels by majority vote among the k closest training examples. Requires no training phase but depends on standardized features and a distance metric that is meaningful in the feature space.
+
+**AudioSet:** A dataset of ~2 million 10-second YouTube audio clips labeled across 527 sound classes, used as the standard pre-training corpus and evaluation benchmark for modern audio classifiers.
+
+**Patch Embedding:** The operation of splitting a 2D spectrogram into fixed-size tiles (e.g., 16×16), flattening each tile into a vector, and linearly projecting it to the model's hidden dimension. Converts a continuous spectrogram into the discrete token sequence a transformer consumes.
+
+**Inductive Bias:** The set of assumptions a model architecture encodes about what makes inputs similar. CNNs encode locality (nearby pixels/spectrogram bins are related). Transformers encode no locality assumption — attention is global from the first layer.
+
+## Sources
+
+1. Gong, Y., Chung, Y., & Glass, J. (2021). "AST: Audio Spectrogram Transformer." *Proceedings of Interspeech 2021.* https://arxiv.org/abs/2104.01778
+2. Chen, S., Wu, Y., Wang, C., et al. (2022). "BEATs: Audio Pre-Training with Acoustic Tokenizers." *Proceedings of ACL 2023.* https://arxiv.org/abs/2212.09078
+3. Gemmeke, J. F., Ellis, D. P. W., Freedman, D., et al. (2017). "AudioSet: An ontology and human-labeled dataset for audio events." *IEEE ICASSP 2017.* https://ieeexplore.ieee.org/document/7952261
+4. McFee, B., Raffel, C., Liang, D., et al. (2015). "librosa: Audio and Music Signal Analysis in Python." *Proceedings of SciPy 2015.* https://librosa.org/doc/latest/
+5. Hugging Face Transformers Documentation — Audio Spectrogram Transformer. https://huggingface.co/docs/transformers/model_doc/audio-spectrogram-transformer
+6. Davis, S., & Mermelstein, P. (1980). "Comparison of parametric representations for monosyllabic word recognition in continuously spoken sentences." *IEEE Transactions on Acoustics, Speech, and Signal Processing, 28*(4), 357–366.
+7. Dosovitskiy, A., Beyer, L., Kolesnikov, A., et al. (2021). "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale." *International Conference on Learning Representations (ICLR) 2021.* https://arxiv.org/abs/2010.11929

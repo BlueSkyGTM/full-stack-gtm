@@ -13,7 +13,7 @@ You build an agent that takes a user request and runs straight to execution. The
 
 This is not a context window problem. You cannot fix it by stuffing more context into the prompt. The failure happens because the agent never confirmed what the user actually wanted. It assumed, and assumptions compound: a wrong assumption about intent leads to a wrong assumption about constraints, which leads to a wrong assumption about output format, which produces a deliverable that is confidently incorrect.
 
-Two specific failure modes recur in production. First, the agent acts on a request without validating that it has the information it needs — it writes the cold outbound sequence without knowing the ICP, the IC, or the offer. Second, the agent hits ambiguity mid-generation and papers over it instead of stopping to ask. It writes "typically, SaaS companies..." instead of asking which segment you mean. Both failures share a root cause: the agent invented an answer to a question it never asked.
+Two specific failure modes recur in production. First, the agent acts on a request without validating that it has the information it needs — it writes the cold outbound sequence without knowing the ICP, the IC, or the offer. Second, the agent hits ambiguity mid-generation and papers over it instead of stopping to ask. It writes "typically, SaaS companies…" instead of asking which segment you mean. Both failures share a root cause: the agent invented an answer to a question it never asked.
 
 The fix is structured elicitation at two critical points. Before you start, you scope — you ask the user to confirm intent, constraints, and missing information. While you run, you pause — you detect when you are about to guess and ask a targeted question instead. These are not conversations. They are structured data-collection steps with defined schemas, defined triggers, and defined incorporation paths.
 
@@ -189,26 +189,64 @@ The first round should produce output with uncertainty — the model knows almos
 
 ## Use It
 
-Elicitation logic — the pattern of identifying what is missing and resolving it before proceeding — maps directly to ICP research and enrichment workflows. [CITATION NEEDED — concept: mapping elicitation patterns to GTM research workflows] The scoping pattern is how enrichment tools gather firmographic and technographic data before scoring accounts. When a Clay waterfall runs, it does not guess a company's employee count. It tries data provider A, then B, then C — and if all three return nothing, it flags the field as empty and either excludes the account from the campaign or routes it to manual research. That waterfall IS elicitation logic: structured identification of a gap, followed by a resolution sequence, followed by a fallback. The waterfall's fallback behavior is the machine equivalent of the scoping object's `ready: false` flag — it stops the pipeline from acting on incomplete data.
+Scoping elicitation — the structured JSON pre-flight check that blocks execution until required fields are present — is the same mechanism Clay's enrichment waterfall uses to decide whether an account is ready to score or needs another data provider pass. The script below applies that pattern to partial account data, the way a Clay table's conditional column would before routing an account into an ICP classification workflow (Cluster 1.2, TAM Refinement & ICP Scoring).
 
-Mid-flight elicitation maps to the human-in-the-loop checkpoints that GTM teams already use in async research workflows. An AI agent drafts an account classification — say, labeling a company as "Enterprise" versus "Mid-Market" based on scraped data. Before that classification enters the CRM and triggers a campaign branch, a human reviewer approves or corrects it. The mid-flight pause is the same mechanism: the agent surfaces its uncertainty ("employee count suggests Mid-Market, but revenue signals suggest Enterprise — which segment?"), the human resolves it, and the agent proceeds with a locked answer. The difference is that in the Clay workflow, the elicitation target is a data provider; in the AI workflow, the elicitation target is a human reviewer.
+```python
+import json
+import anthropic
 
-The practical connection: when you build GTM automation in n8n or Clay, you are implementing elicitation logic whether you call it that or not. Every conditional node that checks "is this field populated?" is a scoping check. Every Slack approval step that pauses a workflow until a human confirms is a mid-flight elicitation. Naming the pattern lets you reason about when to use each, how to design the fallback, and where the latency cost is justified. In outbound specifically — where a single misclassified ICP can route hundreds of accounts to the wrong messaging sequence — the cost of skipping elicitation is not a bad email. It is a wasted sales motion at scale. [CITATION NEEDED — concept: cost of misclassification in outbound sequencing]
+client = anthropic.Anthropic()
 
-## Ship It
+ACCOUNTS = [
+    {"company": "Acme Corp", "website": "acme.com", "employees": None, "industry": "SaaS"},
+    {"company": "Globex", "website": "globex.io", "employees": 450, "industry": "Fintech"},
+    {"company": "Initech", "website": "initech.dev", "employees": 12, "industry": None},
+]
 
-Putting elicitation into a production GTM pipeline means encoding the scoping and mid-flight patterns into deployable infrastructure. In Zone 13 terms, your deploy pipeline ships Clay tables, n8n workflows, and the enrichment logic that powers them. The elicitation checkpoints need to survive deployment — meaning they are not ad-hoc prompt additions that a developer remembers to include, but versioned, tested components of the system.
+ENRICHMENT_SCOPE_PROMPT = """You are an account enrichment scoper. Given partial account data, output JSON with exactly these keys:
+- "ready": boolean (true only if employees AND industry are both present and non-null)
+- "missing": array of missing critical fields (empty if none)
+- "action": one of "classify", "enrich", "exclude"
+Output ONLY the JSON object."""
 
-For scoping, this means the JSON schema your agent outputs is part of your pipeline definition. If you deploy a new Clay table that scores accounts, the scoping step runs first: it checks whether all required fields exist in the input data, and if any are missing, the table does not score — it flags. This is not a prompt engineering trick. It is a data quality gate that you version-control and test in CI. The same pipeline that deploys your n8n workflows should include a validation step that confirms the elicitation schema matches what the downstream consumer expects.
+for acct in ACCOUNTS:
+    resp = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=256,
+        system=ENRICHMENT_SCOPE_PROMPT,
+        messages=[{"role": "user", "content": json.dumps(acct)}],
+    )
+    raw = resp.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    scope = json.loads(raw)
+    print(f"{acct['company']:12s} | ready={str(scope['ready']):5s} | action={scope['action']:8s} | missing={scope['missing']}")
+```
 
-For mid-flight elicitation in production, the challenge is state management. A paused agent is a workflow that has stopped mid-execution and is waiting for external input. In n8n, this is a Wait node paired with a webhook — the workflow pauses, sends a Slack message with the clarifying question, and resumes when the webhook receives the human's response. In a pure API context, this is harder: you need to persist the conversation state, surface the question through a UI or notification channel, and resume the generation when the answer arrives. The pattern is the same; the infrastructure differs. SPF/DKIM/DMARC is your infrastructure layer for email deliverability; elicitation gates are your infrastructure layer for data quality. [CITATION NEEDED — concept: elicitation as infrastructure layer in GTM pipelines]
-
-A production caveat: mid-flight elicitation that relies on regex scanning for uncertainty markers ("I'm not sure", "it depends") is a heuristic, not a guarantee. A model can be wrong without hedging — it can confidently state an incorrect fact. The regex approach catches visible uncertainty, not invisible errors. For higher-stakes workflows, consider adding a validation step where a second model call checks the output against the scoping object and flags discrepancies. This doubles your API cost but catches a class of errors that uncertainty markers miss.
+Acme Corp has no employee count — the scoper returns `action: enrich` and lists `employees` as missing. Globex is complete — it returns `action: classify`. Initech has employees but no industry — it also returns `action: enrich`. This is the elicitation gate in production: each account either passes through to classification or gets routed to a waterfall enrichment step before it is allowed into a campaign sequence. [CITATION NEEDED — concept: Clay waterfall enrichment column configuration and conditional routing based on field completeness]
 
 ## Exercises
 
-**Tier 1 — Add a field to the scoping schema.** Modify the scoping elicitation example to add a `"target_audience"` field to the JSON schema. Update the system prompt to require it. After parsing the JSON, validate that the field exists and is non-empty before printing "SCOPE LOCKED." If it is missing or empty, print a warning. Run the script and confirm the field appears in the output.
+**Exercise 1 — Add a confidence threshold to mid-flight elicitation.** Modify Example 2 so that uncertainty detection is not binary. Instead of checking only whether markers exist, count how many markers appear and calculate a ratio of `marker_count / word_count`. If the ratio exceeds 0.02 (two uncertainty markers per 100 words), trigger mid-flight elicitation. If it is below the threshold but non-zero, log a warning but do not pause — the output is uncertain but not uncertain enough to halt. Print the ratio alongside the markers in each round so you can observe the threshold working.
 
-**Tier 2 — Build a two-phase interactive agent.** Create a script that runs in two phases. Phase 1 calls the scoping endpoint, prints the scoping object, and if `ready` is false, uses `input()` to prompt the terminal user with each question from the `questions` array. Phase 2 takes the user's answers, appends them to the conversation as a clarification, and calls the API again to generate the actual deliverable (e.g., the outbound email). Print both the scoping object and the final deliverable. Run it with a vague request like "write a landing page for our startup" and confirm the user's answers change the output.
+**Exercise 2 — Build a real interactive scoping-to-generation pipeline.** Create a single script with two phases. Phase 1 calls the scoping endpoint from Example 1, prints the scoping object, and if `ready` is false, uses `input()` to prompt the terminal user with each question from the `questions` array one at a time. Collect the answers into a list. Phase 2 appends the answers to the conversation as a combined clarification message and calls the API a second time to generate the actual deliverable (the outbound email). Print both the scoping object and the final email. Test it with a deliberately vague request like "write a landing page for our startup" and verify that the user's answers directly change the generated output.
 
-**Tier 3 — Full mid-flight elicitation with human input.** Extend the mid-flight example to use real `input()` calls instead of simulated answers. When uncertainty markers are detected,
+## Key Terms
+
+- **Scoping elicitation** — A structured pre-generation step where the agent outputs a JSON object containing intent summary, constraints, missing information, and a readiness flag. If the flag is false, generation does not proceed until the gaps are resolved.
+- **Mid-flight elicitation** — A reactive pause during generation where the agent detects ambiguity or uncertainty, surfaces a targeted clarifying question, waits for an answer, and incorporates it before regenerating.
+- **Readiness flag** — A boolean field in the scoping object that gates downstream execution. Only `true` when the agent has enough information to proceed without guessing.
+- **Uncertainty markers** — Lexical signals in model output ("typically", "it depends", "might be") that indicate the model is hedging. Scanning for these is a heuristic trigger for mid-flight elicitation.
+- **MCP roots** — A protocol-level concept where the client declares allowed URIs at `initialize`, restricting what the server can access. The scoping pattern applies the same boundary principle to generation scope.
+- **Elicitation/create** — The MCP primitive for mid-flight user input: the server pauses, sends a structured request, and resumes when the client returns a response.
+- **Waterfall fallback** — A data enrichment pattern (used in Clay) where the system tries Provider A, falls back to Provider B, then C, and ultimately returns null or routes to manual research rather than fabricating a value. This is elicitation logic applied to data sourcing.
+
+## Sources
+
+- Model Context Protocol Specification — "Roots" and "Elicitation" sections. Anthropic, 2024–2025. https://modelcontextprotocol.io/specification
+- Anthropic API Documentation — Messages API, structured output via system prompts. Anthropic, 2025. https://docs.anthropic.com/en/api/messages
+- [CITATION NEEDED — concept: Clay waterfall enrichment column configuration and conditional routing based on field completeness]
+- [CITATION NEEDED — concept: cost of account misclassification in outbound sequencing at scale]

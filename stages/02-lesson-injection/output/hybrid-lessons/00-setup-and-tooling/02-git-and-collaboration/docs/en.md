@@ -118,297 +118,72 @@ The final `git log --oneline --graph --all` output shows the DAG — two lines d
 
 ## Use It
 
-**GTM redirect: Zone 1 — ICP & Account Intelligence, Zone 2 — Outbound & Enrichment**
+Content-addressed storage — the SHA-1 hash Git computes over every commit's full tree — gives GTM configuration files the same immutable audit trail your CRM enforces on opportunity records. A scoring weight change becomes a commit with an author, a timestamp, and a justification. This applies to Zone 1 (ICP & Account Intelligence) and Zone 2 (Outbound & Enrichment): any YAML or JSON that drives a Clay waterfall, an Apollo sequence, or a HubSpot workflow belongs in a Git repo, not a Slack thread [CITATION NEEDED — concept: GTM config-as-code practice in revops teams].
 
-The content-addressed commit graph maps directly to GTM configuration management. Clay table schemas, enrichment waterfall configs, and ICP scoring models are not code in the traditional sense, but they are structured artifacts (YAML, JSON) that change weekly and whose history matters. When you store these in a Git repository, every adjustment to a scoring weight or enrichment column becomes a commit with an author, a timestamp, and a justification — the same audit properties your CRM enforces on deal records [CITATION NEEDED — concept: GTM config-as-code practice in revops teams].
-
-The branching model maps to campaign experimentation. A GTM team running digital acquisition campaigns for an existing customer base — where the pain point is acquiring new accounts without alienating the current segment — can branch per acquisition experiment. The `main` branch holds the proven scoring model. A feature branch called `experiment/enterprise-pivot` holds a modified model with enterprise-weighted scoring. If the experiment improves conversion, merge it. If it drops, delete the branch and `main` is untouched. This is the three-way merge applied to business strategy, not just code [CITATION NEEDED — concept: branch-based campaign experimentation in GTM teams].
-
-Here is a concrete GTM workflow — committing a Clay enrichment export config and branching for an experiment:
+The branching model maps directly to campaign experimentation. Your `main` branch holds the proven ICP model. A feature branch holds an experimental variant — different weights, different threshold. If the experiment underperforms, delete the branch and `main` is untouched. If it works, merge it. That is the three-way merge applied to business strategy.
 
 ```bash
 #!/bin/bash
 
-WORKDIR=$(mktemp -d /tmp/gtm-config-repo.XXXXXX)
+WORKDIR=$(mktemp -d /tmp/gtm-config.XXXXXX)
 cd "$WORKDIR"
 
 git init -q
 git config user.name "GTM Engineer"
 git config user.email "gtm@example.com"
 
-mkdir -p configs/clay configs/scoring
-
-cat > configs/clay/enrichment-waterfall.yaml << 'EOF'
-waterfall:
-  - source: clay_built_in
-    fields: [company_domain, employee_count]
-    fallback: hunter_io
-  - source: clearbit
-    fields: [industry, funding_stage]
-    fallback: zoominfo
-  - source: linkedin_sales_navigator
-    fields: [headcount_growth, tech_stack]
-    fallback: none
-timeout_seconds: 30
-EOF
-
-cat > configs/scoring/icp-model.json << 'EOF'
-{
-  "version": "1.0",
-  "weights": {
-    "firmographic_fit": 0.4,
-    "technographic_match": 0.3,
-    "intent_signals": 0.2,
-    "engagement_score": 0.1
-  },
-  "threshold": 0.65,
-  "target_segment": "mid_market"
-}
-EOF
-
+printf '{\n  "weights": {"firmographic": 0.4, "intent": 0.3, "engagement": 0.3},\n  "threshold": 0.65\n}\n' > icp-model.json
 git add .
-git commit -q -m "Add Clay enrichment waterfall and ICP scoring model v1.0"
+git commit -q -m "ICP scoring model v1.0"
 
-echo "=== Initial commit ==="
-git log --oneline
-echo ""
+git checkout -q -b experiment/enterprise-boost
+printf '{\n  "weights": {"firmographic": 0.5, "intent": 0.25, "engagement": 0.25},\n  "threshold": 0.70\n}\n' > icp-model.json
+git add .
+git commit -q -m "Experiment: shift to enterprise weighting, threshold 0.70"
 
-git checkout -q -b experiment/enterprise-shift
-
-cat > configs/scoring/icp-model.json << 'EOF'
-{
-  "version": "1.1-experiment",
-  "weights": {
-    "firmographic_fit": 0.5,
-    "technographic_match": 0.25,
-    "intent_signals": 0.15,
-    "engagement_score": 0.1
-  },
-  "threshold": 0.70,
-  "target_segment": "enterprise"
-}
-EOF
-
-git add configs/scoring/icp-model.json
-git commit -q -m "Experiment: shift to enterprise ICP, raise threshold to 0.70"
-
-echo "=== After experiment branch ==="
-git log --oneline --graph --all
-echo ""
-
-echo "=== What changed in the experiment ==="
-git diff main experiment/enterprise-shift -- configs/scoring/icp-model.json
+echo "=== Diff: proven model vs experiment ==="
+git diff main experiment/enterprise-boost
 echo ""
 
 git checkout -q main
-
-echo "=== Rolling back is just checking out a prior commit ==="
-git log --oneline
-echo ""
-
-PREV_HASH=$(git rev-list --max-parents=0 HEAD)
-echo "Original commit hash: $PREV_HASH"
-git show "$PREV_HASH:configs/scoring/icp-model.json"
-```
-
-The observable output shows the diff between the proven model and the experiment — a human-readable comparison of what changed and why. If the enterprise experiment underperforms, you delete the branch. If it works, you merge it into `main` and tag a release (`git tag v1.1-enterprise-shift`). The rollback path is a single command, not a reconstruction from memory.
-
----
-
-## Ship It
-
-A shared GTM operations repository needs three things to be safe for team collaboration: branch protection on `main` (nobody pushes directly — all changes go through pull requests), a PR template that forces the author to state the hypothesis behind a config change, and a `README` that documents the folder structure so a new revops hire knows where enrichment configs live versus scoring models.
-
-The remote setup (GitHub branch protection rules, PR templates) happens in the GitHub UI or API. But the local scaffolding — the files that make the repo self-documenting — is terminal-only:
-
-```bash
-#!/bin/bash
-
-WORKDIR=$(mktemp -d /tmp/gtm-ops-repo.XXXXXX)
-cd "$WORKDIR"
-
-git init -q
-git config user.name "GTM Engineer"
-git config user.email "gtm@example.com"
-
-mkdir -p configs/clay configs/scoring configs/outbound templates docs
-
-cat > README.md << 'EOF'
-# GTM Operations Repository
-
-## Structure
-- `configs/clay/` — Clay enrichment waterfall configurations (YAML)
-- `configs/scoring/` — ICP scoring models (JSON)
-- `configs/outbound/` — Outbound sequence configurations (YAML)
-- `templates/` — PR templates and campaign briefs
-- `docs/` — Architecture decisions and changelogs
-
-## Workflow
-1. Create a branch: `git checkout -b experiment/<name>`
-2. Make changes, commit with a descriptive message
-3. Push and open a PR
-4. At least one reviewer must approve before merge to `main`
-5. Tag releases: `git tag v<version>-<description>`
-EOF
-
-cat > .github/pull_request_template.md << 'EOF'
-## What changed?
-[Describe the config modification]
-
-## Hypothesis
-[What outcome do you expect? e.g., "Raising firmographic weight from 0.4 to 0.5 will improve enterprise conversion by 10%"]
-
-## Risk to existing base
-[Does this affect current customers? How?]
-
-## Rollback plan
-[Previous commit hash or tag to revert to]
-EOF
-
-cat > configs/outbound/sequence-default.yaml << 'EOF'
-sequence:
-  name: default-outbound
-  steps:
-    - channel: email
-      delay_days: 0
-      template: initial_touch
-    - channel: email
-      delay_days: 3
-      template: follow_up_1
-    - channel: linkedin
-      delay_days: 5
-      action: connection_request
-  exit_criteria:
-    replied: true
-    meeting_booked: true
-EOF
-
-git add .
-git commit -q -m "Initialize GTM ops repo with structure, PR template, and default outbound config"
-
-echo "=== Repository structure ==="
-find . -not -path './.git/*' -type f | sort
-echo ""
-
-echo "=== Simulating a conflicting PR scenario ==="
-git checkout -q -b update/sequence-timing
-
-cat > configs/outbound/sequence-default.yaml << 'EOF'
-sequence:
-  name: default-outbound
-  steps:
-    - channel: email
-      delay_days: 0
-      template: initial_touch
-    - channel: email
-      delay_days: 2
-      template: follow_up_1
-    - channel: linkedin
-      delay_days: 4
-      action: connection_request
-  exit_criteria:
-    replied: true
-    meeting_booked: true
-EOF
-
-git add configs/outbound/sequence-default.yaml
-git commit -q -m "Shorten follow-up timing: 3->2 days, 5->4 days"
-
-git checkout -q main
-
-cat > configs/outbound/sequence-default.yaml << 'EOF'
-sequence:
-  name: default-outbound
-  steps:
-    - channel: email
-      delay_days: 0
-      template: initial_touch_v2
-    - channel: email
-      delay_days: 3
-      template: follow_up_1
-    - channel: linkedin
-      delay_days: 7
-      action: connection_request
-  exit_criteria:
-    replied: true
-    meeting_booked: true
-EOF
-
-git add configs/outbound/sequence-default.yaml
-git commit -q -m "Update initial template to v2, extend LinkedIn delay to 7 days"
-
-echo "=== Two branches modified the same outbound config ==="
+echo "=== main untouched — experiment branch is disposable ==="
 git log --oneline --graph --all
-echo ""
-
-echo "=== Merge attempt (conflict expected) ==="
-git merge update/sequence-timing
-echo ""
-
-cat > configs/outbound/sequence-default.yaml << 'EOF'
-sequence:
-  name: default-outbound
-  steps:
-    - channel: email
-      delay_days: 0
-      template: initial_touch_v2
-    - channel: email
-      delay_days: 2
-      template: follow_up_1
-    - channel: linkedin
-      delay_days: 7
-      action: connection_request
-  exit_criteria:
-    replied: true
-    meeting_booked: true
-EOF
-
-git add configs/outbound/sequence-default.yaml
-git commit -q -m "Merge: keep v2 template, shorten email follow-up to 2 days, keep LinkedIn at 7"
-
-echo ""
-echo "=== Final graph ==="
-git log --oneline --graph --all
-
-echo ""
-echo "=== Tagging a release ==="
-git tag -a v1.1-sequence-update -m "Release: updated outbound timing and template v2"
-git tag -l -n
 ```
 
-This simulates the real scenario: two people on your GTM team edit the same outbound sequence config. One shortens timing, the other updates the template and extends the LinkedIn delay. Without Git, one overwrites the other and nobody notices. With Git, the conflict surfaces immediately, the resolution is deliberate, and the merge commit records *who decided what and when*.
-
-For branch protection on a real GitHub remote, you would run:
-
-```bash
-gh api repos/{owner}/{repo}/branches/main/protection \
-  -X PUT \
-  -f required_pull_request_reviews.required_approving_review_count=1 \
-  -f required_status_checks.strict=true \
-  -f enforce_admins=true \
-  -f restrictions=""
-```
-
-This requires the GitHub CLI (`gh`) and an authenticated remote. It enforces that no one — including admins — can push directly to `main` without a reviewed PR [CITATION NEEDED — concept: GitHub branch protection API enforcement for ops repos].
+The `git diff` output is the comparison layer: you see exactly which weights changed, by how much, and who committed the change. The `git checkout -q main` proves the rollback path — one command, no reconstruction from memory, no Slack archaeology.
 
 ---
 
 ## Exercises
 
-**Easy — Three-commit repo with graph inspection:**
-Initialize a repository, create a JSON file representing an ICP scoring model with three fields, make three separate commits (one per field addition), then run `git log --oneline --graph --all`. Confirm you can see each commit hash, message, and the linear history.
+**Easy — Three-commit history with graph inspection:**
+Initialize a repository, create a JSON file representing an ICP scoring model, and make three separate commits — one per field addition (e.g., first commit adds `weights`, second adds `threshold`, third adds `target_segment`). Run `git log --oneline --graph --all` and confirm you can see each commit hash, its message, and the linear history. Then use `git show HEAD` to inspect the most recent commit's contents.
 
-**Easy — Commit a Clay export config:**
-Create a `configs/clay/enrichment-export.json` file with at least two enrichment sources and their field mappings. Stage it, commit with a message following the format `"Add <source> enrichment for <use case>"`. Run `git show HEAD` to confirm the commit captured the right file and message.
+**Medium — Branch, diff, and rollback:**
+Starting from `main` with an existing scoring config (the output of the Easy exercise), create a branch called `experiment/threshold-raise`. Increase the threshold value from 0.65 to 0.80. Commit with a message stating your hypothesis (e.g., `"Experiment: raise threshold to 0.80 to filter low-intent accounts"`). Run `git diff main experiment/threshold-raise` to see exactly what changed. Switch back to `main` with `git checkout main` and confirm the original config is untouched. Finally, run `git log --oneline --graph --all` and confirm both timelines are visible — the proven model and the experiment — with no data loss on either side.
 
-**Medium — Deliberate merge conflict:**
-Create a repo with a `scoring.yaml` file. Branch off, change a value on the branch. Switch to `main`, change the same value to something different. Merge the branch, observe the conflict markers in the file, resolve manually, and commit. Run `git log --oneline --graph --all` and confirm the merge commit appears with two parents.
+---
 
-**Medium — Branch for an ICP experiment:**
-Starting from `main` with an existing ICP model JSON, create a branch called `experiment/firmographic-boost`. Increase the `firmographic_fit` weight by 0.1 and decrease another weight to compensate (weights must sum to 1.0). Write a commit message that states the hypothesis: what conversion change you expect and why. Diff the branch against `main`.
+## Key Terms
 
-**Medium — Reflog recovery:**
-Create a commit, then run `git reset --hard HEAD~1` to discard it. Use `git reflog` to find the discarded commit's hash. Recover it with `git cherry-pick <hash>` or `git reset --hard <hash>`. Confirm the "lost" commit is back in your log. The reflog is Git's safety net — it records every HEAD movement even after resets, and retains entries for approximately 90 days by default [CITATION NEEDED — concept: Git reflog default retention period].
+**Content-addressed storage** — A storage model where every object is identified by a hash of its contents. Git uses SHA-1: change one byte in any file and the resulting commit hash is completely different. This makes silent history alteration detectable.
 
-**Hard — Rebase vs. merge:**
-Create a feature branch with two commits. While on that branch, add a commit to `main`. Rebase the feature branch onto `main` (`git rebase main`). Compare the commit graph before and after rebase. Write a commit message (or a note in a `NOTES.md` file
+**Commit graph (DAG)** — A directed acyclic graph where each commit points to its parent(s). Branches and tags are movable pointers into this graph, not copies of files. Merging creates a commit with two parents, converging two timelines.
+
+**Staging area (index)** — An intermediate layer between the working directory and the commit graph. You selectively stage changes with `git add` before writing them to history with `git commit`. This decouples "what I changed" from "what I commit."
+
+**Three-way merge** — Git's merge strategy: it compares the common ancestor (merge base), the current branch tip, and the incoming branch tip. Non-overlapping changes auto-resolve. Overlapping changes on the same lines produce a merge conflict.
+
+**Merge conflict** — When two branches modify the same lines differently, Git inserts conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) into the file and halts. Resolution is manual: you edit the file to reflect the intended final state, stage it, and commit.
+
+**Reflog** — A local-only log of every HEAD movement (checkouts, resets, merges, rebases). Entries persist for approximately 90 days, providing a recovery path for commits that appear "lost" after a hard reset [CITATION NEEDED — concept: Git reflog default retention period].
+
+---
+
+## Sources
+
+- Pro Git Book, Chapter 10: Git Internals — Git Objects (content-addressed storage, SHA-1 hashing, tree and commit object structure) — https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+- Pro Git Book, Chapter 3: Git Branching — Branches in a Nutshell; Basic Branching and Merging (branch pointers, DAG, three-way merge, conflict markers) — https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging
+- Pro Git Book, Chapter 7: Git Tools — Revision Selection; Rerere (reusing recorded conflict resolution) — https://git-scm.com/book/en/v2/Git-Tools-Rerere
+- [CITATION NEEDED — concept: GTM config-as-code practice in revops teams]
+- [CITATION NEEDED — concept: Git reflog default retention period]

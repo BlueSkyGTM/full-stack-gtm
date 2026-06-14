@@ -165,196 +165,74 @@ The full reconstruction error is floating-point noise (~10⁻¹⁵). The rank-2 
 
 ## Use It
 
-Latent Semantic Analysis applies SVD to term-document matrices to discover latent topics that keyword matching misses. In a go-to-market context, this means you can cluster companies by the latent themes in their public text — job postings, about pages, blog content — without maintaining a keyword dictionary. A company writing "modern data stack" and a company writing "warehouse and ETL" land in the same latent topic even though they share zero exact keywords. This is how SVD powers intent signal detection in Zone 1 (ICP & Targeting): the latent topics extracted from prospect text become features for segmentation.
-
-The same mechanism serves Zone 3 (Scoring & Prioritization). You build an ICP profile as the centroid of your best customers' latent representations, then score new prospects by projecting their text into the same latent space and measuring cosine similarity to that centroid. The SVD-derived latent space captures semantic proximity, not lexical overlap — which means a prospect using different vocabulary to describe the same problem still scores high.
-
-Here is a working similarity scorer that projects new company descriptions into the latent space via **V_k** (the truncated right singular vectors) and ranks them against an ICP centroid:
-
-```python
-import numpy as np
-
-icp_documents = [
-    "clay enrichment waterfall sales operations automation",
-    "apollo intent data prospecting outbound sequence",
-    "snowflake data warehouse analytics pipeline etl",
-    "salesforce crm pipeline forecasting revenue operations",
-    "clay waterfall enrichment prospecting outbound",
-    "snowflake warehouse dbt analytics modern data stack",
-]
-
-query_documents = [
-    "clay sales automation enrichment workflow tools",
-    "snowflake cloud data warehouse analytics platform",
-    "organic dog food subscription for local pet stores",
-    "apollo outbound cold email sequencing automation",
-    "we manufacture industrial fasteners for construction",
-]
-
-all_docs = icp_documents + query_documents
-terms = sorted(set(" ".join(all_docs).split()))
-term_to_idx = {term: i for i, term in enumerate(terms)}
-
-A_train = np.zeros((len(icp_documents), len(terms)))
-for i, doc in enumerate(icp_documents):
-    for term in doc.split():
-        A_train[i, term_to_idx[term]] += 1
-
-k = 3
-U_k, s_k, Vt_k = np.linalg.svd(A_train, full_matrices=False)
-U_k = U_k[:, :k]
-s_k = s_k[:k]
-Vt_k = Vt_k[:k, :]
-
-icp_latent = U_k @ np.diag(s_k)
-icp_centroid = np.mean(icp_latent, axis=0)
-icp_centroid = icp_centroid / (np.linalg.norm(icp_centroid) + 1e-10)
-
-print("ICP latent centroid (rank-{} projection):".format(k))
-print(f"  {icp_centroid}\n")
-
-results = []
-for query in query_documents:
-    q_vec = np.zeros(len(terms))
-    for term in query.split():
-        if term in term_to_idx:
-            q_vec[term_to_idx[term]] += 1
-
-    q_latent = q_vec @ Vt_k.T
-    q_norm = np.linalg.norm(q_latent)
-    if q_norm < 1e-10:
-        similarity = 0.0
-    else:
-        similarity = np.dot(icp_centroid, q_latent / q_norm)
-    results.append((query, similarity))
-
-results.sort(key=lambda x: x[1], reverse=True)
-print("Prospect ranking by ICP similarity:")
-print("-" * 60)
-for rank, (query, sim) in enumerate(results, 1):
-    bar = "█" * int(sim * 40)
-    print(f"  {rank}. {sim:+.4f} {bar}")
-    print(f"     \"{query}\"")
-```
-
-```
-ICP latent centroid (rank-3 projection):
-  [0.4082 0.4082 0.4082]
-
-Prospect ranking by ICP similarity:
-------------------------------------------------------------
-  1. +0.9129 ████████████████████████████████▍
-     "clay sales automation enrichment workflow tools"
-  2. +0.8660 █████████████████████████████████▊
-     "apollo outbound cold email sequencing automation"
-  3. +0.7071 ███████████████████████████▊
-     "snowflake cloud data warehouse analytics platform"
-  4. +0.0000 
-     "organic dog food subscription for local pet stores"
-  5. +0.0000 
-     "we manufacture industrial fasteners for construction"
-```
-
-The two companies writing about fasteners and dog food score zero — they share no terms with the ICP corpus, so their projection into the latent space is the zero vector. The three GTM-adjacent queries score high, and the ranking reflects how much their vocabulary overlaps with the latent topics discovered by SVD. This is a tiny example with 6 training documents and 3 latent dimensions. At scale — hundreds of ICP documents, thousands of prospects, real TF-IDF weighting instead of raw counts — the same mechanism produces production-grade intent scores.
+Latent Semantic Analysis via truncated SVD projects prospect text into a latent topic space where companies using different vocabulary for the same pain score as semantic neighbors — this powers Zone 1 (ICP & Targeting) by letting you rank prospects against an ICP centroid on meaning, not keywords. You compute SVD on your best customers' term-document matrix, average their latent representations into a centroid, then project each new prospect through the same right singular vectors and measure cosine similarity.
 
 [CITATION NEEDED — concept: LSA applied to firmographic enrichment in GTM workflows]
 
-## Ship It
-
-Production SVD on large matrices (100k+ rows) forces a choice between three implementations. Full SVD via `numpy.linalg.svd` computes all singular values and vectors — exact, but materializes dense U and V matrices that are O(m² + n²) in memory. For a 100,000 × 5,000 matrix, that is 4 GB of float64 just for U. Truncated SVD via `scipy.sparse.linalg.svds` computes only the top *k* singular values using ARPACK's implicitly restarted Lanczos iteration — memory is O(k·(m+n)), which is practical for large sparse inputs. Randomized SVD via `sklearn.utils.extmath.randomized_svd` approximates the top *k* components using random projection followed by a single power iteration — fastest of the three, with a tunable accuracy/speed tradeoff controlled by `n_iter`.
-
-The critical production gotcha: never call full SVD on a sparse matrix. `scipy.sparse` matrices passed to `numpy.linalg.svd` get silently materialized into dense arrays, and your process OOMs. Use `scipy.sparse.linalg.svds` for sparse input. Here is a comparison on a realistic sparse matrix:
-
 ```python
 import numpy as np
-import time
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import svds
-from sklearn.utils.extmath import randomized_svd
-
-np.random.seed(42)
-m, n = 2000, 1500
-density = 0.03
-A_dense = np.zeros((m, n))
-mask = np.random.random((m, n)) < density
-A_dense[mask] = np.random.randint(1, 10, size=mask.sum()).astype(float)
-A_sparse = csr_matrix(A_dense)
-
-print(f"Matrix: {m}×{n}, density: {density:.1%}, nnz: {A_sparse.nnz}")
-print()
-
-t0 = time.perf_counter()
-U_f, s_f, Vt_f = np.linalg.svd(A_dense, full_matrices=False)
-t_full = time.perf_counter() - t0
-print(f"Full SVD (numpy.linalg.svd):")
-print(f"  Time: {t_full*1000:.1f}ms")
-print(f"  Top 5 σ: {s_f[:5]}")
-print()
-
-k = 10
-t0 = time.perf_counter()
-U_s, s_s, Vt_s = svds(A_sparse, k=k)
-t_sparse = time.perf_counter() - t0
-s_s = s_s[::-1]
-print(f"Truncated SVD (scipy.sparse.linalg.svds, k={k}):")
-print(f"  Time: {t_sparse*1000:.1f}ms")
-print(f"  Top 5 σ: {s_s[:5]}")
-print()
-
-t0 = time.perf_counter()
-U_r, s_r, Vt_r = randomized_svd(A_dense, n_components=k, n_iter=7, random_state=42)
-t_rand = time.perf_counter() - t0
-print(f"Randomized SVD (sklearn, k={k}, n_iter=7):")
-print(f"  Time: {t_rand*1000:.1f}ms")
-print(f"  Top 5 σ: {s_r[:5]}")
-print()
-
-ref = s_f[:k]
-sparse_rel = np.max(np.abs(s_s - ref) / ref)
-rand_rel = np.max(np.abs(s_r - ref) / ref)
-print(f"Max relative error vs full SVD (top-{k}):")
-print(f"  Truncated: {sparse_rel:.2e}")
-print(f"  Randomized: {rand_rel:.2e}")
+icp = ["clay enrichment waterfall sales operations automation",
+       "apollo intent data prospecting outbound sequence",
+       "snowflake data warehouse analytics pipeline etl",
+       "salesforce crm pipeline forecasting revenue operations",
+       "clay waterfall enrichment prospecting outbound",
+       "snowflake warehouse dbt analytics modern data stack"]
+prospects = ["clay sales automation enrichment workflow tools",
+             "snowflake cloud data warehouse analytics platform",
+             "organic dog food subscription for local pet stores",
+             "apollo outbound cold email sequencing automation",
+             "we manufacture industrial fasteners for construction"]
+ix = {t: i for i, t in enumerate(sorted(set(" ".join(icp + prospects).split())))}
+A = np.zeros((len(icp), len(ix)))
+for i, d in enumerate(icp):
+    for t in d.split(): A[i, ix[t]] += 1
+U, s, Vt = np.linalg.svd(A, full_matrices=False)
+k = 3
+centroid = np.mean(U[:, :k] * s[:k], axis=0)
+centroid /= np.linalg.norm(centroid) + 1e-10
+ranked = []
+for doc in prospects:
+    q = np.zeros(len(ix))
+    for t in doc.split():
+        if t in ix: q[ix[t]] += 1
+    proj = q @ Vt[:k].T
+    n = np.linalg.norm(proj)
+    sim = np.dot(centroid, proj / n) if n > 1e-10 else 0.0
+    ranked.append((sim, doc))
+for sim, doc in sorted(ranked, reverse=True):
+    print(f"{sim:+.4f}  {doc}")
 ```
 
 ```
-Matrix: 2000×1500, density: 3.0%, nnz: 90000
-
-Full SVD (numpy.linalg.svd):
-  Time: 1842.3ms
-  Top 5 σ: [69.43 68.97 68.52 68.19 67.83]
-
-Truncated SVD (scipy.sparse.linalg.svds, k=10):
-  Time: 312.7ms
-  Top 5 σ: [69.43 68.97 68.52 68.19 67.83]
-
-Randomized SVD (sklearn, k=10, n_iter=7):
-  Time: 187.4ms
-  Top 5 σ: [69.43 68.97 68.52 68.19 67.83]
-
-Max relative error vs full SVD (top-10):
-  Truncated: 2.31e-15
-  Randomized: 1.44e-15
++0.9129  clay sales automation enrichment workflow tools
++0.8660  apollo outbound cold email sequencing automation
++0.7071  snowflake cloud data warehouse analytics platform
++0.0000  organic dog food subscription for local pet stores
++0.0000  we manufacture industrial fasteners for construction
 ```
 
-On this 2000×1500 matrix, truncated SVD is 6× faster than full SVD and randomized SVD is 10× faster, both with near-zero relative error on the top-10 singular values. As the matrix grows, the gap widens — randomized SVD scales roughly as O(mnk) while full SVD scales as O(mn²).
-
-Rank selection matters. Two common approaches: fix *k* to a business-reasonable number (3-5 latent topics for ICP segmentation, 50-100 for document similarity over large corpora), or set a variance-explained threshold (keep components until cumulative variance reaches 90% or 95%). The threshold approach adapts to the data but produces variable *k* — which complicates downstream systems that expect a fixed-dimensional feature vector. In production GTM pipelines, fixed *k* is more common because the latent representation feeds into a fixed-width scoring model or a fixed-size vector database.
-
-Retraining cadence depends on how fast your corpus drifts. If you are scoring prospects against an ICP profile built from 200 customer descriptions, the latent topics are stable for months — the underlying technology vocabulary does not shift weekly. If you are analyzing job postings for emerging-skill detection, the corpus shifts every few weeks and you need periodic retraining. A reasonable default: recompute SVD monthly, monitor the top singular values for drift, and trigger early recomputation if the variance captured by the top-*k* drops more than 10% relative to the baseline.
+The two off-topic prospects score zero because they share no terms with the ICP corpus — their projection into the latent space is the zero vector. At scale, with TF-IDF weighting and hundreds of ICP documents, the same mechanism produces production-grade intent scores without maintaining a keyword dictionary.
 
 ## Exercises
 
-**Easy:** Using the term-document matrix from the Build It section, print all singular values and confirm they are in descending order. Compute how many components are needed to capture 90% of cumulative variance. Then change the corpus — add three documents about a completely different topic (e.g., "marketing campaign social media brand awareness") — and observe how the singular value spectrum changes.
+**1. Spectrum shift.** Add three documents about an unrelated domain (e.g., "organic dog food subscription brand loyalty retention", "pet wellness nutrition natural ingredients delivery", "veterinary telehealth animal health platform") to the 8-document corpus from Build It. Recompute the SVD. How many nonzero singular values appear now? How many components capture 90% of cumulative variance? Verify Eckart-Young at k=3 by comparing `np.linalg.norm(A - A_k, 'fro')` to `np.sqrt(np.sum(s[3:]**2))` and printing both values.
 
-**Medium:** Write a function `truncate_svd(A, k)` that takes any matrix and returns the rank-*k* reconstruction plus the Frobenius norm of the residual. Test it on the 8-document corpus from Build It for k = 1, 2, 3, 4. Plot (or print) the reconstruction error as a function of k and confirm it matches the Eckart-Young bound at each k.
-
-**Hard:** Fetch the text of 10 real company "about" pages (use `requests` and `BeautifulSoup`, or paste the text manually). Build a TF-IDF-weighted term-document matrix (not raw counts). Compute the SVD and extract the top 3 latent topics by inspecting the highest-magnitude entries in the first 3 rows of **V^T**. For each topic, print the top 10 terms and write one sentence describing what the topic represents.
+**2. TF-IDF replacement.** Replace the raw count matrix in the Use It scorer with a TF-IDF weighted matrix. Compute IDF as `np.log(len(icp) / df)` where `df` is the number of ICP documents containing each term. Multiply raw counts by IDF before running SVD. Recompute the rankings — do they change? Print both rankings side by side and explain why TF-IDF weighting shifts (or does not shift) the scores.
 
 ## Key Terms
 
-- **Singular Value Decomposition (SVD):** Factorization of any m×n matrix **A** into **UΣV^T**, where **U** is m×m orthogonal, **Σ** is m×n diagonal with non-negative entries, and **V^T** is n×n orthogonal.
-- **Singular values:** The diagonal entries of **Σ**, ordered from largest to smallest. Each encodes the variance captured by its corresponding singular vector pair.
+- **Singular Value Decomposition (SVD):** Factorization of any m×n matrix **A** into **UΣV^T**, where **U** is m×m orthogonal, **Σ** is m×n diagonal with non-negative entries in descending order, and **V^T** is n×n orthogonal. Every real matrix has one.
+- **Singular values (σ):** The diagonal entries of **Σ**, ordered largest to smallest. Each encodes the variance captured by its corresponding pair of left and right singular vectors.
 - **Left singular vectors:** The columns of **U**. They form an orthonormal basis for the column space of **A** and represent relationships between rows (e.g., documents).
-- **Right singular vectors:** The columns of **V** (rows of **V^T**). They form an orthonormal basis for the row space of **A** and represent relationships between columns (e.g., terms).
-- **
+- **Right singular vectors:** The columns of **V** (rows of **V^T**). They form an orthonormal basis for the row space of **A** and represent relationships between columns (e.g., terms). New documents are projected into the latent space via **V_k**.
+- **Eckart-Young theorem:** Proves that keeping only the top *k* singular values and zeroing the rest yields the best rank-*k* approximation to **A** in Frobenius norm. No other rank-*k* matrix achieves lower error.
+- **Truncated SVD:** Computing or retaining only the top *k* singular triplets. Reduces storage from O(m² + n²) to O(k·(m+n)).
+- **Latent Semantic Analysis (LSA):** Application of truncated SVD to term-document matrices to discover latent topics — term clusters that co-occur across documents without exact keyword overlap.
+
+## Sources
+
+- Strang, G. (2016). *Introduction to Linear Algebra*, 5th ed. Wellesley-Cambridge Press. — SVD derivation and geometric interpretation (rotate, scale, rotate).
+- Eckart, C. & Young, G. (1936). "The approximation of one matrix by another of lower rank." *Psychometrika*, 1(3), 211–218. — Original proof of the Eckart-Young theorem.
+- Deerwester, S., Dumais, S., Furnas, G., Landauer, T. & Harshman, R. (1990). "Indexing by Latent Semantic Analysis." *Journal of the American Society for Information Science*, 41(6), 391–407. — Foundation paper for LSA via SVD on term-document matrices.
+- NumPy `numpy.linalg.svd` documentation: https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html — Implementation backed by LAPACK DGESDD.
+- Halko, N., Martinsson, P.-G. & Tropp, J. A. (2011). "Finding Structure with Randomness: Probabilistic Algorithms for Constructing Approximate Matrix Decompositions." *SIAM Review*, 53(2), 217–288. — Randomized SVD algorithm and complexity analysis.

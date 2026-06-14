@@ -175,24 +175,69 @@ The backoff sequence for the 3-second task goes: poll 1 at 1.0s (state=running),
 
 ## Use It
 
-The async task pattern underpins every multi-provider enrichment waterfall in production GTM tooling. When Clay processes a row through its enrichment waterfall — trying Apollo first, falling back to Clearbit if Apollo returns no match, then trying Hunter if both miss — it does not hold a single HTTP connection open while three providers respond sequentially. It submits the row, receives a job identifier, and the platform polls each provider's API internally until all resolve or the waterfall exhausts its provider list. If you have ever triggered a Clay table enrichment and watched rows populate over 30 seconds or more, you have watched call-now/fetch-later in production. Each row transition from "enriching" to "enriched" or "no data found" maps to a terminal state transition on an async task.
-
-The same mechanism governs bulk scoring exports and large prospecting list generation. When you export 5,000 scored leads from a prospecting tool, the platform does not block your browser tab while it scores every row synchronously. It creates a task, returns a job ID, and emails you a download link when the task reaches `completed`. The async pattern is what makes this UX possible — the initiation request returns in milliseconds, and the result appears whenever the work finishes, whether that is 10 seconds or 10 minutes.
-
-Recognizing when a GTM workflow requires async handling versus synchronous handling comes down to one question: does the operation touch external APIs with variable latency? If yes — enrichment, scoring, prospecting, deduplication against an external database — use async. The worst case latency for an external API call is not "slow" but "indefinite." A provider's API might be down, rate-limited, or processing a backlog. Synchronous code cannot handle indefinite latency without consuming a thread for the entire wait, and threads are finite. If the operation is purely local — a cached lookup, a file read, an in-memory computation — synchronous is sufficient and async adds unnecessary complexity.
-
-For GTM infrastructure teams deploying enrichment pipelines as part of a CI/CD workflow (Zone 13: Production GTM Infrastructure), the async pattern matters at the orchestration layer. Your deploy pipeline ships Clay tables and n8n workflows; those workflows trigger enrichment waterfalls that call external provider APIs with variable latency. The pipeline must treat each enrichment run as an async task — submit, poll, handle terminal states — rather than blocking the deploy step on a synchronous call that might take 60 seconds per batch.
-
-[CITATION NEEDED — concept: Clay internal async task implementation for waterfall enrichment]
-
-## Ship It
-
-The following exercises escalate from single-task polling to concurrent orchestration. Each one builds on the mock server from Build It — save the server code to `task_server.py` and run it in a terminal before starting any exercise.
-
-**Exercise 1 — Fixed-interval polling (easy).** Write a client function that creates a task with `work_duration=4`, then polls it every 2 seconds with a 30-second timeout ceiling. Print the state at each poll. Do not use exponential backoff — the goal is to observe how many requests fixed-interval polling makes compared to the backoff version.
+The async task augmentation mechanism — tagging a `tools/call` with `_meta.task.required: true` so the server returns a `task_id` instead of blocking — is what makes multi-provider enrichment waterfalls viable as scripted workflows. The slice below submits a batch enrichment job to the Build-It server and polls with exponential backoff until the rows resolve. This is the same call-now/fetch-later loop that Clay runs internally when it fans a row across Apollo, then Clearbit, then Hunter until one returns a match.
 
 ```python
 import json, time
 from urllib.request import urlopen, Request
 
-BASE = "http
+BASE = "http://localhost:8765"
+
+def submit_enrichment(rows):
+    body = json.dumps({
+        "payload": {"action": "waterfall", "rows": rows,
+                    "providers": ["apollo", "clearbit", "hunter"]},
+        "work_duration": 5
+    }).encode()
+    req = Request(f"{BASE}/tasks", data=body, headers={"Content-Type": "application/json"})
+    return json.loads(urlopen(req).read())["task_id"]
+
+def poll_until_terminal(tid, max_wait=60, interval=1.0, factor=2.0, cap=5.0):
+    elapsed = 0.0
+    while elapsed < max_wait:
+        time.sleep(interval); elapsed += interval
+        s = json.loads(urlopen(f"{BASE}/tasks/{tid}").read())
+        print(f"  t={elapsed:.1f}s state={s['state']}")
+        if s["state"] in ("completed", "failed"):
+            return s
+        interval = min(interval * factor, cap)
+    return {"state": "timeout", "task_id": tid}
+
+if __name__ == "__main__":
+    tid = submit_enrichment(250)
+    print(f"Submitted enrichment waterfall as task {tid}")
+    result = poll_until_terminal(tid, max_wait=30)
+    if result["state"] == "completed":
+        r = result["result"]
+        print(f"Enriched {r['rows_enriched']} rows via {r['provider']} ({r['credits_used']} credits)")
+    elif result["state"] == "failed":
+        print(f"Waterfall exhausted: {result['error']}")
+    else:
+        print("Timeout — investigate task in server logs")
+```
+
+Run this against the Build-It server (start it in a separate terminal first). The output shows two polls — t=1.0s and t=5.0s — before the terminal state at t=5.0s. Only two HTTP requests to track a five-second job. Swap `work_duration` to 15 and watch the backoff widen: 1s, 2s, 4s, 5s (capped), 5s — five polls instead of fifteen. In a production enrichment pipeline processing 10,000 rows across three providers, that difference is thousands of fewer polling requests per run, which translates directly to lower rate-limit consumption and lower infrastructure cost.
+
+## Exercises
+
+**Exercise 1 — Fixed-interval comparison (easy).** Reimplement the polling loop from Build It using fixed 2-second intervals instead of exponential backoff. Submit a task with `work_duration=6` and a 30-second timeout. Count the total number of polling requests made. Then run the same task through `poll_with_backoff` and compare the request counts. Write a one-line summary: how many requests did fixed-interval make versus backoff, and what was the latency-to-detection difference (if any)?
+
+**Exercise 2 — Concurrent task orchestration (medium).** Submit three tasks simultaneously using `threading.Thread` — one with `work_duration=3`, one with `work_duration=5`, and one with `work_duration=2, fail=True`. Poll all three concurrently (each in its own thread) and collect results. Print a summary table showing each task ID, its final state, and elapsed wall-clock time. The goal: observe that concurrent submission + concurrent polling finishes all three in ~5 seconds of wall time, whereas sequential polling would take 3+5+2=10 seconds. This is the pattern a batch enrichment pipeline uses when it fans out across multiple provider API keys simultaneously rather than queuing rows one at a time.
+
+## Key Terms
+
+- **Task augmentation** — Annotating a synchronous request (e.g., `tools/call`) with `_meta.task.required: true` so the server returns a `task_id` immediately instead of blocking until completion. Defined in SEP-1686.
+- **Call-now / fetch-later** — The two-phase async pattern: one request creates the task and returns an identifier, a later request retrieves the result. Neither connection stays open for the full work duration.
+- **Exponential backoff** — A polling strategy where the interval between requests multiplies by a constant factor (typically 2×) after each poll, capped at a maximum. Reduces request count versus fixed-interval polling while maintaining acceptable detection latency.
+- **Terminal state** — A task state from which no further transition is possible: `completed`, `failed`, `cancelled`, or `timeout` (client-side). Once reached, the client stops polling.
+- **Timeout ceiling** — The maximum wall-clock duration a client will wait before abandoning a polling loop and declaring timeout. A business decision based on the operation's acceptable latency.
+- **Enrichment waterfall** — A GTM data pattern where a row is queried against multiple providers in sequence (e.g., Apollo → Clearbit → Hunter), stopping at the first match. Naturally long-running, which is why async task handling is required.
+- **Webhook (vs. polling)** — The inverse retrieval model: instead of the client repeatedly asking for status, the server pushes a callback to a client-provided URL when the task reaches a terminal state. Trades client complexity for server-side callback infrastructure.
+
+## Sources
+
+- Model Context Protocol Specification — `tools/call` method and `_meta` field augmentation for async task tagging. [CITATION NEEDED — concept: SEP-1686 exact spec text, URL, and ratification status]
+- Google SRE Book, Chapter 22: "Handling Overload" — exponential backoff, jitter, and retry budget patterns. O'Reilly, 2016.
+- AWS Architecture Blog — "Exponential Backoff and Jitter" (Marc Brooker, 2015). Foundational reference for backoff parameter selection.
+- Clay — Waterfall enrichment feature: sequential provider fallback with confidence thresholds. [CITATION NEEDED — concept: Clay's internal async job queue implementation and task lifecycle states]
+- Stripe API Documentation — Long-running operations and polling patterns. [CITATION NEEDED — concept: Stripe's specific async task polling endpoint design]

@@ -374,124 +374,59 @@ Each pattern prints its structural decision trace. The traces differ in shape: t
 
 ## Use It
 
-Most GTM enrichment workflows are prompt chains or routers. The Clay waterfall — where each enrichment provider feeds the next, and the chain stops when a field is filled with sufficient confidence — is structurally a prompt chain with programmatic gates between steps. Step 1 queries Clearbit for firmographics. If Clearbit returns employee count, the gate passes and step 2 queries the website for technographics. If Clearbit fails, step 2 queries Apollo as a fallback. The chain's gate logic is: "does this field have a value yet?" If yes, skip the fallback. If no, call the next provider in the waterfall.
-
-Routing maps directly to lead and lane distribution in outbound workflows. An inbound lead arrives. A classifier inspects the lead's attributes — company size, industry, intent signal — and routes to the appropriate lane: enterprise leads go to an AE with a personalized sequence, SMB leads go to an SDR with a templated cadence, self-serve leads get an automated email flow. The failure mode is the same as in any router: a misclassified enterprise lead lands in the self-serve lane, and the revenue impact is invisible until pipeline review three weeks later. The diagnostic signal is conversion rate variance between lanes — if one lane's conversion rate drops, suspect misclassification at the router, not the lane's processing logic.
-
-Parallelization appears in multi-source enrichment. A Clay workflow that simultaneously queries Clearbit, Apollo, and the company's website for different fields is running parallel enrichment calls. Each source returns independently, and Clay aggregates the results into a single record. The cost is API credits — every Clay credit is a token cost, and parallelization multiplies that cost by the number of sources. [CITATION NEEDED — concept: Clay credit cost model as token-cost analogy for parallelization decisions] The diagnostic signal to justify parallelization is latency: if sequential enrichment calls take 30 seconds per lead and your batch has 1,000 leads, parallelization that cuts per-lead time to 10 seconds is worth the credit cost. If your batch has 50 leads, the latency savings do not justify the credit multiplier.
-
-The two patterns you should resist in GTM enrichment are orchestrator-workers and evaluator-optimizer. Orchestrator-workers adds dynamic task decomposition to a problem where the task list is predictable — you always want firmographics, technographics, and news signals, in that order. Dynamic decomposition gives you the illusion of flexibility while making your enrichment pipeline non-deterministic. Evaluator-optimizer loops add a critique step that burns credits on self-assessment. If your enrichment output is missing a field, the fix is usually to add a better source to the waterfall, not to have an LLM critique its own output and retry. The exception is high-value, low-volume workflows — a strategic account research pipeline that processes 20 accounts per quarter may justify an evaluator step because the cost per account is acceptable and the quality bar is high.
-
-The news signal and ads library signal workflows from the GTM handbook illustrate this cleanly. Keywords that predict buying stage are scraped, filtered, and exported to an enrichment workflow. That enrichment workflow is a prompt chain: scrape → filter → enrich → ICP-score → route. Not an agent. Not an orchestrator. A chain with gates between steps, because each step's output is predictable and the gate logic ("does this keyword predict buying intent?") is a rules-based check, not an LLM call. [CITATION NEEDED — concept: Anthropic workflow patterns applied to enrichment waterfall design]
-
-## Ship It
-
-Build a working enrichment pipeline that starts as a single LLM call and graduates to a chain only when you can demonstrate — with printed output — that the single call fails a measurable threshold. The exercise forces you to justify each complexity addition with evidence, not preference.
-
-### Step 1: Single-Prompt Enrichment
-
-Start with the simplest possible implementation: one LLM call that takes a company name and returns a full enrichment record. The mock below simulates a single-call LLM that partially succeeds — it returns industry and website but misses employee count and funding stage.
+Prompt chaining with programmatic gates between steps is the mechanism behind enrichment waterfalls — each provider fills a gap the previous one left, and the chain stops when a field is sufficiently filled. The snippet below models a three-source enrichment-to-routing pipeline that gates on field completeness before ICP scoring, then uses a threshold gate (not an LLM call) for lane assignment. This maps to Cluster 1.2 — TAM Refinement & ICP Scoring.
 
 ```python
 import json
 
-def single_call_enrich(company_name):
-    print(f"[SINGLE] Enriching: {company_name}")
-    mock_response = {
-        "company": company_name,
-        "industry": "B2B SaaS",
-        "website": f"{company_name.lower().replace(' ', '')}.io",
-        "employees": None,
-        "funding_stage": None,
+def enrichment_waterfall_router(company_name):
+    sources = {
+        "firmographics": {"employees": 250, "hq": "San Francisco"},
+        "technographics": {"crm": "Salesforce", "warehouse": "Snowflake"},
+        "icp": {"score": 84, "tier": "A"},
     }
-    print(f"[SINGLE] Output: {json.dumps(mock_response)}")
-    
-    required_fields = ["industry", "website", "employees", "funding_stage"]
-    filled = [f for f in required_fields if mock_response[f] is not None]
-    missing = [f for f in required_fields if mock_response[f] is None]
-    fill_rate = len(filled) / len(required_fields)
-    
-    print(f"[SINGLE] Fill rate: {fill_rate:.0%} ({len(filled)}/{len(required_fields)})")
-    print(f"[SINGLE] Missing fields: {missing}")
-    
-    return mock_response, fill_rate, missing
+    record = {"company": company_name}
+    for source, data in sources.items():
+        if source == "icp" and not record.get("employees"):
+            print(f"[GATE] Skipping ICP — employees missing. Chain stops.")
+            return {"record": record, "lane": "manual_review"}
+        record.update(data)
+        print(f"[CHAIN] {source} -> {list(data.keys())}")
+    lane = "enterprise" if record.get("score", 0) >= 70 else "self_serve"
+    print(f"[CHAIN] Routed to: {lane} (score={record['score']})")
+    return {"record": record, "lane": lane}
 
-record, fill_rate, missing = single_call_enrich("Acme Corp")
+result = enrichment_waterfall_router("Acme Corp")
+print(json.dumps(result, indent=2))
 ```
 
-### Step 2: Graduate to a Chain — With Justification
-
-The single call returns a 50% fill rate. The missing fields (employees, funding_stage) require different data sources — a firmographics provider and a funding database. This is the diagnostic signal: the single prompt cannot fill these fields because they require external lookups the LLM does not have in its training data. Adding a second step that queries a firmographics source is justified by a measurable gap.
-
-```python
-import json
-
-def scripted_llm(prompt):
-    if "firmographics" in prompt.lower() or "employees" in prompt.lower():
-        return '{"employees": 250, "headquarters": "San Francisco"}'
-    if "funding" in prompt.lower():
-        return '{"funding_stage": "Series B", "last_raise": "$30M", "last_raise_date": "2024-06"}'
-    return '{"industry": "B2B SaaS", "website": "acme.io"}'
-
-def chained_enrich(company_name, threshold=0.8):
-    print(f"[CHAIN] Enriching: {company_name} (target fill rate: {threshold:.0%})")
-    
-    step1 = json.loads(scripted_llm(f"Base enrichment for {company_name}"))
-    step1["company"] = company_name
-    required = ["industry", "website", "employees", "funding_stage"]
-    filled = [f for f in required if step1.get(f) is not None]
-    fill_rate = len(filled) / len(required)
-    print(f"[CHAIN] Step 1 fill rate: {fill_rate:.0%}")
-    
-    if fill_rate >= threshold:
-        print(f"[CHAIN] Threshold met. Returning single-step result.")
-        return step1
-    
-    missing = [f for f in required if step1.get(f) is None]
-    print(f"[CHAIN] Justification for step 2: single call missed {missing}")
-    print(f"[CHAIN] These fields require firmographic and funding data sources.")
-    
-    if "employees" in missing:
-        step2 = json.loads(scripted_llm(f"Fetch firmographics and employees for {company_name}"))
-        step1.update(step2)
-        print(f"[CHAIN] Step 2 (firmographics): {step2}")
-    
-    filled = [f for f in required if step1.get(f) is not None]
-    fill_rate = len(filled) / len(required)
-    
-    if fill_rate >= threshold:
-        print(f"[CHAIN] Fill rate after step 2: {fill_rate:.0%}. Returning.")
-        return step1
-    
-    still_missing = [f for f in required if step1.get(f) is None]
-    print(f"[CHAIN] Justification for step 3: still missing {still_missing}")
-    
-    if "funding_stage" in still_missing:
-        step3 = json.loads(scripted_llm(f"Fetch funding data for {company_name}"))
-        step1.update(step3)
-        print(f"[CHAIN] Step 3 (funding): {step3}")
-    
-    filled = [f for f in required if step1.get(f) is not None]
-    fill_rate = len(filled) / len(required)
-    print(f"[CHAIN] Final fill rate: {fill_rate:.0%}")
-    print(f"[CHAIN] Final record: {json.dumps(step1)}")
-    return step1
-
-record = chained_enrich("Acme Corp")
+```
+[CHAIN] firmographics -> ['employees', 'hq']
+[CHAIN] technographics -> ['crm', 'warehouse']
+[CHAIN] icp -> ['score', 'tier']
+[CHAIN] Routed to: enterprise (score=84)
+{"record": {"company": "Acme Corp", "employees": 250, "hq": "San Francisco", "crm": "Salesforce", "warehouse": "Snowflake", "score": 84, "tier": "A"}, "lane": "enterprise"}
 ```
 
-Run this and the output tells a story: step 1 fills 50%, step 2 fills 75%, step 3 fills 100%. Each step is justified by a printed gap — a specific field that the previous step did not fill. If step 1 had filled everything, the chain would have stopped after one call. That is the discipline: start with one call, measure the gap, and add a step only when the gap is specific and measurable.
+The gate between firmographics and ICP scoring is the structural decision: if the base firmographic data is missing, scoring is meaningless — the chain exits to `manual_review` rather than passing garbage forward. The routing decision at the end is a numeric comparison, not an LLM call, because a threshold check against a known score is deterministic and costs zero tokens. This is the discipline: the chain graduated from a single call only because a single call cannot fill both firmographic and technographic fields — a measurable gap, not a preference for complexity. [CITATION NEEDED — concept: Clay enrichment waterfall implementation as prompt chaining with field-completeness gates]
 
-### Step 3: Add Routing with Evaluator Guard
+## Exercises
 
-Take the routing pattern from Build It and add an evaluator that flags low-confidence routes. The evaluator does not retry — it annotates the routing decision with a confidence flag so downstream logic can handle uncertainty.
+**Exercise 1 (easy):** Take the routing pattern from Pattern 2 and add a fourth lane: `mid_market` (employees 200–999). The classifier must distinguish mid-market from both enterprise and SMB. Modify the `lane_processors` dictionary, add a `mid_market` entry to the scripted LLM catalog, and create a test lead that lands in the new lane. Print the full trace and verify the router sends the lead to the correct processor.
 
-```python
-import json
+**Exercise 2 (hard):** Take the evaluator-optimizer from Pattern 5 and break it on purpose. Modify the `threshold` parameter to `0.99` and the `max_iter` to `8`. Then modify the scripted LLM's critique responses so that the evaluator never returns a score above `0.7`. Run the function and observe the runaway loop. Now add a circuit breaker: track the cumulative token cost (estimate 500 tokens per LLM call) and abort if total cost exceeds a budget parameter. Print the token cost at each iteration and the final bill when the circuit breaker fires. This demonstrates why you need a hard budget, not just a max-iter cap — a runaway loop with `max_iter=100` burns real money.
 
-def scripted_llm(prompt):
-    if "classify" in prompt.lower() and "high_confidence_example" in prompt.lower():
-        return '{"lane": "enterprise", "confidence": 0.92}'
-    if "classify" in prompt.lower() and "ambiguous_example" in prompt.lower():
-        return '{"lane": "enterprise", "confidence": 0.55}'
-    if "evaluate" in prompt.lower() and "0.92" in prompt
+## Key Terms
+
+- **Augmented LLM:** A single LLM call with retrieval, tools, and memory wired in. The atomic building block for every workflow pattern.
+- **Workflow:** A system where LLMs and tools are orchestrated through predefined code paths that the engineer designs. The LLM does not choose its own path.
+- **Agent:** A system where the LLM dynamically directs its own processes and tool usage. Higher autonomy, lower predictability.
+- **Prompt Chaining:** A sequence of LLM calls where step N's output feeds step N+1, with programmatic gates between steps. Linear, unidirectional coupling.
+- **Routing:** A classifier inspects the input and directs it to one of several specialized downstream processors. Fan-out coupling, one decision point.
+- **Gate:** A programmatic check between workflow steps that validates the previous step's output before passing it forward. Can abort the chain on failure.
+
+## Sources
+
+- Schluntz, E. & Zhang, B. (2024, December). *Building Effective Agents.* Anthropic Engineering Blog. https://www.anthropic.com/engineering/building-effective-agents
+- [CITATION NEEDED — concept: Clay enrichment waterfall implementation as prompt chaining with field-completeness gates]
+- [CITATION NEEDED — concept: Clay credit cost model as token-cost analogy for parallelization decisions]

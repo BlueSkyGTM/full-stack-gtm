@@ -222,3 +222,91 @@ print("Files saved: lora_output_seed0.png through lora_output_seed4.png")
 ```
 
 The `cross_attention_kwargs={"scale": 0.8}` parameter controls how strongly the LoRA adapter influences generation. At scale 1.0, the full trained effect applies. At 0.5, you get a softer blend between the base model's tendencies and your fine-tuned direction. This is the single most important knob for brand consistency — too high and outputs overfit to the training images; too low and the brand style disappears.
+
+Brief rules for production deployment:
+
+- **Training data**: 15–30 images is sufficient for a single-product LoRA. Above 50 images, the adapter starts learning background style rather than the product itself. Crop tightly on the product with minimal background variation.
+- **Trigger token**: always use a unique pseudo-word (e.g., `ProductMug`) that does not collide with any existing tokenizer vocabulary entry. This lets you dial the concept in and out of prompts deterministically.
+- **Rank selection**: rank 8 captures most product-specific features. Rank 16–32 is needed when the brand has a distinctive photographic style (lighting, color grading) beyond the product geometry. Rank 64+ risks overfitting on small datasets.
+- **Step count**: target 1,500–2,500 training steps for a 20-image dataset. Watch the loss curve — if it plateaus before step 1,000, your learning rate is too high. If it is still descending at 3,000, you need more data, not more steps.
+- **Export format**: always save as `.safetensors`, never `.bin` or `.pt`. The safetensors format serializes tensors in a structure that prevents arbitrary code execution during deserialization — a real attack vector when distributing or downloading adapters from community repositories.
+
+For inference optimization on deployment hardware:
+
+```python
+import torch
+from diffusers import StableDiffusionPipeline
+
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5",
+    torch_dtype=torch.float16,
+)
+
+pipe.load_lora_weights("./product_lora_v1.safetensors")
+pipe.enable_xformers_memory_efficient_attention()
+pipe.enable_vae_slicing()
+pipe.enable_model_cpu_offload()
+
+prompt = "a photo of a ProductMug ceramic mug on a marble surface, soft studio lighting"
+generator = torch.Generator("cpu").manual_seed(42)
+image = pipe(prompt, num_inference_steps=25, guidance_scale=7.5, generator=generator).images[0]
+image.save("deployed_output.png")
+print(f"Output: {image.size}, mode: {image.mode}")
+print("xFormers + VAE slicing + CPU offload enabled — runs on 6GB VRAM.")
+```
+
+Three optimizations at work: `enable_xformers_memory_efficient_attention()` replaces the default attention kernel with a chunked, memory-efficient implementation that cuts peak VRAM by roughly 30–40% with no quality loss. `enable_vae_slicing()` processes the VAE decoder in spatial tiles rather than all at once, reducing the memory spike that happens during the final decode step. `enable_model_cpu_offload()` moves each component (text encoder, U-Net, VAE) between CPU and GPU as needed — this is what lets the full SD 1.5 pipeline run on a 6GB consumer GPU instead of the 10–12GB baseline. All three are additive and safe to stack.
+
+The economics: a LoRA adapter trained on 20 product images costs roughly $0.50–2.00 in GPU time on a cloud A10G or comparable instance. That adapter generates unlimited on-brand images at ~2 seconds each on the same hardware. Compare that to $500–2000 per physical shoot day plus post-production time, and the break-even point is a single batch of 50 generated images replacing one hour of a photographer's rate.
+
+[CITATION NEEDED — concept: cloud GPU pricing for A10G Stable Diffusion inference]
+
+## Exercises
+
+### Exercise 1 (Easy): Verify the 48× Latent Compression Ratio
+
+Using pure Python (no ML libraries), compute the dimensional reduction from pixel space to latent space for both SD 1.5 (512×512, VAE downsample factor 8) and SDXL (1024×1024, same factor).
+
+**Tasks:**
+1. Calculate `pixel_values = 3 × H × W` and `latent_values = 4 × (H/8) × (W/8)` for both resolutions.
+2. Compute the ratio `pixel_values / latent_values` for each.
+3. Confirm SD 1.5 gives 48×. What ratio does SDXL give, and why is it the same?
+4. Now calculate what the ratio would be if the VAE used downsample factor 4 instead of 8. How would this change the tradeoff between compression fidelity and compute savings?
+
+**Deliverable:** A Python script that prints a formatted table comparing the four configurations.
+
+### Exercise 2 (Medium): Configure and Evaluate a LoRA Training Run
+
+Using the `diffusers` and `peft` libraries, write a training configuration script for a product-image LoRA. You do not need a GPU for this exercise — the goal is to produce a correct configuration, not to execute the training.
+
+**Tasks:**
+1. Load the SD 1.5 pipeline in fp32 on CPU.
+2. Configure LoRA parameters: target the `attn2` cross-attention projections (`to_q`, `to_k`, `to_v`, `to_out.0`) across all U-Net blocks. Set rank=16, alpha=16, dropout=0.05.
+3. Print the total number of trainable parameters vs. frozen parameters. Confirm the LoRA adds <1% of the base parameter count.
+4. Compute parameter count for ranks 8, 16, 32, and 64. Plot (or print a table of) how trainable parameter count scales with rank. Confirm the relationship is linear: `trainable = 2 × rank × sum(layer_dim_i)` for each targeted projection.
+5. Write the training arguments: learning rate `1e-4`, 2,000 steps, batch size 1, gradient accumulation 4, mixed precision `fp16`. Justify each choice in a comment-free docstring on the configuration function.
+
+**Deliverable:** A script that loads the model, injects LoRA adapters, prints parameter counts for all four ranks, and outputs the training config as a JSON file.
+
+## Key Terms
+
+- **Latent Diffusion** — Diffusion process executed in a compressed latent space (e.g., 4×64×64) rather than pixel space (3×512×512), reducing compute by ~48× with no perceptual quality loss.
+- **VAE (Variational Autoencoder)** — Frozen encoder-decoder that compresses images to latents and reconstructs latents to images. Trained once; not updated during diffusion training or fine-tuning.
+- **Cross-Attention (attn2)** — U-Net layers where text embeddings (K, V) interact with image latents (Q). The mechanism by which prompt words route to spatial regions of the generated image. Primary target of LoRA fine-tuning.
+- **LoRA (Low-Rank Adaptation)** — Fine-tuning method that freezes base weights and injects trainable rank-decomposition matrices (A, B) into attention projections. Adds 0.1–1% of base parameters; merges at inference via `W_effective = W_frozen + scaling × A × B`.
+- **Scheduler** — Fixed mathematical update rule (Euler, DDIM, DPM-Solver) that reverses the forward diffusion process. Not a neural network; swappable without retraining.
+- **α_cumprod (Alpha Cumulative Product)** — Cumulative product of `(1 - β_i)` across timesteps. Controls the signal-to-noise ratio at each forward diffusion step. Approaches zero at the final timestep, meaning the original signal is destroyed.
+- **Textual Inversion** — Fine-tuning method that learns a single new token embedding in the text encoder's vocabulary. Teaches the model a new word (representing a visual concept), not new drawing skills. Does not modify U-Net weights.
+- **Diffusion Transformer (DiT)** — Architecture used in SD3 that replaces the convolutional U-Net with transformer blocks. The latent is split into patches and processed through self-attention instead of convolutions.
+- **safetensors** — Serialization format for model weights that prevents arbitrary code execution during deserialization. The standard format for distributing LoRA adapters and full model checkpoints.
+
+## Sources
+
+- Rombach, R., Blattmann, A., Lorenz, D., Esser, P., & Ommer, B. (2022). *High-Resolution Image Synthesis with Latent Diffusion Models.* Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). [https://arxiv.org/abs/2112.10752](https://arxiv.org/abs/2112.10752)
+- Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., & Chen, W. (2022). *LoRA: Low-Rank Adaptation of Large Language Models.* International Conference on Learning Representations (ICLR). [https://arxiv.org/abs/2106.09685](https://arxiv.org/abs/2106.09685)
+- Runway ML. (2022). *Stable Diffusion v1.5 Model Card.* Hugging Face. [https://huggingface.co/runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
+- Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., & Rombach, R. (2024). *SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis.* [https://arxiv.org/abs/2307.01952](https://arxiv.org/abs/2307.01952)
+- Esser, P., Kulal, S., Blattmann, A., Entezari, R., Müller, J., Saini, H., et al. (2024). *Scaling Rectified Flow Transformers for High-Resolution Image Synthesis (SD3).* [https://arxiv.org/abs/2403.03206](https://arxiv.org/abs/2403.03206)
+- Hugging Face Diffusers Documentation: *Stable Diffusion.* [https://huggingface.co/docs/diffusers/en/using-diffusers/conditional_image_generation](https://huggingface.co/docs/diffusers/en/using-diffusers/conditional_image_generation)
+- [CITATION NEEDED — concept: GTM Zone 2 content engine visual content automation cluster]
+- [CITATION NEEDED — concept: cloud GPU pricing for A10G Stable Diffusion inference]

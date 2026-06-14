@@ -216,4 +216,101 @@ with open(shard_path, "r") as f:
     print(f"First record url: {first_record['url']}")
 ```
 
-The stage counts tell a story. `extracted` will be 500. `filtered` will be slightly less — some FineWeb-Edu documents are very short. `deduped` will drop further depending on how many near-duplicates exist in the sample
+The stage counts tell a story. `extracted` will be 500. `filtered` will be slightly less — some FineWeb-Edu documents are very short. `deduped` will drop further depending on how many near-duplicates exist in the sample (FineWeb-Edu is already pre-deduplicated upstream, so expect maybe 1–5 collisions in a 500-doc window). `tokenized` and `written` should match `deduped` because every surviving document is tokenized and written.
+
+Run it a second time with `SIMILARITY_THRESHOLD = 0.5`. The `deduped` count will drop further because the LSH treats more pairs as duplicates. This is the lever you tune when deciding how aggressive the dedup should be. Too high (0.9) and you keep near-identical mirrors that waste training signal on redundant gradients. Too low (0.3) and you start collapsing legitimately distinct articles that happen to share boilerplate phrasing.
+
+The shard on disk is a flat `.jsonl` file. Each line is one self-contained record — `id`, `tokens`, `url`, `token_count`. A training loop reads it with a standard file handle, optionally shuffled at the shard level, and reconstructs batches. Nothing about the on-disk format is exotic. The complexity lived entirely in the pipeline that produced it.
+
+One thing the pipeline does **not** do yet: it does not verify that throughput keeps up with a hypothetical training loop. In production, you wrap the inner loop in a timer and check `docs/second`. If the dataloader can deliver tokens faster than the GPU consumes them, the GPU is the bottleneck (good). If the dataloader falls behind, you have an I/O problem — usually solvable by increasing shard count (more parallel readers), prefetching, or moving to a binary format.
+
+---
+
+## Use It
+
+MinHash + LSH near-duplicate detection is the same mechanism GTM engineers call "account deduplication" when they merge CRM records before a campaign launch — the only difference is the text being shingled.
+
+The four-stage pipeline (extract → filter → dedupe → transform) is structurally identical to a GTM enrichment waterfall. You pull raw prospect records, filter out junk (bounced emails, test domains, generic `@gmail.com`), deduplicate against existing CRM entries, then transform survivors into enriched records. The same stage-ordering logic applies: filter before you dedupe, because you do not want to spend dedup compute on records you will discard anyway. This is **Cluster 1.2, TAM Refinement & ICP Scoring** — and the same logic shows up in **Cluster 1.4, Data Enrichment** when waterfalls decide whether to call the next provider.
+
+Below is a runnable slice that deduplicates a prospect list of company descriptions before they hit an enrichment provider. Each deduped record is one fewer API credit billed.
+
+```python
+from datasketch import MinHash, MinHashLSH
+
+companies = [
+    {"name": "Acme Corp", "domain": "acme.com", "desc": "Manufactures anvils and rocket-powered skates for cartoon mammals"},
+    {"name": "ACME Corporation", "domain": "acme.io", "desc": "Manufactures anvils, rocket-powered skates for cartoon mammals worldwide"},
+    {"name": "Initech", "domain": "initech.com", "desc": "Enterprise software for TPS report workflow automation"},
+    {"name": "Hooli", "domain": "hooli.com", "desc": "Cloud infrastructure and box compression innovation platform"},
+    {"name": "Pied Piper", "domain": "piedpiper.com", "desc": "Decentralized middle-out data compression platform"},
+    {"name": "Pied Piper Inc", "domain": "piedpiper.io", "desc": "Decentralized middle-out compression platform for data"},
+]
+
+def shingle_company(c, k=3):
+    text = f"{c['name']} {c['domain']} {c['desc']}".lower()
+    words = text.split()
+    return {" ".join(words[i:i+k]) for i in range(len(words) - k + 1)}
+
+lsh = MinHashLSH(threshold=0.5, num_perm=32)
+survivors = []
+
+for c in companies:
+    mh = MinHash(num_perm=32)
+    for s in shingle_company(c):
+        mh.update(s.encode("utf-8"))
+    if lsh.query(mh):
+        print(f"  DROP (near-dup): {c['name']} ({c['domain']})")
+        continue
+    lsh.insert(c["domain"], mh)
+    survivors.append(c)
+
+print(f"\nInput: {len(companies)} records")
+print(f"Survivors: {len(survivors)} unique")
+print(f"Enrichment credits saved: {len(companies) - len(survivors)}")
+for s in survivors:
+    print(f"  → {s['name']} ({s['domain']})")
+```
+
+The two Acme entries and the two Pied Piper entries collapse to one each. At 100,000 prospect records with a 12% near-duplicate rate, this saves 12,000 enrichment lookups. If your provider charges $0.10–$0.49 per company enrichment [CITATION NEEDED — concept: enrichment provider pricing per company record], that is $1,200–$5,880 recovered per campaign run. The mechanism — shingle, hash, bucket, query — is byte-for-byte identical to the pre-training pipeline above. Only the text changed.
+
+---
+
+## Exercises
+
+### Exercise 1: Tune the similarity threshold
+
+Re-run the Build It pipeline with `SIMILARITY_THRESHOLD` set to 0.5, then 0.9. Record the `deduped` count for each. Calculate how many documents each threshold discards as near-duplicates, and explain in 2–3 sentences why a 0.5 threshold is dangerous on a corpus that contains legitimate quotations of the same passage across multiple sources (e.g., the same legal disclaimer appearing on different law firm websites).
+
+**Stretch:** Add a counter that tracks how many documents were dropped by filtering versus how many were dropped by deduplication. Print the ratio. This is the number you would report to justify a dedup compute budget.
+
+### Exercise 2: Add an exact-dedup pre-stage with a Bloom filter
+
+Install `pybloom-live` (or use the stdlib `hashlib` + a Python `set` as a stand-in). Before the MinHash stage, compute a SHA-256 hash of each filtered document's normalized text (lowercased, whitespace-collapsed). If the hash is already in the set, skip the MinHash computation entirely. Print how many exact duplicates were caught before MinHash was invoked, and report the time saved.
+
+The goal: prove the stage-ordering claim from ## The Concept. Exact dedup is O(n) and catches the obvious mirrors. MinHash is O(n × num_perm) and catches the fuzzy ones. Running exact-first means MinHash only ever sees documents that survived the cheap gate.
+
+---
+
+## Key Terms
+
+- **Streaming dataset** — An iterable dataset interface that yields records on demand rather than materializing the full split in memory. Required for corpora larger than RAM.
+- **MinHash** — A probabilistic data structure that estimates Jaccard similarity between two sets in O(1) per comparison, using `num_perm` independent hash functions to produce a compact signature.
+- **Locality-Sensitive Hashing (LSH)** — An indexing technique that buckets MinHash signatures so that only signatures sharing a bucket are compared, reducing the O(n²) pairwise similarity problem to near-linear time.
+- **Shingling (k-gram)** — The act of splitting a document into overlapping windows of `k` consecutive tokens, producing the set that MinHash operates on.
+- **Jaccard similarity** — `|A ∩ B| / |A ∪ B|`. The fraction of shared elements between two sets. MinHash estimates this without computing the full intersection.
+- **Heuristic filter** — A cheap, rule-based quality gate (length, language, perplexity) applied before expensive stages to reduce downstream volume.
+- **Bloom filter** — A probabilistic set-membership structure with tunable false-positive rate and zero false negatives. Useful for streaming exact-dedup contexts.
+- **Shard** — A partition of the tokenized output written as a separate file, enabling parallel reads from multiple training workers.
+
+---
+
+## Sources
+
+- Hoffmann, J., et al. (2022). *Training Compute-Optimal Large Language Models* (Chinchilla). DeepMind. arXiv:2203.15556
+- Meta AI (2024). *The Llama 3 Herd of Models*. arXiv:2407.21783
+- DeepSeek-AI (2024). *DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model*. arXiv:2405.04434
+- Penedo, G., et al. (2024). *The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale*. HuggingFace. arXiv:2406.17557
+- Broder, A. Z. (1997). *On the Resemblance and Containment of Documents*. IEEE SEQUENCES.
+- HuggingFace `datasets` streaming documentation: https://huggingface.co/docs/datasets/streaming
+- `datasketch` MinHash + LSH library: https://github.com/ekzhu/datasketch
+- [CITATION NEEDED — concept: enrichment provider per-record pricing used in the Use It cost-savings estimate]

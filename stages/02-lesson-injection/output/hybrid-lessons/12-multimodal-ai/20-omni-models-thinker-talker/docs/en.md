@@ -225,4 +225,87 @@ for stage in stages_normal:
 
 for stage in stages_with_drift:
     base_duration = tracer.baselines[stage]["mean_ms"]
-    base_quality = tracer.baselines[stage]["quality
+    base_quality = tracer.baselines[stage]["quality_mean"]
+    if stage == "thinker_routing":
+        injected_duration = base_duration + 45
+        injected_quality = base_quality - 0.14
+    else:
+        injected_duration = base_duration + random.gauss(0, 5)
+        injected_quality = base_quality + random.gauss(0, 0.02)
+    tracer.trace_call(
+        stage=stage,
+        input_data={"account": f"acct_{random.randint(1000,9999)}", "channel": "email"},
+        output_data={"route": "seq_A", "template": "v3"},
+        duration_ms=injected_duration + random.gauss(0, tracer.baselines[stage]["std_ms"]),
+        quality_signal=injected_quality + random.gauss(0, 0.02),
+    )
+
+result = tracer.detect_drift()
+print(json.dumps(result, indent=2))
+```
+
+When you run this, the output surfaces which stage shifted:
+
+```
+{
+  "status": "analyzed",
+  "alerts": [
+    {
+      "stage": "thinker_routing",
+      "avg_duration_ms": 163.8,
+      "baseline_duration_ms": 120,
+      "duration_sigma": 2.9,
+      "avg_quality": 0.681,
+      "baseline_quality": 0.82,
+      "quality_drop_pct": 16.9,
+      "alert": "DURATION_DRIFT"
+    }
+  ],
+  "window_size": 20
+}
+```
+
+The tracer fires on `thinker_routing` — both duration drift (2.9 sigma above baseline) and quality drop (16.9% below baseline). The Talker stage shows no alert. In a GTM context, this means your routing logic degraded, not your message delivery. You investigate the Thinker: is the ICP filter stale? Did a data provider change its enrichment schema? Did the routing rules regress after a config update?
+
+Without per-stage tracing, all you see is "reply rate dropped 15% this week." You do not know whether to fix routing, copy, deliverability, or data freshness. The Thinker-Talker split gives you the boundary. This is the feedback loop — Zone 12, the instrumented pipeline that makes degradation localizable rather than mysterious.
+
+## Exercises
+
+### Exercise 1: Add Vision Latency to the Budget (Medium)
+
+The Build It simulator ignores image preprocessing. Real Qwen2.5-Omni deployments process images through a vision encoder before tokens reach the Thinker. Add a `vision_preprocess_ms` term to both pipeline functions: compute it as `num_images * patches_per_image * 0.05`, where each 224×224 image produces 196 patches. Run a new scenario called `"multimodal_vision_plus_voice"` with 3 images, 4 seconds of audio, 60 text tokens of history, 50 response text tokens, and 200 audio frames.
+
+**Deliverable:** Does the Thinker-Talker pipeline still stay under 500ms TTFAB? What is the speedup ratio compared to monolithic? Which term now dominates the Thinker-Talker TTFAB budget — audio tokenization, vision preprocessing, or prefill?
+
+### Exercise 2: Implement CUSUM Drift Detection on the Tracer (Hard)
+
+The tracer's `detect_drift` uses a fixed window comparison: it compares the last 20 spans against the preceding 20. This has a blind spot for slow degradation — if quality drops 1% per call over 100 calls, the window-to-window delta stays small even though cumulative drift is severe.
+
+Implement a CUSUM (cumulative sum) detector alongside the existing windowed detector. The CUSUM algorithm: maintain a running sum `S` initialized to 0. For each span, compute `delta = baseline_quality - observed_quality`. Update `S = max(0, S + delta - drift_threshold)` where `drift_threshold` is 0.005 (the tolerance per call). Fire when `S > 0.05` (cumulative unresolved drift).
+
+**Deliverable:** Generate a synthetic dataset of 100 `thinker_routing` spans where quality starts at baseline (0.82) and decreases by 0.004 per span. Run both detectors. Print at which span index each detector first fires. How many spans earlier does CUSUM catch the drift? What does this tell you about the tradeoff between windowed and sequential detection in a GTM pipeline where reply rate degrades slowly over weeks?
+
+## Key Terms
+
+**Thinker-Talker Split**: An architecture where input understanding (Thinker) and output generation (Talker) run as separate decode loops sharing a latent space, rather than a single monolithic autoregressive loop. The Thinker produces hidden states; the Talker consumes them and streams modality-specific tokens.
+
+**Time-to-First-Audio-Byte (TTFAB)**: The wall-clock time from end of user speech (voice activity detection triggers end-of-turn) to the first audio byte reaching the user's speaker. The primary latency metric for conversational voice agents; must stay under ~500ms for natural interaction.
+
+**M-RoPE (Multimodal Rotary Position Embedding)**: An extension of RoPE that partitions the rotary dimension space into temporal, spatial, and textual subspaces. Each modality writes positions to its own partition, preventing positional collision between audio frames, image patches, and text tokens.
+
+**TiCodec**: The speech codec used by Qwen2.5-Omni for audio tokenization. Encodes waveforms as discrete codebook indices at 25ms per frame, enabling autoregressive audio generation in the Talker decode loop.
+
+**Full-Duplex vs Half-Duplex**: Full-duplex systems can listen and speak simultaneously (enabling barge-in interruptions); half-duplex systems enforce strict turn-taking. Moshi and Qwen2.5-Omni target full-duplex; most voice assistants operate half-duplex.
+
+**Per-Stage Tracing**: Instrumentation that records duration, inputs, outputs, and a quality signal for each independently identifiable stage in a pipeline. Enables localization of degradation — the GTM analog of separating Thinker timing from Talker timing.
+
+**Latent Space Interface**: The contract between Thinker and Talker — the hidden state tensor. In GTM orchestration, the equivalent is the structured payload passed between routing and delivery stages (account ID, template ID, personalization fields).
+
+## Sources
+
+- Xu, A. et al. "Qwen2.5-Omni Technical Report." arXiv:2503.01943, March 2025. — Primary source for Thinker-Talker architecture, M-RoPE, and TiCodec specifications.
+- Défossez, A. et al. "Moshi: A Speech-Text Foundation Model for Real-Time Dialogue." arXiv:2410.00037, Kyutai, July 2024. — Independent demonstration of split-decoder architecture for full-duplex voice.
+- Xie, Z. et al. "Mini-Omni: Language Models Can Hear, Talk While Thinking in Parallel." arXiv:2408.16725, 2024. — Earlier simplified Thinker-Talker pattern.
+- Zeng, A. et al. "GLM-4-Voice: Towards Intelligent and Human-Like Voice Chatbot." arXiv:2412.02612, Zhipu AI, December 2024. — Extension of the pattern to bilingual (Chinese/English) voice.
+- Su, J. et al. "RoFormer: Enhanced Transformer with Rotary Position Embedding." arXiv:2104.09864, 2021. — Foundation for RoPE, which M-RoPE extends.
+- [CITATION NEEDED — concept: Zone 12 feedback loop taxonomy and per-stage tracing as a named GTM observability pattern]

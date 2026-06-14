@@ -345,276 +345,72 @@ Doc 0 wins decisively — it shares four distinctive terms with the query, and t
 
 ## Use It
 
-The text-representation mechanism you just built — TF-IDF vectors plus cosine similarity — is the scoring engine behind keyword-based ICP fit scoring. In a GTM workflow, you have a list of company descriptions pulled from enrichment data (Clearbit, Apollo, scraped landing pages) and an ICP defined as a set of weighted keywords. The question is: which companies match the ICP, and how strongly?
-
-The ICP profile becomes the query vector. Each company description becomes a document in the corpus. You compute TF-IDF across the full set, project the ICP keywords into the same vocabulary space, and rank by cosine similarity. Companies that use distinctive ICP-relevant language (terms with high IDF) score higher than companies that use generic language. This is a weaker signal than intent data or firmographic filters, but it is cheap, fast, and works on raw text that enrichment tools already provide. [CITATION NEEDED — concept: prevalence of keyword-based ICP matching in account scoring workflows]
-
-Here is the full pipeline on simulated company data. The ICP profile targets B2B SaaS companies in the fintech infrastructure space, with keyword weights emphasizing the most distinctive terms.
+TF-IDF vectorization with cosine similarity is the scoring mechanism behind keyword-based ICP fit ranking — you represent an ICP keyword profile and each company description as vectors in a shared vocabulary space, then sort by cosine similarity. Companies using distinctive ICP-relevant language score higher; companies using different terminology for the same concept score zero, exposing the exact-match ceiling that embeddings later address. [CITATION NEEDED — concept: prevalence of keyword-based ICP matching in account scoring workflows]
 
 ```python
-import json
-import math
-import re
+import math, re
 
 companies = [
-    {"name": "PayStack", "description": "payment infrastructure platform for businesses in africa"},
-    {"name": "Stripe", "description": "apis for payment processing and online commerce"},
-    {"name": "Plaid", "description": "finpipe api connecting bank accounts to fintech apps"},
-    {"name": "Notion", "description": "all in one workspace for notes docs and project management"},
-    {"name": "Marqeta", "description": "modern card issuing and payment infrastructure for saas"},
-    {"name": "Canva", "description": "graphic design platform for creating social media content"},
-    {"name": "Razorpay", "description": "payment gateway and banking stack for indian businesses"},
-    {"name": "Figma", "description": "collaborative interface design tool for product teams"},
+    ("PayStack", "payment infrastructure platform for businesses in africa"),
+    ("Stripe", "apis for payment processing and online commerce"),
+    ("Marqeta", "modern card issuing and payment infrastructure for saas"),
+    ("Notion", "all in one workspace for notes and project management"),
 ]
-
-icp_keywords = {
-    "payment": 3.0,
-    "infrastructure": 2.5,
-    "fintech": 2.0,
-    "saas": 1.5,
-    "api": 1.0,
-    "processing": 1.0,
-    "gateway": 1.0,
-    "banking": 1.0,
-}
-
-def tokenize(text):
-    return re.findall(r'\b\w+\b', text.lower())
-
-docs = [c["description"] for c in companies]
-tokenized_docs = [tokenize(d) for d in docs]
-
-vocabulary = sorted(set(w for doc in tokenized_docs for w in doc))
-vocab_index = {w: i for i, w in enumerate(vocabulary)}
-
-N = len(docs)
-df = {w: sum(1 for doc in tokenized_docs if w in set(doc)) for w in vocabulary}
-idf = {w: math.log(N / df[w]) if df[w] > 0 else 0.0 for w in vocabulary}
-
-tfidf_vectors = []
-for doc in tokenized_docs:
-    vec = [0.0] * len(vocabulary)
-    tf = {}
-    for word in doc:
-        tf[word] = tf.get(word, 0) + 1
-    for word, count in tf.items():
-        vec[vocab_index[word]] = count * idf[word]
-    tfidf_vectors.append(vec)
-
-query_vec = [0.0] * len(vocabulary)
-for kw, weight in icp_keywords.items():
-    if kw in vocab_index:
-        idx = vocab_index[kw]
-        query_vec[idx] = weight * idf[kw]
-
-unmatched = [kw for kw in icp_keywords if kw not in vocab_index]
-print("ICP keywords not found in corpus vocabulary:", unmatched)
-
-def cosine(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(y * y for y in b))
-    if na == 0 or nb == 0:
-        return 0.0
-    return dot / (na * nb)
-
-scored = []
-for i, company in enumerate(companies):
-    sim = cosine(query_vec, tfidf_vectors[i])
-    scored.append((company["name"], sim, company["description"]))
-
-scored.sort(key=lambda x: -x[1])
-
-print()
-print("=== ICP Fit Ranking ===")
-print(f"{'Rank':<5} {'Company':<12} {'Score':<8} {'Description'}")
-print("-" * 80)
-for rank, (name, score, desc) in enumerate(scored, 1):
-    print(f"{rank:<5} {name:<12} {score:<8.4f} {desc}")
+icp = {"payment": 3.0, "infrastructure": 2.5, "saas": 1.5}
+tok = lambda t: re.findall(r'\b\w+\b', t.lower())
+docs = [tok(d) for _, d in companies]
+vocab = sorted(set(w for doc in docs for w in doc))
+vi = {w: i for i, w in enumerate(vocab)}
+idf = {w: math.log(len(docs) / sum(1 for d in docs if w in set(d))) for w in vocab}
+dvecs = [[doc.count(w) * idf[w] for w in vocab] for doc in docs]
+q = [icp.get(w, 0.0) * idf[w] for w in vocab]
+cos = lambda a, b: sum(x*y for x,y in zip(a,b)) / (math.sqrt(sum(x*x for x in a)) * math.sqrt(sum(y*y for y in b)) or 1)
+ranked = sorted([(n, cos(q, v), d) for (n, d), v in zip(companies, dvecs)], key=lambda x: -x[1])
+for i, (n, s, d) in enumerate(ranked, 1):
+    print(f"{i}. {n:<12} {s:.4f}  {d}")
 ```
 
 **Expected output:**
 
 ```
-ICP keywords not found in corpus vocabulary: []
-
-=== ICP Fit Ranking ===
-Rank  Company       Score    Description
---------------------------------------------------------------------------------
-1     Marqeta       0.4866   modern card issuing and payment infrastructure for saas
-2     PayStack      0.4583   payment infrastructure platform for businesses in africa
-3     Razorpay      0.2953   payment gateway and banking stack for indian businesses
-4     Stripe        0.2538   apis for payment processing and online commerce
-5     Plaid         0.1644   finpipe api connecting bank accounts to fintech apps
-6     Figma         0.0000   collaborative interface design tool for product teams
-7     Notion        0.0000   all in one workspace for notes docs and project management
-8     Canva         0.0000   graphic design platform for creating social media content
+1. Marqeta     0.5282  modern card issuing and payment infrastructure for saas
+2. PayStack    0.1955  payment infrastructure platform for businesses in africa
+3. Stripe      0.0312  apis for payment processing and online commerce
+4. Notion      0.0000  all in one workspace for notes and project management
 ```
 
-Marqeta and PayStack rank highest because they contain multiple high-IDF ICP keywords ("payment", "infrastructure", "saas"). Stripe scores lower despite being an obvious fit because its description uses "apis" and "commerce" — terms not in the ICP keyword set. Plaid scores low because its description uses "finpipe" instead of "fintech." These are vocabulary mismatch problems, and they point directly to the limitations of exact-match text representation: if the keyword does not appear verbatim, the score is zero, regardless of semantic similarity. This is the ceiling that embeddings address in the next lesson.
-
-## Ship It
-
-The production version wraps the ranking logic into a CLI script that reads company descriptions from a JSON file and outputs a ranked CSV. It uses `scipy.sparse` for the TF-IDF matrix (sparse storage is critical when vocabulary exceeds a few thousand terms) and pickles the vocabulary so you can score new companies against an existing ICP profile without recomputing IDF.
-
-The scaling limit is real and worth naming explicitly. Vocabulary size grows with corpus size — every new unique token adds a dimension. TF-IDF must recompute when the corpus changes, because IDF depends on document frequency across all documents. Adding one company that introduces a new word changes the vocabulary length and shifts every IDF weight. This is why TF-IDF is a fixed-corpus method, not a general-purpose representation. The evolution past this ceiling is embeddings: dense vectors of fixed dimensionality that do not grow with the corpus and capture semantic similarity beyond exact keyword match. That is the next lesson.
-
-Save this as `icp_ranker.py`:
-
-```python
-import argparse
-import csv
-import json
-import math
-import pickle
-import re
-import sys
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from scipy.sparse import csr_matrix
-
-def tokenize(text):
-    return re.findall(r'\b\w+\b', text.lower())
-
-def build_vectorizer(corpus):
-    vectorizer = TfidfVectorizer(
-        tokenizer=tokenize,
-        token_pattern=None,
-        norm="l2",
-        smooth_idf=True,
-        use_idf=True,
-    )
-    matrix = vectorizer.fit_transform(corpus)
-    return vectorizer, matrix
-
-def cosine_sparse(query_vec, doc_matrix):
-    query_norm = query_vec / (query_vec.sum() or 1.0)
-    scores = doc_matrix.dot(query_norm.T).toarray().flatten()
-    return scores
-
-def main():
-    parser = argparse.ArgumentParser(description="Rank companies by ICP keyword fit using TF-IDF cosine similarity")
-    parser.add_argument("--input", required=True, help="Path to JSON file with company list")
-    parser.add_argument("--icp", required=True, help="Path to JSON file with ICP keyword weights")
-    parser.add_argument("--output", required=True, help="Path to output CSV")
-    parser.add_argument("--save-vocab", default=None, help="Optional: pickle vocabulary to this path")
-    args = parser.parse_args()
-
-    with open(args.input) as f:
-        companies = json.load(f)
-    with open(args.icp) as f:
-        icp_keywords = json.load(f)
-
-    descriptions = [c["description"] for c in companies]
-
-    vectorizer, matrix = build_vectorizer(descriptions)
-    vocab = vectorizer.vocabulary_
-
-    query_vec = [0.0] * len(vocab)
-    for kw, weight in icp_keywords.items():
-        if kw in vocab:
-            query_vec[vocab[kw]] = weight
-        else:
-            print(f"WARNING: ICP keyword '{kw}' not in corpus vocabulary", file=sys.stderr)
-
-    import numpy as np
-    query_array = np.array(query_vec)
-    query_sparse = csr_matrix(query_array.reshape(1, -1))
-
-    scores = cosine_sparse(query_sparse, matrix)
-
-    ranked = sorted(zip(companies, scores), key=lambda x: -x[1])
-
-    with open(args.output, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["rank", "company", "score", "description"])
-        for rank, (company, score) in enumerate(ranked, 1):
-            writer.writerow([rank, company["name"], f"{score:.4f}", company["description"]])
-
-    print(f"Ranked {len(companies)} companies → {args.output}", file=sys.stderr)
-
-    if args.save_vocab:
-        with open(args.save_vocab, "wb") as f:
-            pickle.dump({"vocabulary": vocab, "idf": vectorizer.idf_}, f)
-        print(f"Saved vocabulary → {args.save_vocab}", file=sys.stderr)
-
-if __name__ == "__main__":
-    main()
-```
-
-Create the input files and run it:
-
-```bash
-cat > companies.json << 'EOF'
-[
-  {"name": "PayStack", "description": "payment infrastructure platform for businesses in africa"},
-  {"name": "Stripe", "description": "apis for payment processing and online commerce"},
-  {"name": "Plaid", "description": "fintech api connecting bank accounts to financial apps"},
-  {"name": "Marqeta", "description": "modern card issuing and payment infrastructure for saas"},
-  {"name": "Notion", "description": "all in one workspace for notes and project management"}
-]
-EOF
-
-cat > icp_profile.json << 'EOF'
-{
-  "payment": 3.0,
-  "infrastructure": 2.5,
-  "fintech": 2.0,
-  "saas": 1.5,
-  "api": 1.0,
-  "processing": 1.0
-}
-EOF
-
-python icp_ranker.py --input companies.json --icp icp_profile.json --output ranked.csv --save-vocab vocab.pkl
-
-cat ranked.csv
-```
-
-**Expected output:**
-
-```
-rank,company,score,description
-1,Marqeta,0.8165,modern card issuing and payment infrastructure for saas
-2,PayStack,0.7303,payment infrastructure platform for businesses in africa
-3,Stripe,0.3892,apis for payment processing and online commerce
-4,Plaid,0.3098,fintech api connecting bank accounts to financial apps
-5,Notion,0.0000,all in one workspace for notes and project management
-```
-
-The scores differ from the from-scratch version because scikit-learn applies L2 normalization and IDF smoothing by default. The ranking is consistent — Marqeta and PayStack at the top, Notion at zero. The vocabulary pickle lets you score a single new company against the same IDF profile without rebuilding the full corpus, as long as the new company's tokens already exist in the vocabulary. New tokens outside the vocabulary are invisible to the model — another manifestation of the exact-match ceiling.
+Marqeta ranks highest because it contains all three ICP keywords including "saas" (high IDF, appears in only one doc). Stripe scores low despite being an obvious fit — its description uses "apis" and "commerce," neither in the ICP set. Notion has zero overlap and scores exactly 0.0. This is the exact-match ceiling: if the keyword does not appear verbatim, the score is zero regardless of semantic relevance.
 
 ## Exercises
 
 **Easy.** Given this 2-document corpus:
 
-```
+```python
 doc_a = "cloud security platform for enterprises"
 doc_b = "endpoint security tool for enterprises"
 ```
 
-Write out the BoW vectors for both documents using the full sorted vocabulary. Then compute cosine similarity between the two BoW vectors by hand (show the dot product and both norms). Confirm your answer by running the computation in Python.
+Write out the BoW vectors for both documents using the full sorted vocabulary. Then compute cosine similarity between the two BoW vectors by hand — show the dot product, both L2 norms, and the final cosine value. Confirm your hand calculation by running the same computation in Python.
 
-**Medium.** Start with the 3-document corpus from Beat 3. Add a fourth document: `"the ai platform for processing payments at scale"`. Which IDF values change, and which stay the same? Specifically: does the IDF of "the" change? Does the IDF of "for" change? Does the IDF of "payment" change? For each one, compute the old IDF and the new IDF, and explain the direction of the change in terms of document frequency.
-
-**Hard.** A company description scores 0.03 cosine similarity against your ICP query even though the company is an obvious fit. Diagnose the three possible causes: (1) vocabulary mismatch — the company uses different words for the same concept (e.g., "finpipe" instead of "fintech", "pay" instead of "payment"); (2) document length — the description is 200 words long, diluting the TF of ICP keywords across many other terms; (3) IDF weighting — the ICP keywords appear in too many documents in the corpus, crushing their IDF to near-zero. For each cause, propose a concrete fix: stemming/lemmatization for mismatch, TF normalization for length, a minimum IDF threshold or manual weighting override for IDF dilution. Write a script that takes a low-scoring company and prints diagnostic information isolating each factor.
+**Hard.** You are scoring 500 company descriptions against an ICP keyword profile using the TF-IDF pipeline from this lesson. Three companies that your sales team swears are perfect ICP fits score below 0.05 cosine similarity. Design a diagnostic script that, for a given low-scoring company, isolates each possible cause: (1) prints which ICP keywords are absent from the company description (vocabulary mismatch), (2) prints the ratio of ICP keyword count to total token count in the description (length dilution), and (3) prints the IDF weight of each ICP keyword to check whether overrepresentation in the corpus has crushed them to near-zero. For each cause, propose one concrete mitigation: stemming or synonym expansion for mismatch, TF normalization for length, and manual weight overrides for IDF dilution.
 
 ## Key Terms
 
-**Bag of Words (BoW)** — Text representation that discards word order and encodes each document as a vector of per-vocabulary-term counts. The simplest functional text representation.
+**Bag of Words (BoW)** — Text representation that discards word order and encodes each document as a vector of per-vocabulary-term raw counts. The simplest functional text representation.
 
-**Term Frequency (TF)** — The raw count of a term within a document, sometimes normalized by document length. Measures how prominent a word is locally.
+**Inverse Document Frequency (IDF)** — `log(N / df(w))`. A per-term weight that is large for rare words and near-zero for ubiquitous words. The mechanism by which TF-IDF downweights uninformative terms without requiring a stop-word list.
 
-**Document Frequency (df)** — The number of documents in a corpus that contain a given term. Measures how widespread a word is globally.
-
-**Inverse Document Frequency (IDF)** — `log(N / df(w))`. A per-term weight that is large for rare words and near-zero for ubiquitous words. The mechanism by which TF-IDF downweights uninformative terms.
-
-**TF-IDF** — Term Frequency × Inverse Document Frequency. A reweighted BoW vector where distinctive terms get higher values and ubiquitous terms get crushed. The standard count-based text representation before embeddings.
+**TF-IDF** — Term Frequency × Inverse Document Frequency. A reweighted BoW vector where distinctive terms get higher values and ubiquitous terms get crushed toward zero. The standard count-based text representation before embeddings.
 
 **Cosine Similarity** — Dot product of two vectors divided by the product of their L2 norms. Measures the angle between vectors, ranging from 0 (orthogonal) to 1 (identical direction). Preferred over Euclidean distance for text because it is invariant to document length.
 
-**Sparse Vector** — A vector where most elements are zero. BoW and TF-IDF vectors are sparse because any given document uses only a small fraction of the corpus vocabulary. Stored efficiently using formats like CSR (compressed sparse row).
+**Sparse Vector** — A vector where most elements are zero. BoW and TF-IDF vectors are sparse because any given document uses only a small fraction of the corpus vocabulary.
 
-**Vocabulary** — The sorted set of unique tokens across all documents in a corpus. Defines the dimensionality and axis meaning of BoW and TF-IDF vectors.
+**Exact-Match Ceiling** — The limitation that BoW and TF-IDF only produce nonzero scores when terms match verbatim. "Payment" and "payments" are different dimensions. Synonyms, morphological variants, and paraphrases all score zero. This is the problem embeddings solve.
 
-**Exact-Match Ceiling** — The limitation that BoW and TF-IDF only produce nonzero scores when terms match verbatim. "Payment" and "payments" are different dimensions. Semantic
+## Sources
+
+1. Salton, G. and Buckley, C. (1988). "Term-weighting approaches in automatic text retrieval." *Information Processing & Management*, 24(5), 513–523.
+2. Manning, C.D., Raghavan, P., and Schütze, H. (2008). *Introduction to Information Retrieval*. Cambridge University Press. Chapters 6 (Scoring, Term Weighting, the Vector Space Model) and 7 (Computing Scores in a Complete Search System).
+3. Pedregosa, F. et al. (2011). "Scikit-learn: Machine Learning in Python." *Journal of Machine Learning Research*, 12, 2825–2830. — `TfidfVectorizer` implementation reference.
+4. [CITATION NEEDED — concept: prevalence of keyword-based ICP matching in account scoring workflows]

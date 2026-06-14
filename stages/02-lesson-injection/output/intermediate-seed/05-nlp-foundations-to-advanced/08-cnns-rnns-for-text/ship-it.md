@@ -1,0 +1,9 @@
+## Ship It
+
+Deploying a text classification model into a GTM pipeline means it sits behind an API endpoint that enrichment tools or CRM workflows call. The Handbook frames enrichment as the process of augmenting raw contact data with structured signals before outreach begins [CITATION NEEDED — concept: enrichment pipeline architecture in GTM engineering handbook]. A text classifier — whether CNN, RNN, or transformer — is one of the enrichment steps: it takes unstructured text (a LinkedIn bio, a company description, a support ticket) and outputs a discrete label that downstream systems branch on.
+
+For the models built in this lesson, the shipping path is: serialize the PyTorch model to TorchScript or ONNX, wrap it in a FastAPI endpoint that accepts a list of token IDs (or raw text with a tokenizer), and return predicted class plus confidence scores. The CNN model is the easier deployment target: its inference latency is lower, it has no hidden state to manage between requests, and it processes fixed-length inputs in a single forward pass. The LSTM has marginally higher latency due to sequential processing, but for sequences of 12 tokens the difference is negligible — the synthetic benchmark above shows the gap in single-digit milliseconds.
+
+The real deployment consideration is input length variability. Production text varies from 5 tokens to 500. CNNs handle this naturally: global max-pooling produces the same output dimension regardless of input length. LSTMs also handle variable lengths natively, but padding to a max length wastes computation and packing requires careful masking. For a GTM enrichment pipeline processing company descriptions (typically 20-50 tokens), either architecture works. For processing full email threads (200+ tokens), the LSTM's vanishing gradient problem returns and a transformer or at minimum a CNN with wider filters is the better engineering decision.
+
+---

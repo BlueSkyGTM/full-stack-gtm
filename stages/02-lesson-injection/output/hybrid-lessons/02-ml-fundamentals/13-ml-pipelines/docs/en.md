@@ -195,4 +195,102 @@ X_quick_train, X_quick_test, y_quick_train, y_quick_test = train_test_split(
     X_quick, y, test_size=0.3, random_state=42
 )
 
-quick_pipe.fit(X_quick_train,
+quick_pipe.fit(X_quick_train, y_quick_train)
+quick_score = quick_pipe.score(X_quick_test, y_quick_test)
+print(f"quick_pipe test score: {quick_score:.4f}")
+print(f"Step names: {list(quick_pipe.named_steps.keys())}")
+```
+
+```
+quick_pipe test score: 0.7222
+Step names: ['simpleimputer', 'standardscaler', 'logisticregression']
+```
+
+The score is lower because `quick_pipe` drops the categorical features. But the step names demonstrate the tradeoff: `simpleimputer` and `standardscaler` are readable enough, but in a pipeline with multiple imputers or scalers, the auto-generated names collide and get suffixed with `-1`, `-2`. Named `Pipeline` steps are the safer default when you will need to introspect or tune.
+
+Serialization closes the loop. `joblib.dump` writes the entire fitted pipeline — preprocessing parameters, model weights, column routing logic — to one file. `joblib.load` restores it with all learned state intact. No preprocessing code ships separately. The object that produced `test_score` in development is byte-for-byte the object that will produce predictions in production.
+
+```python
+import joblib
+
+joblib.dump(clf_pipeline, 'icp_pipeline.joblib', compress=3)
+loaded = joblib.load('icp_pipeline.joblib')
+
+orig_preds = clf_pipeline.predict_proba(X_test)[:, 1]
+load_preds = loaded.predict_proba(X_test)[:, 1]
+print(f"Max prediction delta after reload: {np.max(np.abs(orig_preds - load_preds)):.10f}")
+```
+
+```
+Max prediction delta after reload: 0.0000000000
+```
+
+Zero. The reloaded pipeline is identical to the original. That is the guarantee a serialized `Pipeline` gives you: the preprocessing and the model are one object, and whatever produced the score in your notebook is what runs in production.
+
+## Use It
+
+The fit/transform isolation enforced by scikit-learn's `Pipeline` is the mechanism that makes an ICP-fit scoring model safe to deploy against a live CRM enrichment stream — the frozen medians, scaling parameters, and category vocabularies learned at training time are exactly what gets applied to each inbound account, with no refitting and no divergence between dev and serving.
+
+The slice below takes the fitted pipeline from Build It, scores a batch of fresh inbound accounts (the kind you would receive from an Apollo or Clay enrichment), and thresholds the probability into a three-tier routing decision. This maps to Cluster 1.2 — TAM Refinement & ICP Scoring [CITATION NEEDED — concept: cluster numbering for TAM Refinement & ICP Scoring].
+
+```python
+import joblib
+import pandas as pd
+import numpy as np
+
+pipeline = joblib.load('icp_pipeline.joblib')
+
+new_accounts = pd.DataFrame([
+    {'employees': 25, 'revenue': 120000, 'industry': 'Finance', 'region': 'NA'},
+    {'employees': 450, 'revenue': 8500000, 'industry': 'SaaS', 'region': 'EMEA'},
+    {'employees': np.nan, 'revenue': 320000, 'industry': 'Manufacturing', 'region': 'APAC'},
+    {'employees': 800, 'revenue': 15000000, 'industry': 'SaaS', 'region': 'NA'},
+    {'employees': 15, 'revenue': 80000, 'industry': np.nan, 'region': 'EMEA'},
+])
+
+probs = pipeline.predict_proba(new_accounts)[:, 1]
+
+new_accounts['icp_score'] = probs.round(4)
+new_accounts['tier'] = np.where(probs >= 0.7, 'A',
+                       np.where(probs >= 0.4, 'B', 'C'))
+
+for _, row in new_accounts.iterrows():
+    print(f"{row['tier']} | score={row['icp_score']:.3f} | "
+          f"{row['employees']:.0f} emp | {row['revenue']:,.0f} rev | "
+          f"{row['industry']} | {row['region']}")
+```
+
+```
+C | score=0.149 | 25 emp | 120,000 rev | Finance | NA
+A | score=0.844 | 450 emp | 8,500,000 rev | SaaS | EMEA
+C | score=0.193 | nan emp | 320,000 rev | Manufacturing | APAC
+A | score=0.864 | 800 emp | 15,000,000 rev | SaaS | NA
+C | score=0.155 | 15 emp | 80,000 rev | nan | EMEA
+```
+
+The `nan` in employees for row 3 was filled with the frozen median learned during training. The `nan` in industry for row 5 was filled with `'Unknown'` and one-hot encoded against the frozen category vocabulary. Neither value caused an error, and neither triggered a refit. This is why the pipeline model is the deployment artifact, not the model weights — the weights are meaningless without the exact preprocessing parameters that produced the features they were trained on.
+
+In a production GTM stack, this pipeline sits behind an API endpoint or runs as a batch job against a CRM export. Tier A accounts get routed to AE priority queues. Tier B accounts get nurture sequences. Tier C accounts get deprioritized. The pipeline guarantees that the scoring logic does not drift between the notebook where it was validated and the system where it runs [CITATION NEEDED — concept: production GTM scoring tier conventions].
+
+## Exercises
+
+1. **Add a feature, observe the gap.** Add a boolean column `has_website` (randomly assigned) to the synthetic dataset. Modify the `ColumnTransformer` to pass it through untransformed using `'passthrough'`. Refit the pipeline. Does the train-test gap change? Write two sentences explaining whether the new feature introduced signal or noise, and how the gap tells you which.
+
+2. **Construct a leakage failure, then prove the pipeline prevents it.** Build a second version of the Build It pipeline where you compute the median and scaling parameters on the *full* `df` (train + test combined) before splitting, then pass the pre-transformed data into a pipeline that contains only the `LogisticRegression`. Compare its test accuracy to the clean pipeline's test accuracy. Then, wrap the exact same preprocessing steps inside a single `Pipeline` and fit it on `X_train` only. Confirm that the clean pipeline's test accuracy is reproducible while the leaked version's accuracy changes if you shuffle the split seed. Write three sentences explaining which version you would ship and why the pipeline's fit/transform isolation is the safeguard.
+
+## Key Terms
+
+- **Pipeline**: An ordered sequence of `(name, transformer)` tuples ending with an estimator, exposing a single `.fit()` / `.predict()` interface. All intermediate transformers call `fit_transform` during `fit` and `transform` during `predict`.
+- **ColumnTransformer**: Routes different column subsets to different transformers, then concatenates results. Each sub-transformer follows the same fit/transform discipline.
+- **fit_transform vs transform**: `fit_transform` learns parameters from data and applies them; `transform` applies already-learned parameters. Calling `transform` without prior `fit` raises an error. Calling `fit` on test data overwrites learned parameters — this is the leakage vector the pipeline prevents.
+- **Data leakage**: Any scenario where information from the test or validation set influences parameters learned during training, causing inflated evaluation scores and degraded production performance.
+- **make_pipeline**: Convenience constructor that auto-generates step names from class names. Functionally identical to `Pipeline` but produces brittle keys when transformers of the same type appear multiple times.
+- **joblib serialization**: Writes a fitted pipeline (preprocessing parameters + model weights) to a single `.joblib` file. The reloaded object produces identical predictions to the original.
+
+## Sources
+
+- scikit-learn Pipeline documentation: https://scikit-learn.org/stable/modules/compose.html
+- scikit-learn ColumnTransformer documentation: https://scikit-learn.org/stable/modules/generated/sklearn.compose.ColumnTransformer.html
+- joblib persistence documentation: https://joblib.readthedocs.io/en/latest/persistence.html
+- [CITATION NEEDED — concept: GTM cluster numbering for TAM Refinement & ICP Scoring]
+- [CITATION NEEDED — concept: production GTM scoring tier conventions]

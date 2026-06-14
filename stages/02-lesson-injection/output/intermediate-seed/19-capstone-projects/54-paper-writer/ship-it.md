@@ -1,0 +1,7 @@
+## Ship It
+
+**Easy:** Modify the script to accept a custom outline from a JSON file instead of generating one. Define a 3-section schema for a competitive battle card (e.g., sections for "Competitor Overview," "Strengths," and "Counter-Arguments") and run the pipeline. Print the assembled output and the word-count table.
+
+**Medium:** Add a review pass. After assembly, send the full paper back to the model with the instruction: "Identify any contradictions between sections, unsupported claims, or sections where the tone breaks from technical-practitioner audience." Print the review notes alongside the paper. This catches the failure mode where section 3 makes a claim that section 5 contradicts — a problem unique to decomposed generation because each section was written in isolation.
+
+**Hard:** Build a pipeline that generates a competitive battle card using RAG. Create a `knowledge_base/` directory with 3-5 short text files containing product documentation or case studies. Before drafting each section, retrieve the most relevant file (using simple keyword overlap or embeddings) and inject it into the section prompt as retrieved context. The outline specifies what to argue; the retrieved docs provide the evidence. Print which document was retrieved for each section alongside the assembled battle card.

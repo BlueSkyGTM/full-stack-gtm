@@ -180,9 +180,7 @@ For a production-quality summary from BART, swap `facebook/bart-base` for `faceb
 
 ## Use It
 
-Encoder-decoder models map to GTM Zone 1 (ICP & Enrichment) and Zone 4 (Account Intelligence). The canonical application: take unstructured prospect research — a LinkedIn profile, a company blog post, a Crunchbase description, a sales call transcript — and produce structured account data. This is a seq2seq task by nature: variable-length messy input in, short structured output out. Cross-attention in the encoder-decoder architecture functions identically to an enrichment waterfall — the decoder queries the encoder's representation of the source material at each generation step, selectively pulling information from specific input positions to fill each output field, just as a Clay waterfall queries multiple data providers to fill specific enrichment columns.
-
-The practical GTM task: feed a research note into T5 and get structured fields back. T5's span-corruption pretraining biases it toward this — the model was pretrained to identify and extract specific spans from corrupted input, which is structurally identical to "find the company name, employee count, and tech stack in this paragraph."
+Cross-attention — the decoder querying the encoder's representation matrix at each generation step — is the mechanism that makes encoder-decoder models the right tool for GTM enrichment: the model reads the entire source, then selectively routes information from specific input positions into each output field. This maps to GTM Zone 1 (ICP & Enrichment) and Zone 4 (Account Intelligence) [CITATION NEEDED — concept: GTM zone definitions]. The canonical workflow: unstructured prospect research in, structured account fields out.
 
 ```python
 from transformers import T5ForConditionalGeneration, T5Tokenizer
@@ -192,4 +190,59 @@ import json
 tokenizer = T5Tokenizer.from_pretrained("t5-small")
 model = T5ForConditionalGeneration.from_pretrained("t5-small")
 
-research_notes
+research_notes = """
+Acme Corp, Series B logistics SaaS based in Chicago. 180 employees, up from
+110 this year. Revenue grew 40 percent YoY, driven by enterprise deals. Backed
+by Sequoia. Migrating from Postgres to Snowflake for analytics. Pain point:
+customer onboarding takes three weeks, target is one week. Competitors:
+Project44 and FourKites.
+"""
+
+fields = "company name | headcount | tech stack | pain point | competitors"
+prompt = f"extract: {fields} from this note: {research_notes}"
+
+inputs = tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
+
+output = model.generate(
+    input_ids=inputs.input_ids,
+    attention_mask=inputs.attention_mask,
+    max_length=80,
+    num_beams=4,
+    early_stopping=True,
+)
+
+result = tokenizer.decode(output[0], skip_special_tokens=True)
+print("Encoder positions:", inputs.input_ids.shape[1])
+print("Decoder steps:", output.shape[1])
+print("Extracted:", result)
+```
+
+T5-small with pretrained weights (no fine-tuning) produces span-corruption-style output, not clean field extraction. The mechanism is correct — the encoder compresses the note, cross-attention routes relevant positions to the decoder — but the model was never fine-tuned on research-note-to-fields pairs. For production enrichment, fine-tune T5 on 200–500 labeled examples or use a decoder-only LLM with structured output prompting. The encoder-decoder advantage holds when you control the fine-tuning data: the bidirectional encoder reads dense context that causal-only models process less efficiently at fixed parameter counts.
+
+## Exercises
+
+**Exercise 1 (Easy):** Modify the Build It BART code to use `facebook/bart-large-cnn` instead of `facebook/bart-base`. Feed the same transcript. Compare the generated summary quality and the cross-attention weight distributions. Which tokens does the fine-tuned model attend to differently?
+
+**Exercise 2 (Hard):** Create a training set of 20 research-note-to-JSON pairs (write them manually or pull from public company descriptions). Fine-tune `t5-small` using `Seq2SeqTrainer` with a learning rate of `3e-4`, batch size 4, and 10 epochs. Evaluate on 5 held-out notes using exact-match accuracy per field. Document which fields the model learns fastest and which it struggles with — relate this back to T5's span-corruption prior.
+
+## Key Terms
+
+**Encoder-Decoder Architecture** — Two-stack Transformer design: a bidirectional encoder processes the full input into a representation matrix, and a causal decoder generates output auto-regressively while cross-attending to that matrix at every step.
+
+**Cross-Attention** — Attention sub-layer where queries come from the decoder's hidden states and keys/values come from the encoder output. Routes source information into the generation stream. Shape contract: `(batch, dec_len, hidden)` queries × `(batch, src_len, hidden)` keys → `(batch, dec_len, src_len)` attention weights.
+
+**Span Corruption** — T5's pretraining objective. Contiguous token spans are replaced with unique sentinel tokens (`<extra_id_0>`, `<extra_id_1>`), and the decoder learns to reconstruct the removed spans. Biases the model toward structured transformation tasks.
+
+**Denoising Autoencoder** — BART's pretraining objective. Input is corrupted with masking, sentence shuffling, document rotation, and token deletion. The decoder reconstructs the original clean text. Biases the model toward fluent generation from degraded input.
+
+**Task Prefix** — T5's convention of prepending a natural-language task descriptor (`summarize:`, `translate English to French:`, `extract:`) to the input, routing the unified model into task-specific behavior.
+
+**Causal Masking** — Attention mask in the decoder's self-attention layer that prevents each position from attending to future positions. Enforces left-to-right generation order. The encoder has no causal mask — it attends bidirectionally.
+
+## Sources
+
+- Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S., Matena, M., Zhou, Y., Li, W., & Liu, P. J. (2019). *Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer.* arXiv:1910.10683. — T5 architecture, span corruption pretraining, text-to-text framework.
+- Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mohamed, A., Levy, O., Stoyanov, V., & Zettlemoyer, L. (2019). *BART: Denoising Sequence-to-Sequence Pre-training for Natural Language Generation, Translation, and Comprehension.* arXiv:1910.13461. — BART architecture, denoising autoencoder pretraining, corruption strategies.
+- Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017). *Attention Is All You Need.* arXiv:1706.03762. — Original Transformer architecture with encoder-decoder cross-attention.
+- Wolf, T., et al. (2020). *Transformers: State-of-the-Art Natural Language Processing.* arXiv:1910.03771. — Hugging Face `transformers` library, model loading APIs, attention output access.
+- [CITATION NEEDED — concept: GTM Zone 1 (ICP & Enrichment) and Zone 4 (Account Intelligence) zone definitions]

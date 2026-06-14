@@ -2,6 +2,16 @@
 
 Build the BlueSkyGTM Engineering curriculum — GTM engineering with a technical foundation, built using the same agentic methodology it teaches.
 
+## Operating Model — Conductor + The Loom
+
+Two GLM squads, one ecosystem. **The Loom** builds: GLM-5.2 oversees and judges, GLM-5.1/5.1v write, the manifest is the loop. **The Tailors** finish: Echo · Newton · Turing · Shannon · Hinton (GLM-5.2) verify the AI seam and cross-reference sources; Hypatia tailors the GTM seam. The Loom weaves the cloth; the Tailors check the fit. They run on **separate manifests** and **chain sequentially** (Loom → ship-ready → Tailors → Loom correction) so they never compete for the 5-call ceiling — Tailors verify-and-flag, they never rewrite. **Route all bulk and generation work to The Loom** — lessons, exercises, quizzes, completions, regenerations, content fixes — and accuracy/cross-reference work to The Tailors. Launch via `python skills/operator-kit/orchestrator.py` (or `run.ps1 <stage>`); monitor the manifest. Architecture: `skills/operator-kit/HIERARCHY.md` · squad registry: `skills/operator-kit/TAILORS.md`.
+
+**Your job (Conductor / Claude) is two things only:**
+1. **Orchestration** — plan the work, launch The Loom, monitor the manifest, gate quality, chain stages, commit. You do **not** write curriculum content yourself; The Loom does.
+2. **Personally assisting the Director** — answer questions, read and judge output, surface real decisions, design architecture, review and reason. The high-leverage, human-facing work.
+
+~85% of token spend is The Loom (plan-covered GLM, $0). The Conductor is ~15%: orchestration + assistance. If you catch yourself generating lesson/exercise/quiz content in your own context, or spawning Claude sub-agents as Taskmasters (the deprecated hybrid pattern), stop — that work routes to The Loom. ICM/ICL is *how* the work is organized; The Loom is *who* does it; the Conductor conducts.
+
 ## Folder Map
 
 ```
@@ -145,3 +155,21 @@ Prefer gbrain when:
 Run `/sync-gbrain` after each Phase 0 stage completes to import that stage's output into the brain.
 
 <!-- gstack-gbrain-search-guidance:end -->
+
+---
+
+## → Next: Operating The Loom
+
+One shallow spine, orientation to action. Each file ends by pointing at the next; the last one runs.
+
+```
+CLAUDE.md (you are here)  →  skills/operator-kit/HIERARCHY.md  →  skills/operator-kit/orchestrator.py
+   what & who                  how the stack works + quick start        the file that does the work
+```
+
+**Reference shelf** (consult, not a chain — these do not route onward):
+- `skills/operator-kit/HANDLERS.md` — full tier/model/config registry
+- `skills/operator-kit/TASKMASTER-PROTOCOL.md` — the GLM-5.2 orchestrator pattern
+- `skills/operator-kit/interpreted-context-manifest/SKILL.md` · `interpreted-context-loop/SKILL.md` — the ICM/ICL methodology
+
+If you are a Conductor reading this cold (e.g. after a context compaction): follow the spine. `HIERARCHY.md` lands you on the orchestrator command. Route work to The Loom; conduct, don't weave.

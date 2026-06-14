@@ -1,0 +1,13 @@
+## Ship It
+
+Deploying a critic loop into a production GTM pipeline requires four calibrations, and skipping any of them will produce a loop that either rubber-stamps garbage or burns tokens forever.
+
+**Token cost scales linearly with iterations.** A 3-iteration cap with two API calls per iteration means six calls per record. For batch enrichment of 10,000 companies, that is 60,000 calls. Measure the actual average iterations-to-convergence on your data before setting the cap—if 90% of records converge in 1 iteration, cap at 2 instead of 3 and cut your worst-case cost by a third.
+
+**Critic prompt drift is the silent killer.** If the critic is too lenient, the loop exits on iteration 1 with output that would not pass human review. If the critic is too strict, every record hits the cap and you pay for three iterations of non-convergence. Calibrate on 50+ samples with human-scored ground truth: run the critic on outputs you have manually rated, and adjust the rubric wording until the critic's pass/fail decisions match human judgment within an acceptable error rate (typically 85%+ agreement).
+
+**Latency compounds.** Each iteration is a synchronous round-trip. Three iterations with two calls each means six sequential API calls, adding 5–15 seconds to a record that would otherwise take 1 second. For real-time workflows—live chat, instant form-fill enrichment, dynamic landing page personalization—this latency is unacceptable. In those cases, use single-pass generation with async post-hoc critique: generate immediately, evaluate after the fact, and flag failures for human review or re-enrichment.
+
+**Log every iteration, not just the final output.** The iteration trace is your audit trail for prompt improvement. When the loop fails on a new type of input, the trace tells you which dimension regressed and what the critic said about it. Without per-iteration logs, you are debugging a black box: the output is bad and you do not know whether the generator prompt is wrong, the critic rubric is misaligned, or the iteration cap is too low.
+
+In a Clay-specific deployment, the critic loop maps to a formula column or a Claygent enrichment step that runs after each provider in the waterfall. [CITATION NEEDED — concept: Claygent AI enrichment column with conditional logic for retry] The critic's structured scores can be written to separate columns (pain_point_score, evidence_score, etc.) so you can filter and sort records by quality, not just by whether they passed the gate.

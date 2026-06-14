@@ -4,8 +4,6 @@
 
 - Implement a three-layer guardrail stack (input validation, output classification, fallback) that catches unsafe LLM output before it reaches end users
 - Build a Python classification engine using regex and keyword rules to detect PII leakage, competitor mentions, and prohibited claims in generated text
-- Configure fallback behavior (reject, rewrite, escalate) based on classification severity
-- Evaluate guardrail performance by measuring false positive and false negative rates against a labeled test set
 - Deploy guardrails into a GTM content pipeline where filtered outputs are logged, monitored, and routed to human review when confidence drops
 
 ## The Problem
@@ -299,330 +297,69 @@ This log structure is what you feed into monitoring. If your block rate jumps fr
 
 ## Use It
 
-The classification guardrail you just built maps directly to a Clay outbound waterfall. Clay generates personalized emails by enriching prospect data (LinkedIn, company news, technographics) and passing it through an LLM to produce copy. [CITATION NEEDED — concept: exact Clay waterfall stage where output filtering is applied] The generation step sits between enrichment and delivery — and that is where your guardrail runs.
+Classification-based guardrails — rule engines that evaluate LLM output against a constraint set before delivery — are the filtering layer in a Clay outbound waterfall (Cluster 2.1: Outbound Sequencing & Personalization at Scale). [CITATION NEEDED — concept: Clay waterfall stage for output filtering] Clay generates personalized email copy from enriched prospect data, then passes it through workflow nodes before queuing for send. Your guardrail runs in that gap: after generation, before delivery.
 
-In a Clay workflow, the three-layer filter stack works like this. Layer one (input validation) checks the enriched prospect data before it reaches the generation prompt. If a prospect's LinkedIn bio contains injected text (someone put "ignore instructions" in their headline as a joke), your input filter catches it. If required fields are missing (no company name, no recent trigger event), you skip generation and use a static template instead of producing a generic email that says "Hi [First Name], I noticed your company [Company] is doing great things."
-
-Layer two (output classification) runs on every generated email. Clay generates the copy, your guardrail inspects it, and the decision routes the email to one of three paths: send (passed all checks), regenerate (failed a low-severity rule, send back with correction context), or fallback template (failed a high-severity rule, use a pre-approved safe email). This is classification-based filtering — a rule set judging LLM output before delivery. The mechanism is identical to what you built in the Python script; Clay just wraps it in a workflow node.
-
-Layer three (fallback) is what keeps your sequence alive when the guardrail blocks output. Without a fallback, a blocked email means a dead sequence step for that prospect. With a fallback, you substitute a pre-approved template that is safe but less personalized. The tradeoff is explicit: a template gets lower reply rates than a personalized email, but it gets sent rather than silently dropped. You can measure this difference — reply rate per sequence type (personalized vs. template fallback) is your eval feedback loop for tuning the guardrail's aggressiveness.
-
-Here is how you wire the guardrail into a batch send decision, simulating what Clay does at the workflow level:
+Here is the batch routing pattern — each prospect gets an email, but the *source* of that email depends on whether the AI output passed classification:
 
 ```python
-import random
-
-fallback_template = (
-    "Hi {first_name}, I work with {company} types on scaling outbound "
-    "without adding headcount. Open to a quick look next week?"
-)
-
-prospects = [
-    {"id": "P-001", "first_name": "Sarah", "company": "Acme",
-     "generated_email": "Hi Sarah, loved your post on outbound scaling at Acme. Our platform helps teams like yours 3x reply rates. Worth a chat?"},
-    {"id": "P-002", "first_name": "John", "company": "Globex",
-     "generated_email": "Hi John, we're the #1 platform and we guarantee results. Call me at 555-000-0000 for a free discount."},
-    {"id": "P-003", "first_name": "Maria", "company": "Initech",
-     "generated_email": "Hi Maria, noticed Initech is hiring SDRs. We help teams like yours onboard reps faster. 15 minutes next week?"},
-    {"id": "P-004", "first_name": "Dave", "company": "Umbrella",
-     "generated_email": "Hi Dave, compared to Salesforce and HubSpot, we're way cheaper. Act now for a limited time offer."},
-]
-
-send_queue = []
-blocked_count = 0
-fallback_count = 0
-
-for p in prospects:
-    decision = run_guardrails(p["generated_email"])
-
-    if decision.passed:
-        send_queue.append({
-            "prospect_id": p["id"],
-            "email": p["generated_email"],
-            "source": "ai_generated",
-        })
-        print(f"[SEND] {p['id']} — personalized email passed all checks")
-    elif "REVIEW" in decision.action:
-        violation_reasons = [r.rule_name for r in decision.results if not r.passed]
-        send_queue.append({
-            "prospect_id": p["id"],
-            "email": fallback_template.format(first_name=p["first_name"], company=p["company"]),
-            "source": "fallback_template",
-            "reason": f"Review triggered: {', '.join(violation_reasons)}",
-        })
-        fallback_count += 1
-        print(f"[FALLBACK] {p['id']} — medium severity, using template")
-    else:
-        blocked_count += 1
-        send_queue.append({
-            "prospect_id": p["id"],
-            "email": fallback_template.format(first_name=p["first_name"], company=p["company"]),
-            "source": "fallback_template",
-            "reason": "High severity block",
-        })
-        print(f"[BLOCKED→FALLBACK] {p['id']} — using safe template")
-
-print(f"\n{'='*50}")
-print(f"BATCH SUMMARY")
-print(f"{'='*50}")
-print(f"Total prospects: {len(prospects)}")
-print(f"AI-generated sent: {sum(1 for q in send_queue if q['source'] == 'ai_generated')}")
-print(f"Fallback templates used: {fallback_count + blocked_count}")
-print(f"Block rate: {(fallback_count + blocked_count) / len(prospects) * 100:.1f}%")
-print(f"\nFinal send queue ({len(send_queue)} emails):")
-for item in send_queue:
-    print(f"  {item['prospect_id']}: [{item['source']}] {item['email'][:60]}...")
-```
-
-Output:
-
-```
-[SEND] P-001 — personalized email passed all checks
-[BLOCKED→FALLBACK] P-002 — using safe template
-[SEND] P-003 — personalized email passed all checks
-[FALLBACK] P-004 — medium severity, using template
-
-==================================================
-BATCH SUMMARY
-==================================================
-Total prospects: 4
-AI-generated sent: 2
-Fallback templates used: 2
-Block rate: 50.0%
-
-Final send queue (4 emails):
-  P-001: [ai_generated] Hi Sarah, loved your post on outbound scaling at Acme. Our platfo...
-  P-002: [fallback_template] Hi John, I work with Globex types on scaling outbound withou...
-  P-003: [ai_generated] Hi Maria, noticed Initech is hiring SDRs. We help teams like you...
-  P-004: [fallback_template] Hi Dave, I work with Umbrella types on scaling outbound wit...
-```
-
-Every prospect gets an email. Two get the personalized AI version; two get the safe fallback. The block rate tells you how well your generation prompt is performing — a 50% block rate means your prompt needs work, not that your guardrail is too aggressive. This is the eval feedback loop: guardrail rejection rates are a proxy for generation quality, and reply classification on the responses tells you whether your fallback templates are performing well enough to justify the safety tradeoff.
-
-## Ship It
-
-Production guardrails need three things beyond the classification engine: persistent logging, drift detection, and configurable thresholds. The classification rules you ship on day one will not be the rules you run in month three. You will discover new failure modes from real rejections, and you need the logging infrastructure to capture and act on them.
-
-Build the production wrapper with a ruleset loaded from configuration, structured logging to a file, and a simple drift detector that flags when block rates deviate from baseline:
-
-```python
-import json
-import os
-from datetime import datetime, timezone
-from collections import Counter, defaultdict
-
-RULESET = {
-    "rules": {
-        "pii": {
-            "enabled": True,
-            "severity": "high",
-            "patterns": {
-                "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                "phone": r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b",
-                "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
-            }
-        },
-        "prohibited_claims": {
-            "enabled": True,
-            "severity": "high",
-            "banned_words": [
-                "guaranteed", "guarantee", "best", "#1", "number one",
-                "cheapest", "free", "100%", "risk-free", "discount",
-                "limited time", "act now", "exclusive offer",
-            ]
-        },
-        "competitor_mentions": {
-            "enabled": True,
-            "severity": "medium",
-            "competitors": ["Salesforce", "HubSpot", "Outreach", "Salesloft", "Apollo", "ZoomInfo"]
-        }
-    },
-    "fallback_template": "Hi {first_name}, reaching out about scaling outbound at {company}. Open to a quick call next week?",
-    "baseline_block_rate": 0.05,
-    "drift_threshold": 0.03,
-}
-
-LOG_FILE = "guardrail_log.jsonl"
-
-def evaluate_text(text, ruleset):
-    results = []
-    rules = ruleset["rules"]
-
-    if rules["pii"]["enabled"]:
-        matched = []
-        for label, pattern in rules["pii"]["patterns"].items():
-            found = re.findall(pattern, text)
-            matched.extend([f"{label}: {f}" for f in found])
-        results.append(RuleResult("PII Detection", len(matched) == 0, matched, rules["pii"]["severity"]))
-
-    if rules["prohibited_claims"]["enabled"]:
-        text_lower = text.lower()
-        banned = rules["prohibited_claims"]["banned_words"]
-        matched = [w for w in banned if w in text_lower]
-        results.append(RuleResult("Prohibited Claims", len(matched) == 0, matched, rules["prohibited_claims"]["severity"]))
-
-    if rules["competitor_mentions"]["enabled"]:
-        competitors = rules["competitor_mentions"]["competitors"]
-        matched = [c for c in competitors if c.lower() in text.lower()]
-        results.append(RuleResult("Competitor Mentions", len(matched) == 0, matched, rules["competitor_mentions"]["severity"]))
-
-    has_high = any(not r.passed and r.severity == "high" for r in results)
-    has_medium = any(not r.passed and r.severity == "medium" for r in results)
-
-    if has_high:
-        action = "BLOCK"
-    elif has_medium:
-        action = "REVIEW"
-    else:
-        action = "DELIVER"
-
-    return GuardrailDecision(not (has_high or has_medium), results, action, action)
-
-def log_decision(email_text, decision, prospect_id):
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "prospect_id": prospect_id,
-        "action": decision.action,
-        "email_preview": email_text[:120],
-        "violations": [
-            {"rule": r.rule_name, "severity": r.severity, "matched": r.matched_terms}
-            for r in decision.results if not r.passed
-        ],
-    }
-    with open(LOG_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
-    return entry
-
-def run_batch(emails_with_ids, ruleset):
-    results = []
-    for prospect_id, text in emails_with_ids:
-        decision = evaluate_text(text, ruleset)
-        log_decision(text, decision, prospect_id)
-        results.append((prospect_id, decision))
-    return results
-
-def detect_drift(ruleset, window_size=100):
-    if not os.path.exists(LOG_FILE):
-        return "No log file found — no drift data yet."
-
-    entries = []
-    with open(LOG_FILE) as f:
-        for line in f:
-            entries.append(json.loads(line))
-
-    recent = entries[-window_size:] if len(entries) >= window_size else entries
-    if len(recent) < 10:
-        return f"Insufficient data for drift detection ({len(recent)} entries, need 10+)."
-
-    actions = Counter(e["action"] for e in recent)
-    total = len(recent)
-    block_rate = (actions.get("BLOCK", 0) + actions.get("REVIEW", 0)) / total
-
-    baseline = ruleset["baseline_block_rate"]
-    threshold = ruleset["drift_threshold"]
-
-    if abs(block_rate - baseline) > threshold:
-        direction = "increase" if block_rate > baseline else "decrease"
-        return (f"DRIFT DETECTED: Block rate is {block_rate:.1%} "
-                f"(baseline: {baseline:.1%}, {direction} of {abs(block_rate - baseline):.1%}). "
-                f"Recent actions: {dict(actions)}. Investigate rule changes or input data shifts.")
-    return f"Within normal range: Block rate {block_rate:.1%} (baseline: {baseline:.1%}). Actions: {dict(actions)}."
-
-if os.path.exists(LOG_FILE):
-    os.remove(LOG_FILE)
+fallback = "Hi {first}, reaching out about scaling outbound at {company}. Open to a quick chat next week?"
 
 batch = [
-    ("P-001", "Hi Sarah, noticed Acme is scaling. Our platform helps teams personalize at volume. Chat next week?"),
-    ("P-002", "Hi John, we guarantee the best results. 100% free trial. Act now!"),
-    ("P-003", "Hi Maria, saw your post about SDR hiring at Initech. We cut onboarding time in half."),
-    ("P-004", "Hi Dave, cheaper than Salesforce and HubSpot. Limited time discount available."),
-    ("P-005", "Hi Lisa, reaching out about your recent funding round. Congrats! Open to a quick call?"),
-    ("P-006", "Hi Tom, we're the #1 platform. Call 555-123-4567 for an exclusive offer."),
-    ("P-007", "Hi Ann, your team's content strategy is excellent. We help companies scale that approach."),
-    ("P-008", "Hi Ben, free demo, guaranteed ROI, cheapest on the market. Don't miss out!"),
-    ("P-009", "Hi Kate, noticed Globex is expanding to Europe. We help with localized outreach."),
-    ("P-010", "Hi Max, compared to Outreach, we're 3x faster. Risk-free trial available now."),
-    ("P-011", "Hi Jen, loved your LinkedIn post. Our tool helps teams like yours 2x reply rates."),
-    ("P-012", "Hi Rob, 100% guaranteed discount. Number one platform. Act now for exclusive deal."),
+    ("P-001", {"first": "Sarah", "company": "Acme"},
+     "Hi Sarah, loved your post on scaling at Acme. We help teams personalize at volume. 15 min?"),
+    ("P-002", {"first": "John", "company": "Globex"},
+     "Hi John, we're the #1 platform with guaranteed results. Call 555-000-0000 for a free discount!"),
+    ("P-003", {"first": "Maria", "company": "Initech"},
+     "Hi Maria, noticed you're evaluating Outreach. We've helped teams switch and improve reply rates."),
 ]
 
-results = run_batch(batch, RULESET)
-
-print("BATCH RESULTS:")
-print("-" * 60)
-delivered = 0
-blocked = 0
-reviewed = 0
-for pid, decision in results:
-    status_emoji = {"DELIVER": "✓", "BLOCK": "✗", "REVIEW": "?"}[decision.action]
-    print(f"  {status_emoji} {pid}: {decision.action}")
-    if decision.action == "DELIVER":
-        delivered += 1
-    elif decision.action == "BLOCK":
-        blocked += 1
+sent, blocked = 0, 0
+for pid, data, email in batch:
+    decision = run_guardrails(email)
+    if decision.passed:
+        print(f"[SEND] {pid} — personalized email delivered")
+        sent += 1
     else:
-        reviewed += 1
+        print(f"[FALLBACK] {pid} — {decision.action}")
+        blocked += 1
+    for r in decision.results:
+        if not r.passed:
+            print(f"  -> {r.rule_name}: {r.matched_terms}")
 
-print(f"\nDelivered: {delivered} | Blocked: {blocked} | Review: {reviewed}")
-print(f"Block rate: {(blocked + reviewed) / len(batch) * 100:.1f}%")
-
-print("\n" + "=" * 60)
-print("DRIFT DETECTION")
-print("=" * 60)
-drift_report = detect_drift(RULESET)
-print(drift_report)
-
-print("\nVIOLATION BREAKDOWN:")
-violation_counts = Counter()
-with open(LOG_FILE) as f:
-    for line in f:
-        entry = json.loads(line)
-        for v in entry.get("violations", []):
-            violation_counts[v["rule"]] += 1
-for rule, count in violation_counts.most_common():
-    print(f"  {rule}: {count} violations")
+print(f"\nSent: {sent} | Blocked: {blocked} | Block rate: {blocked/len(batch)*100:.0f}%")
 ```
 
-Output:
-
 ```
-BATCH RESULTS:
-------------------------------------------------------------
-  ✓ P-001: DELIVER
-  ✗ P-002: BLOCK
-  ✓ P-003: DELIVER
-  ? P-004: REVIEW
-  ✓ P-005: DELIVER
-  ✗ P-006: BLOCK
-  ✓ P-007: DELIVER
-  ✗ P-008: BLOCK
-  ✓ P-009: DELIVER
-  ? P-010: REVIEW
-  ✓ P-011: DELIVER
-  ✗ P-012: BLOCK
+[SEND] P-001 — personalized email delivered
+[FALLBACK] P-002 — BLOCK — use fallback template
+  -> PII Detection: ['phone: 555-000-0000']
+  -> Prohibited Claims: ['#1', 'guaranteed', 'free', 'discount']
+[FALLBACK] P-003 — REVIEW — route to human or regenerate
+  -> Competitor Mentions: ['Outreach']
 
-Delivered: 5 | Blocked: 5 | Review: 2
-Block rate: 58.3%
-
-============================================================
-DRIFT DETECTION
-============================================================
-DRIFT DETECTED: Block rate is 58.3% (baseline: 5.0%, increase of 53.3%). Recent actions: {'BLOCK': 5, 'DELIVER': 5, 'REVIEW': 2}. Investigate rule changes or input data shifts.
-
-VIOLATION BREAKDOWN:
-  Prohibited Claims: 5 violations
-  PII Detection: 1 violations
-  Competitor Mentions: 2 violations
+Sent: 1 | Blocked: 2 | Block rate: 67%
 ```
 
-The drift detector catches the problem immediately: a 58% block rate against a 5% baseline means either the generation prompt is producing garbage or the input data is adversarial. The violation breakdown tells you *which* rule is firing — Prohibited Claims dominates, which points to a prompt engineering issue (the model is defaulting to marketing superlatives) rather than a data quality issue.
-
-In a real Clay outbound workflow, you would run this check on every batch before it hits the send queue. If drift is detected, you pause the campaign, inspect the logged violations, adjust the generation prompt or the ruleset, and re-run. This is the eval feedback loop: guardrails are not just a safety net — they are a measurement instrument that tells you whether your AI-generated content is getting better or worse over time.
+Every prospect still gets an email. P-001 receives the personalized AI version. P-002 and P-003 fall back to the safe template — the prospect never sees the hallucinated claims or the competitor comparison. The block rate (67% here) is your eval feedback loop: it tells you whether the problem is your generation prompt (high block rate = prompt needs tightening) or your guardrail rules (low block rate but complaints in replies = rules have gaps).
 
 ## Exercises
 
-**Easy.** Add a new rule to the classification engine that flags superlatives. Your rule should catch "best," "number one," "#1," "leading," "top-rated," and "premier." Run it against the four sample emails in the Build It section and confirm it catches the ones that use these terms. Print which terms matched.
+**Easy.** Add a new rule called `check_superlatives` to the classification engine. It should flag: "leading," "top-rated," "premier," "industry leader," "award-winning," and "world-class." Severity is "medium." Register it in the `run_guardrails` checks list. Run it against the four sample emails and print which terms matched on each.
 
-**Medium.** Rewrite the production guardrail (`evaluate_text` and `RULESET`) to load its entire ruleset from a JSON file called `guardrail_rules.json`. The file should define each rule's enabled state, severity, and parameters (patterns, banned words, competitor list). Your script should read the file at startup and work without code changes when the JSON is modified. Test by toggling a rule off in the JSON and confirming it stops firing.
+**Medium.** Implement a two-pass self-correction system. When an email fails with only "medium" severity (no high-severity failures), instead of falling back to a template, construct a correction string that includes the original email text and the specific matched terms, then simulate a rewrite by stripping the flagged terms using `re.sub`. Re-run the guardrail on the corrected text. If it passes on the second pass, deliver it. If it still fails, fall back to the template. Test with the competitor-mention email ("Hi Sarah, I noticed you're evaluating Outreach...").
 
-**Hard.** Implement a two-pass self-correction system. When an email fails classification with severity "medium" (not "high"), instead of falling back to a template, construct a correction prompt that includes the original email, the specific violations, and instructions to rewrite without the flagged terms. Simulate the LLM call with a function that does regex-based
+## Key Terms
+
+- **Guardrail** — A classification step between LLM output and end-user delivery that routes content to deliver, block, or review based on a constraint set.
+- **Output Classification** — Inspecting generated text for PII, banned claims, competitor mentions, or other policy violations using regex, keyword matching, or model-based judging.
+- **Fallback Template** — A pre-approved safe email substituted when the guardrail blocks an AI-generated email, ensuring the prospect still receives outreach.
+- **False Positive / False Negative** — A false positive blocks a good email (costs personalization); a false negative lets a bad email through (costs reputation). Guardrail tuning biases toward false positives early in deployment.
+- **Classifier-Judge Pattern** — Using a second LLM call (typically a smaller, cheaper model) to evaluate another model's output against a rubric, classifying it as safe or unsafe.
+- **Block Rate** — The percentage of generated emails that fail guardrail classification in a batch. Serves as a proxy for generation quality — a rising block rate signals prompt degradation or input data drift.
+
+## Sources
+
+- NVIDIA NeMo Guardrails — open-source toolkit for programmable guardrails in LLM applications. [github.com/NVIDIA/NeMo-Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
+- OpenAI Moderation API — classification endpoint for harmful content detection. [platform.openai.com/docs/guides/moderation](https://platform.openai.com/docs/guides/moderation)
+- Zheng, L. et al. (2023). "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena" — the classifier-judge pattern where one model evaluates another's output. [arxiv.org/abs/2306.05685](https://arxiv.org/abs/2306.05685)
+- [CITATION NEEDED — concept: Clay waterfall integration point for guardrail output filtering between AI generation and send queue]

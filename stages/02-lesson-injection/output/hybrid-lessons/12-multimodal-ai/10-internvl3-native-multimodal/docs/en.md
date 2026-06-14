@@ -202,313 +202,62 @@ Run this and observe the token estimates. The InternVL3-style mixture at roughly
 
 ## Use It
 
-The enrichment pipeline for GTM often hits a wall when signal lives in images rather than text. A company's website screenshot contains branding colors, layout style, team page photos, product UI screenshots, and trust badges — none of which a text-only scraper captures. A pitch deck PDF rendered page-by-page as images contains funding stage indicators, team org charts, and technology architecture diagrams. A natively multimodal model extracts structured fields from these visual inputs without the information loss that occurs when a projection-only model compresses visual tokens into a frozen language space that was never trained to hold them.
-
-Consider a Clay enrichment workflow where you have a company's domain and want to extract signals that text scraping misses. The native multimodal approach — enabled by InternVL3's architecture where the LLM truly processes visual tokens rather than receiving a compressed summary — produces higher-fidelity extraction on document understanding, chart reading, OCR, and multi-image reasoning. The mechanism is that the LLM's attention layers can attend to individual visual tokens during reasoning, not just to a projection-layer summary. For GTM, this means the model can look at a pricing page screenshot and reason about the specific tier names, or examine a team page and count the number of engineers versus salespeople.
-
-Here is a multimodal extraction pipeline that processes website screenshots and returns structured fields. This code constructs the API call pattern you would use with an InternVL3-compatible endpoint (OpenAI-compatible API format), with a fallback simulation that demonstrates the extraction logic when no endpoint is configured:
+Native multimodal pretraining — where the LLM's own attention layers process individual visual tokens during inference rather than receiving a compressed projection summary — enables visual enrichment signals that text-only scraping fundamentally cannot reach. This is the visual layer for Cluster 1.2 (TAM Refinement & ICP Scoring): brand colors, pricing-tier names visible only in rendered screenshots, trust badges encoded as SVG icons, and team-page composition all live in pixels, not HTML text nodes.
 
 ```python
 import json
-import os
-from dataclasses import dataclass, asdict
-from typing import Optional
 
-@dataclass
-class CompanyVisualSignal:
-    domain: str
-    company_name: Optional[str] = None
-    tagline: Optional[str] = None
-    primary_brand_color: Optional[str] = None
-    pricing_tiers_visible: bool = False
-    pricing_tier_names: list = None
-    team_page_detected: bool = False
-    estimated_team_size: Optional[str] = None
-    has_trust_badges: bool = False
-    trust_badge_names: list = None
-    tech_stack_indicators: list = None
-    confidence_score: float = 0.0
+ICP_SCORING_FIELDS = ["brand_color", "pricing_tiers", "trust_badges", "team_signal"]
 
-    def __post_init__(self):
-        if self.pricing_tier_names is None:
-            self.pricing_tier_names = []
-        if self.trust_badge_names is None:
-            self.trust_badge_names = []
-        if self.tech_stack_indicators is None:
-            self.tech_stack_indicators = []
-
-
-EXTRACTION_PROMPT = """You are analyzing a website screenshot. Extract the following fields as JSON:
-{
-  "company_name": "text or null",
-  "tagline": "text or null",
-  "primary_brand_color": "hex color or null",
-  "pricing_tiers_visible": true/false,
-  "pricing_tier_names": ["list of tier names if visible"],
-  "team_page_detected": true/false,
-  "estimated_team_size": "small (1-10) / medium (11-50) / large (50+) / null",
-  "has_trust_badges": true/false,
-  "trust_badge_names": ["SOC2", "GDPR", etc],
-  "tech_stack_indicators": ["React", "Next.js", etc],
-  "confidence_score": 0.0-1.0
+SIMULATED = {
+    "stripe.com": {"brand_color": "#635BFF", "pricing_tiers": ["Core", "Plus"], "trust_badges": ["SOC 2", "PCI DSS"], "team_signal": "enterprise-ready", "confidence": 0.92},
+    "linear.app": {"brand_color": "#5E6AD2", "pricing_tiers": ["Free", "Standard"], "trust_badges": [], "team_signal": "early-stage SaaS", "confidence": 0.87},
+    "unknown.io":  {"brand_color": None, "pricing_tiers": [], "trust_badges": [], "team_signal": None, "confidence": 0.22},
 }
-Return only valid JSON. If a field cannot be determined from the screenshot, use null."""
 
+def route_by_confidence(domain: str) -> str:
+    sig = SIMULATED.get(domain, {"confidence": 0.0})
+    if sig["confidence"] > 0.70:
+        return "auto_enrich"
+    elif sig["confidence"] > 0.40:
+        return "manual_review"
+    return "skip"
 
-def build_multimodal_extraction_request(
-    image_path: str,
-    domain: str,
-    api_base: str = "http://localhost:8000/v1",
-    model: str = "OpenGVLab/InternVL3-78B",
-):
-    request = {
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": f"file://{image_path}"}},
-                    {"type": "text", "text": EXTRACTION_PROMPT},
-                ],
-            }
-        ],
-        "max_tokens": 512,
-        "temperature": 0.1,
-    }
+for domain in SIMULATED:
+    sig = SIMULATED[domain]
+    action = route_by_confidence(domain)
+    filled = sum(1 for f in ICP_SCORING_FIELDS if sig.get(f))
+    print(f"{domain:<16} filled={filled}/4  conf={sig['confidence']:.2f}  action={action}")
 
-    full_url = f"{api_base}/chat/completions"
-    print(f"Endpoint:  {full_url}")
-    print(f"Model:     {model}")
-    print(f"Image:     {image_path}")
-    print(f"Domain:    {domain}")
-    print(f"\nPrompt token estimate: ~{len(EXTRACTION_PROMPT) // 4} tokens")
-    print(f"Visual tokens (1280x720, pixel-shuffled): {compute_visual_tokens(1280, 720)['compressed_tokens']}")
-    return full_url, request
-
-
-def simulate_extraction(domain: str) -> CompanyVisualSignal:
-    mock_db = {
-        "stripe.com": CompanyVisualSignal(
-            domain="stripe.com",
-            company_name="Stripe",
-            tagline="Payments infrastructure for the internet",
-            primary_brand_color="#635BFF",
-            pricing_tiers_visible=True,
-            pricing_tier_names=["Core", "Plus", "Premium"],
-            team_page_detected=False,
-            has_trust_badges=True,
-            trust_badge_names=["SOC 2", "PCI DSS", "ISO 27001"],
-            tech_stack_indicators=["React", "Next.js"],
-            confidence_score=0.92,
-        ),
-        "linear.app": CompanyVisualSignal(
-            domain="linear.app",
-            company_name="Linear",
-            tagline="The issue tracking tool you'll enjoy using",
-            primary_brand_color="#5E6AD2",
-            pricing_tiers_visible=True,
-            pricing_tier_names=["Free", "Standard", "Plus", "Enterprise"],
-            team_page_detected=True,
-            estimated_team_size="medium (11-50)",
-            has_trust_badges=False,
-            tech_stack_indicators=["React", "TypeScript"],
-            confidence_score=0.88,
-        ),
-    }
-    return mock_db.get(domain, CompanyVisualSignal(domain=domain, confidence_score=0.0))
-
-
-domains = ["stripe.com", "linear.app", "unknown-startup.io"]
-
-print("=== Multimodal Website Screenshot Extraction ===\n")
-
-for domain in domains:
-    url, req = build_multimodal_extraction_request(
-        image_path=f"/tmp/screenshots/{domain}.png",
-        domain=domain,
-    )
-    print(f"\n--- Simulated extraction for {domain} ---")
-    signal = simulate_extraction(domain)
-    print(json.dumps(asdict(signal), indent=2))
-    print()
+print("\nWaterfall: high-conf auto-enriches, mid routes to review, low skips.")
 ```
 
-The confidence score in this pipeline is your quality gate. A natively multimodal model like InternVL3 produces higher confidence on visual extraction tasks because its attention layers can directly attend to visual tokens during reasoning — the model does not need to compress an entire screenshot into a fixed-size embedding and then guess from that summary. In a Clay workflow, you would route low-confidence extractions to manual review and write high-confidence ones directly to the account record. This is the same waterfall pattern used in Clay's native Find People At Company enrichment — each step either succeeds with sufficient confidence or falls through to the next method.
-
-## Ship It
-
-Deploying a multimodal enrichment pipeline into a GTM stack requires observability — without it, extraction quality drifts silently and your enrichment data degrades over time as websites change their layouts, add new visual elements, or switch to image-heavy designs that confuse the model's OCR pathway. Zone 12 (observability, logging, tracing) provides the monitoring infrastructure for this. The key insight is that in a living GTM system, model degradation is not an ML metric — it is a business metric. Reply rate drift, enrichment fill rate decline, and bounce rate increase are your model degradation signals.
-
-For the multimodal enrichment pipeline, three tracing checkpoints matter. First, log the input: image resolution, domain, and a hash of the screenshot content so you can detect when a website changes its layout. Second, log the extraction output with its confidence score and the specific fields extracted. Third, log downstream impact: did this enrichment improve the account record, did the sales team use the extracted data, and did it correlate with engagement. This tracing setup monitors your enrichment pipeline performance in real time — reply rate drift is your model degradation signal, and confidence score decline is its leading indicator.
-
-```python
-import json
-import time
-import hashlib
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from typing import List
-
-@dataclass
-class ExtractionTraceEvent:
-    timestamp: str
-    domain: str
-    image_hash: str
-    image_resolution: str
-    fields_extracted: int
-    fields_null: int
-    confidence_score: float
-    latency_ms: int
-    status: str
-    downstream_action: str = "none"
-
-
-@dataclass
-class EnrichmentTracer:
-    service_name: str
-    events: List[ExtractionTraceEvent] = field(default_factory=list)
-
-    def trace_extraction(
-        self,
-        domain: str,
-        image_bytes: bytes,
-        resolution: str,
-        extracted: dict,
-        confidence: float,
-        latency_ms: int,
-    ):
-        fields_extracted = sum(1 for v in extracted.values() if v is not None and v != [] and v != "")
-        fields_null = len(extracted) - fields_extracted
-
-        image_hash = hashlib.sha256(image_bytes).hexdigest()[:16]
-
-        action = "wrote_to_record"
-        if confidence < 0.5:
-            action = "routed_to_manual_review"
-        elif fields_extracted < 3:
-            action = "flagged_low_signal"
-
-        event = ExtractionTraceEvent(
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            domain=domain,
-            image_hash=image_hash,
-            image_resolution=resolution,
-            fields_extracted=fields_extracted,
-            fields_null=fields_null,
-            confidence_score=confidence,
-            latency_ms=latency_ms,
-            status="success" if confidence >= 0.5 else "low_confidence",
-            downstream_action=action,
-        )
-        self.events.append(event)
-        return event
-
-    def compute_health_metrics(self, window: int = 50) -> dict:
-        recent = self.events[-window:] if len(self.events) >= window else self.events
-        if not recent:
-            return {"status": "no_data"}
-
-        avg_confidence = sum(e.confidence_score for e in recent) / len(recent)
-        avg_latency = sum(e.latency_ms for e in recent) / len(recent)
-        manual_rate = sum(1 for e in recent if "manual" in e.downstream_action) / len(recent)
-        unique_hashes = len(set(e.image_hash for e in recent))
-        hash_change_rate = 1.0 - (unique_hashes / len(recent)) if len(recent) > 1 else 0.0
-
-        status = "healthy"
-        alerts = []
-
-        if avg_confidence < 0.6:
-            status = "degraded"
-            alerts.append(
-                f"Average confidence {avg_confidence:.2f} below 0.60 threshold — "
-                f"check for website layout changes or model version drift"
-            )
-        if manual_rate > 0.3:
-            status = "degraded"
-            alerts.append(
-                f"Manual review rate {manual_rate:.0%} — enrichment pipeline "
-                f"producing too many low-confidence extractions"
-            )
-        if avg_latency > 5000:
-            alerts.append(
-                f"Average latency {avg_latency:.0f}ms — consider batching or "
-                f"reducing image resolution"
-            )
-
-        return {
-            "status": status,
-            "samples": len(recent),
-            "avg_confidence": round(avg_confidence, 3),
-            "avg_latency_ms": round(avg_latency),
-            "manual_review_rate": round(manual_rate, 3),
-            "image_change_rate": round(hash_change_rate, 3),
-            "alerts": alerts,
-        }
-
-
-tracer = EnrichmentTracer(service_name="multimodal-enrichment-prod")
-
-simulated_extractions = [
-    ("stripe.com", b"\x89PNG_fake_stripe_v1", 0.92, 1200),
-    ("linear.app", b"\x89PNG_fake_linear_v1", 0.88, 1100),
-    ("retool.com", b"\x89PNG_fake_retool_v1", 0.85, 1300),
-    ("stripe.com", b"\x89PNG_fake_stripe_v1", 0.91, 1150),
-    ("unknown-startup.io", b"\x89PNG_fake_unknown_v1", 0.35, 2100),
-    ("linear.app", b"\x89PNG_fake_linear_v1", 0.87, 1050),
-    ("stripe.com", b"\x89PNG_fake_stripe_REDESIGNED", 0.52, 2400),
-    ("retool.com", b"\x89PNG_fake_retool_v1", 0.84, 1250),
-    ("unknown-startup.io", b"\x89PNG_fake_unknown_v2", 0.28, 2300),
-    ("stripe.com", b"\x89PNG_fake_stripe_REDESIGNED", 0.48, 2500),
-]
-
-for domain, img_bytes, conf, latency in simulated_extractions:
-    fake_fields = {
-        "company_name": "Example" if conf > 0.5 else None,
-        "tagline": "Tagline" if conf > 0.5 else None,
-        "primary_brand_color": "#000000" if conf > 0.5 else None,
-        "pricing_tiers_visible": conf > 0.5,
-        "team_page_detected": conf > 0.7,
-    }
-    tracer.trace_extraction(
-        domain=domain,
-        image_bytes=img_bytes,
-        resolution="1280x720",
-        extracted=fake_fields,
-        confidence=conf,
-        latency_ms=latency,
-    )
-
-health = tracer.compute_health_metrics()
-print("=== Enrichment Pipeline Health Report ===\n")
-print(json.dumps(health, indent=2))
-
-print("\n=== Recent Trace Events (last 5) ===\n")
-for event in tracer.events[-5:]:
-    print(json.dumps(asdict(event), indent=2))
-    print()
-
-print("=== Alert Interpretation ===")
-if health["alerts"]:
-    for alert in health["alerts"]:
-        print(f"  ⚠ {alert}")
-else:
-    print("  No alerts — pipeline is within operational thresholds.")
-
-print("\n=== GTM Signal: Connection to Zone 12 ===")
-print(
-    "In production, wire these trace events to your observability backend "
-    "(Datadog, Honeycomb, or CloudWatch). The confidence_score field is "
-    "your leading indicator — when it drops, enrichment quality drops, "
-    "and within 1-2 weeks you will see reply rate decline in your "
-    "sequence analytics. That lag is why real-time tracing matters: "
-    "you catch the drift before it reaches the sales team."
-)
-```
-
-The image change rate metric is specific to multimodal pipelines and has no equivalent in text-only enrichment. When a company redesigns their website, the screenshot hash changes, and the model may need re-evaluation on the new layout. A spike in hash change rate across many domains simultaneously could indicate a broader web design trend (e.g., everyone adopting a new framework with different visual patterns) that degrades your model's extraction accuracy industry-wide. This is the kind of failure mode that text-only observability cannot detect — it requires the visual tracing that native multimodal models make possible.
+The confidence waterfall mirrors the Clay enrichment waterfall pattern: each visual signal either passes a confidence threshold and writes to the account record, or falls through to manual review. The difference from text-only enrichment is that these fields — brand color, visible pricing tier names, trust badge presence — are invisible to a DOM scraper. They only become extractable when the model's attention layers can attend directly to pixel-level visual tokens, which is the capability that native multimodal pretraining provides.
 
 ## Exercises
 
-1. **Token budget optimizer.** Modify the `compute_visual_tokens` function to accept a maximum token budget and compute the largest image resolution that fits within that budget after pixel-shuffle compression. Test with budgets of 512, 1024, and 2048 tokens. This exercises your understanding of how visual token compression trades spatial resolution for context window headroom.
+1. **Token budget optimizer.** Modify the `compute_visual_tokens` function to accept a maximum token budget and compute the largest square image resolution (divisible by 14) that fits within that budget after pixel-shuffle compression with `downsample_factor=0.5`. Test with budgets of 256, 512, and 1,024 tokens. Print the resolution and the actual compressed token count for each budget. This exercises your understanding of how pixel-shuffle compression trades spatial resolution for context window headroom — directly relevant when you are batching multiple screenshots per API call in a GTM enrichment pipeline.
 
-2. **Mixture ablation.** Create three additional training mixtures beyond the ones in the Build It code: one with 60% text / 20% interleaved / 20% caption, one with 30% / 40%
+2. **Mixture ablation study.** Using the `TrainingMixture` class from Build It, create three new mixtures: (a) 60% text / 20% interleaved / 20% caption, (b) 30% text / 40% interleaved / 30% caption, and (c) 10% text / 60% interleaved / 30% caption. Sample 10,000 examples from each. For each mixture, compute the estimated total tokens and predict which benchmark would degrade first: GSM8K (math reasoning) or MMMU-Pro (visual reasoning). Write one sentence per mixture justifying your prediction based on the ratio of text-only gradient updates. The point is to internalize why InternVL3 settled on roughly balanced mixtures rather than visual-heavy ones — text reasoning depth is a hard floor you cannot recover once lost.
+
+## Key Terms
+
+- **Alignment debt:** The accumulated representation gap in post-hoc VLMs where a text-pretrained LLM must retroactively learn to process visual tokens through a bolted-on projection layer. Measured by catastrophic forgetting (text benchmark drops), answer drift (image-present vs. image-absent divergence), and visual-text inconsistency (chain-of-thought contradicting the actual image).
+
+- **Native multimodal pretraining:** A training schedule where the LLM backbone weights are unfrozen during the initial pretraining stage on interleaved image-text data, so visual and textual representations share the same parameter space from the first gradient step. Eliminates alignment debt by removing the seam between modalities.
+
+- **Pixel-shuffle downsampling:** A token compression technique that rearranges spatial dimensions of visual patch tokens into channel dimensions, then projects through an MLP — reducing token count by ~4× while preserving spatial information in higher-dimensional embeddings. Essential for fitting website screenshots into LLM context windows.
+
+- **InternViT-6B:** The vision encoder component of the InternVL architecture, producing visual tokens from input images at 14×14 pixel patch resolution. Shared between InternVL2 and InternVL3 — the performance difference comes from training schedule, not encoder quality.
+
+- **Interleaved image-text data:** Web-crawled documents where images appear inline with surrounding text, preserving the natural reading order. Distinct from image-caption pairs (single image, single description) and pure text. The interleaving format is what lets the LLM learn visual-text relationships during pretraining.
+
+- **Visual token:** The unit of visual information produced by a vision encoder's patch embedding layer. Each token corresponds to a spatial region of the input image (typically a 14×14 pixel patch) and is processed by the LLM's attention layers identically to text tokens.
+
+## Sources
+
+- Chen, Z. et al. "InternVL: Scaling up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks." CVPR 2024. — InternVL2 architecture and post-hoc training pipeline baseline.
+
+- Zhu, J. et al. "InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models." arXiv 2024. — Native multimodal pretraining schedule, pixel-shuffle downsampling, and MMMU-Pro results. [CITATION NEEDED — concept: exact data mixture proportions and per-stage sample counts from the InternVL3 paper]
+
+- [CITATION NEEDED — concept: InternVL3 training stage details and data mixture proportions from the original paper]

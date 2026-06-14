@@ -126,13 +126,13 @@ print("Skip concat (dec4):      ", tuple(d4_cat.shape))
 d4 = model.dec4(d4_cat)
 print("After dec4  (16x16):     ", tuple(d4.shape))
 d3 = model.up3(d4)
-d3 = model.dec3(torch.cat([d3, e3], dim=1))
+d3 = self.dec3(torch.cat([d3, e3], dim=1))
 print("After dec3  (32x32):     ", tuple(d3.shape))
-d2 = model.up2(d3)
-d2 = model.dec2(torch.cat([d2, e2], dim=1))
+d2 = self.up2(d3)
+d2 = self.dec2(torch.cat([d2, e2], dim=1))
 print("After dec2  (64x64):     ", tuple(d2.shape))
-d1 = model.up1(d2)
-d1 = model.dec1(torch.cat([d1, e1], dim=1))
+d1 = self.up1(d2)
+d1 = self.dec1(torch.cat([d1, e1], dim=1))
 print("After dec1  (128x128):   ", tuple(d1.shape))
 out = model.out_conv(d1)
 print("Output      (128x128x2): ", tuple(out.shape))
@@ -144,4 +144,112 @@ Running this prints the full shape trace. The encoder halves spatial resolution 
 
 The output is a logit map of shape (1, 2, 128, 128) — two channels for two classes. Each spatial position holds a 2-vector of unnormalised class scores. Applying softmax across the channel dimension converts these to per-pixel class probabilities. Taking the argmax across channels gives the predicted class for every pixel.
 
-Now we implement the combined loss
+Now we implement the combined loss and run a training step to confirm gradients flow end-to-end.
+
+```python
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1e-6):
+        super().__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, targets):
+        probs = F.softmax(logits, dim=1)
+        targets_oh = F.one_hot(targets, num_classes=logits.shape[1]).permute(0, 3, 1, 2).float()
+        intersection = (probs * targets_oh).sum(dim=(0, 2, 3))
+        union = probs.sum(dim=(0, 2, 3)) + targets_oh.sum(dim=(0, 2, 3))
+        dice = (2 * intersection + self.smooth) / (union + self.smooth)
+        return 1 - dice.mean()
+
+class CombinedLoss(nn.Module):
+    def __init__(self, w_ce=0.5, w_dice=0.5):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss()
+        self.dice = DiceLoss()
+        self.w_ce = w_ce
+        self.w_dice = w_dice
+
+    def forward(self, logits, targets):
+        return self.w_ce * self.ce(logits, targets) + self.w_dice * self.dice(logits, targets)
+
+criterion = CombinedLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+x = torch.randn(2, 1, 128, 128)
+y = torch.randint(0, 2, (2, 128, 128))
+
+for step in range(3):
+    logits = model(x)
+    loss = criterion(logits, y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    ce_val = criterion.ce(logits.detach(), y).item()
+    dice_val = criterion.dice(logits.detach(), y).item()
+    print(f"Step {step+1} | total: {loss.item():.4f} | CE: {ce_val:.4f} | Dice: {dice_val:.4f}")
+
+with torch.no_grad():
+    preds = model(x).argmax(dim=1)
+    print(f"Pred shape: {tuple(preds.shape)}  |  class counts: {[(preds == c).sum().item() for c in range(2)]}")
+```
+
+Both loss components print separately so you can watch them move. On random data the values are uninformative — the point is confirming the mechanics: forward pass produces logits, both losses compute, gradients flow backward, the optimiser steps. The same loop on labelled data with a trained model is what produces production masks.
+
+## Use It
+
+The U-Net encoder-decoder with skip connections performs dense pixel-level classification — this mechanism underpins document layout segmentation, where revenue teams extract structured data from contracts, RFPs, and proposals by first identifying which pixels belong to text, tables, headers, and signature zones. A segmentation model trained on document images replaces brittle regex-based parsing with a learned spatial prior: it understands that a signature block sits at the bottom, that clause numbers appear in margins, that table cells have regular grid structure. The output mask is then consumed downstream as structured regions for OCR and field extraction.
+
+[CITATION NEEDED — concept: document layout segmentation applied to revenue operations / contract parsing]
+
+```python
+import torch
+import torch.nn.functional as F
+
+doc_model = UNet(in_channels=3, num_classes=4)
+doc_model.eval()
+
+regions = ["body_text", "table", "header", "signature"]
+synthetic_doc = torch.randn(1, 3, 256, 256)
+
+with torch.no_grad():
+    logits = doc_model(synthetic_doc)
+    probs = F.softmax(logits, dim=1)
+    pred = probs.argmax(dim=1)
+
+print(f"Input:    {tuple(synthetic_doc.shape)}")
+print(f"Logits:   {tuple(logits.shape)}")
+print(f"Mask:     {tuple(pred.shape)}")
+print(f"Classes:  {regions}")
+print("Region pixel distribution:")
+for i, name in enumerate(regions):
+    count = (pred == i).sum().item()
+    pct = 100 * count / pred.numel()
+    print(f"  {name:12s}  {count:>6d} px  ({pct:5.1f}%)")
+```
+
+This is the inference skeleton a document-intelligence pipeline runs per page. The model outputs a class label for every pixel; downstream code groups connected regions, crops them, and routes each to the appropriate parser — tables to a structured extractor, signatures to a verifier, body text to an LLM. The segmentation model is the spatial gatekeeper that decides what goes where.
+
+[CITATION NEEDED — concept: production document-intelligence pipelines using layout segmentation in GTM tooling]
+
+## Exercises
+
+**Exercise 1 — Add a fifth encoder/decoder level.** The current U-Net has four encoder stages (64 → 128 → 256 → 512) and a bottleneck at 1024 channels. Add `enc5` (512 → 1024 in channels before bottleneck), adjust the bottleneck to take 1024 channels in, and add the corresponding `up5` / `dec5` decoder stage with its skip connection. For a 256 × 256 input, predict by hand what the bottleneck spatial resolution will be before running the code. Verify your prediction with a shape trace.
+
+**Exercise 2 — Implement per-class IoU and diagnose failures.** Write a function `compute_iou(preds, targets, num_classes)` that takes argmaxed prediction and ground-truth masks (both shape H × W) and returns a list of per-class IoU scores. Generate a synthetic batch where one class occupies 2% of pixels and another occupies 80%. Compute IoU for both classes. Then modify the CombinedLoss weights (`w_ce=0.1, w_dice=0.9`) and observe how the per-class IoU distribution shifts after 50 training steps on the synthetic data. Report which weighting favours the rare class and explain why in terms of the Dice loss's overlap gradient.
+
+## Key Terms
+
+- **Semantic segmentation** — Assigning a single class label to every pixel in an image, without distinguishing individual instances of the same class.
+- **Encoder-decoder architecture** — A network pattern where the encoder compresses spatial resolution into rich channel features, and the decoder upsamples back to full resolution; U-Net is the canonical example for dense prediction.
+- **Skip connection (U-Net)** — A concatenation of an encoder feature map at resolution H × W to the decoder input at the same resolution, allowing the decoder to access pre-pooling spatial detail.
+- **Transposed convolution** — A learnable upsampling operation that reverses the spatial dimension reduction of a strided convolution, doubling height and width when stride=2.
+- **Dice loss** — A loss function derived from the F1 score that measures prediction–ground-truth overlap, normalised by region size; it is less sensitive to class imbalance than cross-entropy.
+- **IoU (Intersection over Union)** — The ratio of overlapping pixels to unioned pixels between a predicted mask and ground truth, computed per class and averaged.
+- **Bottleneck** — The deepest layer in a U-Net, operating at minimum spatial resolution and maximum channel depth; it carries the most compressed global representation of the input.
+
+## Sources
+
+- Ronneberger, Fischer, Brox. "U-Net: Convolutional Networks for Biomedical Image Segmentation." MICCAI 2015. arXiv:1505.04597
+- Milletari, Navab, Ahmadi. "V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation." 3DV 2016. arXiv:1606.04797 — source of the Dice loss formulation used in modern combined loss functions.
+- Long, Shelhamer, Darrell. "Fully Convolutional Networks for Semantic Segmentation." CVPR 2015. arXiv:1411.4038 — established the encoder-decoder foundation that U-Net extended with skip connections.
+- [CITATION NEEDED — concept: document layout segmentation applied to revenue operations / contract parsing]
+- [CITATION NEEDED — concept: production document-intelligence pipelines using layout segmentation in GTM tooling]

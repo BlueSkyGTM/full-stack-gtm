@@ -248,207 +248,81 @@ At step 0, the gate is exactly zero and the output is identical to the input. As
 
 ## Use It
 
-The "freeze the existing model, gate in the new signal source" pattern maps directly to a common GTM engineering scenario. You have a working lead scoring model — say, a gradient-boosted model trained on firmographic features and historical conversion data. It produces reliable scores. Now you need to incorporate a new signal source: intent data from a provider like Bombora, technographic data from BuiltWith, or GitHub activity signals. Retraining the entire model on the combined feature set risks degrading the scores you already trust, because the new features introduce distributional shift in the training process.
-
-The architectural analog: treat your existing model as the frozen LM. The new signal source is the visual pathway. Instead of concatenating the new features into the model's input (the naive approach that BLIP-2-style concatenation would suggest), you add a gated fusion layer that takes the existing model's output and modulates it with the new signal. At initialization, the gate is zero — your scores are identical to the old model. As you train the fusion layer (on labeled outcomes — conversions, replies, meetings booked), the gate opens and the new signal's contribution grows. If the new signal turns out to be noise, the gate stays near zero and you have lost nothing.
-
-Concretely in a Clay enrichment workflow: your existing scoring logic is a formula column combining employee count, industry fit, and technographic match — all signals you trust. You add an intent data column from a provider waterfall, but you do not rewrite the scoring formula to include it directly. Instead, you add a secondary "adjustment" formula that computes a delta based on the intent signal and multiplies it by a weight that starts at zero. As you collect outcome data (did intent-boosted leads convert at higher rates?), you increase the weight. The adjustment formula is the gated cross-attention layer; the weight is `tanh(α)`. Your original score is the frozen residual stream.
-
-This matters for pipeline observability — Zone 12 in the GTM stack, which covers feedback loops and pipeline health monitoring. The gate value itself is an observable signal. If you track the adjustment weight over time and it trends toward zero despite outcome data flowing in, the new signal source is not predictive — your intent data provider may be low quality, or the signal type may not correlate with your conversion definition. If the weight trends toward 1.0, the signal is strong and should receive more investment. This is reply-rate drift detection at the model level: the gate trajectory is your degradation (or improvement) signal for the new data source.
-
-The same pattern applies to multichannel orchestration. When you add a new channel (say, LinkedIn touchpoints to an existing email sequence), the gated approach says: do not replace the email sequence's logic. Run the new channel as a gated addition — start with low volume, measure incremental lift over the email-only baseline, and scale the channel's contribution based on measured impact. The email sequence is the frozen LM. The LinkedIn touches are the gated cross-attention. The gate is your ramp-up schedule, driven by observed conversion deltas.
-
-## Ship It
-
-To deploy the gated fusion pattern in a production GTM enrichment pipeline, instrument three observability surfaces.
-
-First, log the gate value at every scoring run. In a Clay workflow, this means your adjustment formula outputs not just the adjusted score but also the gate weight and the raw delta. Store these in a dedicated column or push them to a tracking sheet. Over time, the gate trajectory tells you whether the new signal is earning its place.
+The zero-init `tanh(α)` gate — the mechanism that multiplies a new signal pathway's contribution by exactly zero at initialization, then lets it grow as outcome data validates the signal — is a pattern for safe enrichment fusion in lead scoring, Cluster 1.2 (TAM Refinement & ICP Scoring). Your existing firmographic scorer is the frozen LM; the new intent data source is the visual pathway; `tanh(α)` is the weight you ramp from zero as conversion outcomes confirm the signal is predictive.
 
 ```python
-import json
-from datetime import datetime, timedelta
+import math
 
 class GatedLeadScorer:
-    def __init__(self, base_weight=0.0, max_weight=1.0, lr=0.05):
-        self.alpha = base_weight
-        self.max_weight = max_weight
+    def __init__(self, lr=0.3):
+        self.alpha = 0.0
         self.lr = lr
-        self.history = []
 
-    def gate(self):
-        import math
-        return math.tanh(self.alpha)
+    def score(self, base, intent):
+        gate = math.tanh(self.alpha)
+        delta = (intent - 0.5) * 0.4
+        return base + gate * delta, gate, delta
 
-    def score(self, base_score, intent_signal):
-        delta = intent_signal * 0.3
-        gate_val = self.gate()
-        adjusted = base_score + gate_val * delta
-        return adjusted, gate_val, delta
+    def update(self, base, intent, converted):
+        pred, gate, delta = self.score(base, intent)
+        error = converted - pred
+        grad = 2 * error * delta * (1 - gate ** 2)
+        self.alpha = max(-3.0, min(3.0, self.alpha + self.lr * grad))
+        return pred, gate
 
-    def update(self, base_score, intent_signal, actual_outcome):
-        predicted, gate_val, delta = self.score(base_score, intent_signal)
-        error = actual_outcome - predicted
-        gradient = 2 * error * delta * (1 - gate_val**2)
-        self.alpha += self.lr * gradient
-        self.alpha = max(-2.0, min(2.0, self.alpha))
-
-        entry = {
-            "timestamp": datetime.now().isoformat(),
-            "base_score": base_score,
-            "intent": intent_signal,
-            "delta": round(delta, 4),
-            "gate": round(gate_val, 4),
-            "alpha": round(self.alpha, 4),
-            "predicted": round(predicted, 4),
-            "actual": actual_outcome,
-            "error": round(error, 4),
-        }
-        self.history.append(entry)
-        return entry
-
-    def trajectory(self):
-        return [(h["timestamp"][:10], h["gate"], h["alpha"]) for h in self.history]
-
-scorer = GatedLeadScorer(base_weight=0.0, lr=0.1)
-
-import random
-random.seed(42)
-
+scorer = GatedLeadScorer()
 leads = [
-    (0.72, 0.85, 1.0),
-    (0.65, 0.10, 0.0),
-    (0.80, 0.60, 1.0),
-    (0.45, 0.90, 1.0),
-    (0.90, 0.05, 0.0),
-    (0.55, 0.70, 0.0),
-    (0.78, 0.45, 1.0),
-    (0.60, 0.80, 1.0),
-    (0.50, 0.20, 0.0),
-    (0.85, 0.75, 1.0),
+    (0.72, 0.85, 1), (0.65, 0.10, 0), (0.80, 0.60, 1), (0.45, 0.90, 1),
+    (0.90, 0.05, 0), (0.55, 0.70, 1), (0.78, 0.40, 0), (0.60, 0.80, 1),
 ]
 
-print(f"{'Lead':>4} | {'Base':>5} | {'Intent':>6} | {'Gate':>6} | {'Alpha':>6} | {'Pred':>5} | {'Actual':>6} | {'Error':>6}")
-print("-" * 65)
 for i, (base, intent, actual) in enumerate(leads):
-    entry = scorer.update(base, intent, actual)
-    print(f"{i+1:>4} | {entry['base_score']:>5.2f} | {entry['intent']:>6.2f} | "
-          f"{entry['gate']:>6.4f} | {entry['alpha']:>6.4f} | {entry['predicted']:>5.2f} | "
-          f"{entry['actual']:>6.1f} | {entry['error']:>+6.4f}")
+    pred, gate = scorer.update(base, intent, actual)
+    print(f"Lead {i+1}: base={base:.2f} intent={intent:.2f} → score={pred:.3f} gate={gate:.4f} α={scorer.alpha:+.3f}")
 
-print()
-print("=== Gate Trajectory (signal health) ===")
-for ts, gate, alpha in scorer.trajectory():
-    bar = "█" * int(gate * 40)
-    print(f"  α={alpha:+.3f}  tanh(α)={gate:.4f}  {bar}")
+print(f"\nFinal gate={math.tanh(scorer.alpha):.4f} → {'signal validated' if scorer.alpha > 0.1 else 'signal is noise'}")
 ```
 
-Running this:
-
 ```
-Lead |  Base | Intent |   Gate |  Alpha |   Pred | Actual |  Error
------------------------------------------------------------------
-   1 |  0.72 |   0.85 | 0.0000 | 0.0000 |  0.72 |    1.0 | +0.2800
-   2 |  0.65 |   0.10 | 0.2785 | 0.2848 |  0.66 |    0.0 | -0.6584
-   3 |  0.80 |   0.60 | 0.2537 | 0.2578 |  0.85 |    1.0 | +0.1523
-   4 |  0.45 |   0.90 | 0.2690 | 0.2745 |  0.52 |    1.0 | +0.4772
-   5 |  0.90 |   0.05 | 0.3745 | 0.3919 |  0.91 |    0.0 | -0.9056
-   6 |  0.55 |   0.70 | 0.2056 | 0.2082 |  0.59 |    0.0 | -0.5932
-   7 |  0.78 |   0.45 | 0.1149 | 0.1154 |  0.80 |    1.0 | +0.2043
-   8 |  0.60 |   0.80 | 0.1422 | 0.1432 |  0.63 |    1.0 | +0.3661
-   9 |  0.50 |   0.20 | 0.1884 | 0.1907 |  0.51 |    0.0 | -0.5113
-  10 |  0.85 |   0.75 | 0.1060 | 0.1064 |  0.87 |    1.0 | +0.1265
+Lead 1: base=0.72 intent=0.85 → score=0.720 gate=0.0000 α=+0.024
+Lead 2: base=0.65 intent=0.10 → score=0.646 gate=0.0235 α=+0.086
+Lead 3: base=0.80 intent=0.60 → score=0.803 gate=0.0854 α=+0.090
+Lead 4: base=0.45 intent=0.90 → score=0.464 gate=0.0900 α=+0.141
+Lead 5: base=0.90 intent=0.05 → score=0.875 gate=0.1404 α=+0.234
+Lead 6: base=0.55 intent=0.70 → score=0.568 gate=0.2305 α=+0.253
+Lead 7: base=0.78 intent=0.40 → score=0.770 gate=0.2488 α=+0.271
+Lead 8: base=0.60 intent=0.80 → score=0.632 gate=0.2649 α=+0.295
 
-=== Gate Trajectory (signal health) ===
-  α=+0.285  tanh(α)=0.2785  ██████████
-  α=+0.258  tanh(α)=0.2537  █████████
-  α=+0.275  tanh(α)=0.2690  ██████████
-  α=+0.392  tanh(α)=0.3745  ██████████████
-  α=+0.208  tanh(α)=0.2056  ████████
-  α=+0.115  tanh(α)=0.1149  ████
-  α=+0.143  tanh(α)=0.1422  █████
-  α=+0.191  tanh(α)=0.1884  ███████
-  α=+0.106  tanh(α)=0.1060  ████
+Final gate=0.2876 → signal validated
 ```
 
-The gate oscillates because the intent signal in this synthetic data is not perfectly predictive — some high-intent leads did not convert, and some low-intent leads did. The gradient-based update pushes `α` down when the prediction overshoots (positive delta, zero outcome) and up when it undershoots. Over more data, the gate converges to a stable value that reflects the true predictive power of the intent signal. If it converges to zero, you decommission the signal source. If it converges to a high value, you increase the signal's weight in your routing logic. This is the observability loop: the gate value is a living metric that tells you whether your enrichment investment is paying off.
-
-Second, set an alert threshold. If the gate drops below a floor (say, `tanh(α) < 0.05` for two consecutive weeks), flag it. The signal source has degraded — either the provider's data quality has dropped, or the market has shifted so the signal is no longer predictive. This is the GTM equivalent of monitoring model drift: your reply rate dropped not because your copy got worse, but because the intent signal feeding your prioritization model went stale.
-
-Third, log the raw delta alongside the gate. A high gate with a near-zero delta means the signal is theoretically allowed to contribute but the signal values themselves are weak (all leads have low intent scores). A low gate with a large delta means the signal is strong but the model does not trust it yet. These two failure modes require different interventions: the first needs a better data provider, the second needs more labeled outcome data to build confidence.
+The gate starts at zero — your base score is untouched. Each conversion outcome pushes `α` in the direction that reduces prediction error. If intent were noise, positive and negative gradients would cancel and `α` would hover near zero. Here it climbs steadily, confirming the intent signal carries predictive value worth paying for. Track this gate value over time: if it trends toward zero despite ongoing outcome data, the enrichment source has degraded and the budget should shift elsewhere.
 
 ## Exercises
 
-**Easy.** Change the `α` initialization in the `GatedCrossAttention` module to `2.0` instead of `0.0`. Run the demo code from Build It. Observe the step-0 output. Print the gate value (`tanh(2.0)`) and the output-input difference. Explain in one sentence why this initialization is unstable: what does the model "see" at step 0 when the gate is already open?
+**Easy.** Change `alpha_xa` initialization in `GatedCrossAttention` from `0.0` to `2.0`. Run the step-0 identity check from Build It. Print the gate value and the output-input difference. Explain in one sentence why starting with the gate open means the frozen LM's text distribution is immediately corrupted.
 
 ```python
 import torch
-import torch.nn as nn
 import math
 
 torch.manual_seed(42)
-
 gated_xa = GatedCrossAttention(64, 64)
 gated_xa.alpha_xa.data.fill_(2.0)
 gated_xa.alpha_dense.data.fill_(2.0)
 
 lang_hidden = torch.randn(2, 10, 64)
 vis_tokens = torch.randn(2, 8, 64)
-
 ref = lang_hidden.clone()
 output = gated_xa(lang_hidden, vis_tokens)
 
 print(f"alpha = {gated_xa.alpha_xa.item():.4f}")
 print(f"tanh(alpha) = {torch.tanh(gated_xa.alpha_xa).item():.4f}")
 print(f"Max |output - input| = {(output - ref).abs().max().item():.4f}")
-print(f"Output norm = {output.norm().item():.4f}")
-print(f"Input norm  = {ref.norm().item():.4f}")
+print(f"Identity preserved: {'YES' if (output - ref).abs().max().item() < 1e-5 else 'NO'}")
 ```
 
-**Medium.** Implement the Perceiver Resampler and test it with three different input sequence lengths. Print input shape, output shape, and confirm that `M` (the number of latent queries) is constant regardless of `N` (the input length).
-
-```python
-import torch
-import torch.nn as nn
-
-class PerceiverResampler(nn.Module):
-    def __init__(self, dim, num_latents=8, num_heads=4):
-        super().__init__()
-        self.latents = nn.Parameter(torch.randn(num_latents, dim) * 0.02)
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.q_proj = nn.Linear(dim, dim, bias=False)
-        self.k_proj = nn.Linear(dim, dim, bias=False)
-        self.v_proj = nn.Linear(dim, dim, bias=False)
-        self.out_proj = nn.Linear(dim, dim, bias=False)
-        self.ln = nn.LayerNorm(dim)
-
-    def forward(self, x):
-        B = x.shape[0]
-        latents = self.latents.unsqueeze(0).expand(B, -1, -1)
-        q = self.q_proj(self.ln(latents))
-        k = self.k_proj(x)
-        v = self.v_proj(x)
-
-        L = latents.shape[1]
-        N = x.shape[1]
-        q = q.view(B, L, self.num_heads, self.head_dim).transpose(1, 2)
-        k = k.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
-        v = v.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
-
-        import torch.nn.functional as F
-        attn = F.softmax(torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5), dim=-1)
-        out = torch.matmul(attn, v).transpose(1, 2).contiguous().view(B, L, -1)
-        return self.out_proj(out)
-
-resampler = PerceiverResampler(dim=64, num_latents=8)
-
-for N in [10, 50, 200]:
-    x = torch.randn(4, N, 64)
-    out = resampler(x)
-    print(f"Input (4, {N:>3}, 64) → Output {tuple(out.shape)} | M={out.shape[1]} (invariant)")
-```
-
-**Hard.** Build a 4-layer frozen "LM" (alternating linear layers and ReLU), insert gated cross-attention layers after layers 1 and 3, attach a Perceiver Resampler, and run a forward + backward pass. Print `requires_grad` and gradient norm for every named parameter. Confirm that only the Perceiver Resampler and gated x-attention parameters receive nonzero gradients.
+**Hard.** Build a 4-layer frozen mini-LM, insert `GatedCrossAttention` after layers 1 and 3, attach a `PerceiverResampler`, and run a forward + backward pass. Print `requires_grad` and gradient norm for every named parameter. Confirm that only the resampler and gated x-attention parameters receive nonzero gradients — the frozen LM weights must show zero.
 
 ```python
 import torch
@@ -474,8 +348,55 @@ class MiniFlamingo(nn.Module):
     def __init__(self, dim=64, num_latents=8):
         super().__init__()
         self.lm = FrozenMiniLM(dim, num_layers=4)
-        self.resampler = PerceiverResampler(dim, num_latents=num_latents)
+        self.resampler = PerceiverResampler(dim, dim, num_latents=num_latents)
         self.xa_1 = GatedCrossAttention(dim, dim)
         self.xa_2 = GatedCrossAttention(dim, dim)
 
-    def
+    def forward(self, text_tokens, visual_features):
+        vis = self.resampler(visual_features)
+        h = self.lm.layers[0](text_tokens)
+        h = torch.relu(h)
+        h = self.xa_1(h, vis)
+        h = self.lm.layers[1](h)
+        h = torch.relu(h)
+        h = self.lm.layers[2](h)
+        h = torch.relu(h)
+        h = self.xa_2(h, vis)
+        h = self.lm.layers[3](h)
+        return h
+
+model = MiniFlamingo(dim=64, num_latents=8)
+text = torch.randn(2, 10, 64)
+vis = torch.randn(2, 20, 64)
+
+output = model(text, vis)
+loss = output.sum()
+loss.backward()
+
+print(f"{'Parameter':<45} | {'requires_grad':>12} | {'grad_norm':>10}")
+print("-" * 75)
+for name, p in model.named_parameters():
+    gn = p.grad.norm().item() if p.grad is not None else 0.0
+    print(f"{name:<45} | {str(p.requires_grad):>12} | {gn:>10.6f}")
+```
+
+## Key Terms
+
+**Gated Cross-Attention Dense (Gated XA-Dense):** An inserted module between frozen LM blocks that performs cross-attention from language hidden states to visual tokens, followed by a dense FFN. Both sub-modules' outputs are multiplied by `tanh(α)` scalars initialized to zero, ensuring the module is a no-op at initialization and gradually contributes as training proceeds.
+
+**Perceiver Resampler:** A cross-attention module with `M` learned latent queries that attend to variable-length visual features `(N, D)` and produce fixed-length output `(M, D)`, decoupling the LM's token budget from input image resolution.
+
+**tanh(α) Gate:** A learnable scalar `α` passed through `tanh`, producing a value in `(-1, 1)` that multiplies a residual stream contribution. Initialized to zero so `tanh(0) = 0` and the contribution vanishes at step 0. The `tanh` saturates toward ±1, bounding the maximum contribution.
+
+**Catastrophic Forgetting:** The phenomenon where fine-tuning a pretrained model on a new task or modality degrades or erases the model's existing capabilities, because weight updates shift the learned representation away from the pretrained distribution.
+
+**Frozen Backbone:** A pretrained model whose weights are set to `requires_grad = False` and excluded from gradient computation. Used when you want to add new capabilities without risking degradation of existing ones.
+
+**In-Context Learning:** The ability of a language model to perform a new task from examples provided in the prompt, without any weight updates. Flamingo relies on this for few-shot visual question answering and captioning.
+
+## Sources
+
+- Alayrac, J.-B., Donahue, J., Luc, P., et al. "Flamingo: a Visual Language Model for Few-Shot Learning." *NeurIPS*, 2022. https://arxiv.org/abs/2204.14198
+- Jaegle, A., Gimeno, F., Brock, A., et al. "Perceiver: General Perception with Iterative Attention." *ICML*, 2021. https://arxiv.org/abs/2103.03206
+- [CITATION NEEDED — concept: GTM Cluster 1.2 TAM Refinement & ICP Scoring mapping to gated signal fusion]
+- [CITATION NEEDED — concept: lead scoring enrichment waterfall workflow patterns in Clay]

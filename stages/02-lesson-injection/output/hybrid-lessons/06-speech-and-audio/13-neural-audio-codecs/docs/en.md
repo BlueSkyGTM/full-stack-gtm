@@ -126,4 +126,81 @@ The residual hierarchy is visible in the MSE curve: the drop from 2 to 4 codeboo
 
 ## Use It
 
-The semantic
+The residual hierarchy in RVQ — codebook 0 captures the dominant signal, later codebooks refine it as diminishing residuals — maps directly onto lead-scoring waterfalls where firmographic intent is resolved first and technographic enrichment fills the gaps. This is Cluster 1.2, TAM Refinement & ICP Scoring.
+
+```python
+import numpy as np
+
+np.random.seed(42)
+VOCAB = 1024
+DIM = 8
+codebooks = {
+    "firmographic":  np.random.randn(VOCAB, DIM).astype(np.float32),
+    "technographic": np.random.randn(VOCAB, DIM).astype(np.float32),
+    "behavioral":    np.random.randn(VOCAB, DIM).astype(np.float32),
+    "fit":           np.random.randn(VOCAB, DIM).astype(np.float32),
+}
+
+leads = [
+    ("Acme Corp",    np.array([ 0.4,-0.2, 0.8, 0.1,-0.5, 0.3, 0.7,-0.1])),
+    ("Globex Inc",   np.array([-0.6, 0.9,-0.3, 0.5, 0.2,-0.8, 0.4, 0.6])),
+    ("Initech LLC",  np.array([ 0.1, 0.3,-0.7,-0.4, 0.9, 0.2,-0.5, 0.8])),
+]
+
+def cascade(vector, codebooks):
+    residual = vector.copy()
+    tokens = {}
+    for layer_name, cb in codebooks.items():
+        dists = np.linalg.norm(cb - residual, axis=1)
+        idx = int(np.argmin(dists))
+        residual = residual - cb[idx]
+        tokens[layer_name] = idx
+    return tokens, np.linalg.norm(residual)
+
+print(f"{'Lead':>14} {'firmo':>6} {'techno':>7} {'behav':>6} {'fit':>6} {'‖res‖':>8}")
+print("-" * 52)
+for name, vec in leads:
+    toks, res_norm = cascade(vec, codebooks)
+    print(f"{name:>14} {toks['firmographic']:>6} {toks['technographic']:>7} "
+          f"{toks['behavioral']:>6} {toks['fit']:>6} {res_norm:>8.3f}")
+
+print("\nCodebook-0-only reconstruction (coarse ICP bucket, no enrichment):")
+for name, vec in leads:
+    cb0 = codebooks["firmographic"]
+    idx = int(np.argmin(np.linalg.norm(cb0 - vec, axis=1)))
+    print(f"  {name:>14}  bucket={idx}  recon={cb0[idx].round(2)}")
+```
+
+Each lead gets a token at every layer: the firmographic bucket is the dominant ICP signal, technographic and behavioral are residual refinements, fit is the final polish. The first token alone places the lead in a coarse bucket — good enough for triage, insufficient for personalization. The full cascade reconstructs the lead's embedding with low residual error, the same way all 32 EnCodec codebooks reconstruct audio near-perceptually.
+
+The practical rule falls out of the math: if a high-priority lookup returns null, the residual chain breaks. Skipping codebook 0 and decoding from codebooks 1–N produces garbage — you've lost the dominant signal and are refining nothing. In a Clay-style enrichment waterfall, this means a null on the primary firmographic provider should halt the cascade rather than continue with enrichment layers that have no anchor to refine.
+
+[CITATION NEEDED — concept: Clay enrichment waterfall null-halt behavior, specifically whether Clay stops the cascade or continues to fallback providers on null return]
+
+## Exercises
+
+### Exercise 1 — Progressive codebook ablation (medium)
+
+Modify the Build It code so that instead of varying bandwidth, you encode once at 24 kbps (32 codebooks) and then decode with only the first K codebooks, zeroing out the rest. Sweep K from 1 to 32 and print an MSE curve. Verify that the curve is convex: the marginal error reduction from adding codebook 2 is larger than from adding codebook 31. This is the residual hierarchy made measurable.
+
+### Exercise 2 — Multi-scale token budget (hard)
+
+SNAC assigns different codebooks to different temporal resolutions. For a 3-codebook SNAC model with frame rates [40, 20, 40] Hz over a 5-second clip, compute the total token count. Compare it to EnCodec at 75 Hz with 3 codebooks over the same clip. Then compute the per-codebook token contribution and verify which SNAC codebook contributes fewest tokens. Modify the Build It script to print both token budgets side by side and confirm that multi-scale quantization reduces total tokens while preserving coarse temporal coverage.
+
+## Key Terms
+
+- **Residual Vector Quantization (RVQ):** A cascade of vector quantizers where each quantizer encodes the residual error left by the previous one. Produces a stack of discrete tokens per frame, with early tokens carrying the dominant signal and later tokens carrying fine detail.
+- **Codebook:** A learned lookup table of N centroid vectors. Each quantizer has its own codebook; the quantizer maps a continuous input to the index of its nearest centroid. Typical size in audio codecs: 1024 entries.
+- **Bandwidth:** The bitrate a codec operates at, determined by codebook count × frame rate × log2(vocab size). EnCodec maps bandwidth directly to codebook count at a fixed frame rate.
+- **Semantic-acoustic split:** A training strategy where codebook 0 is distilled from a pretrained speech representation model (e.g., WavLM) so it encodes linguistic content, while remaining codebooks encode acoustic detail. Enables separate generation of "what was said" and "how it sounded."
+- **Distillation loss:** A training objective that forces one model's representations to match another's. In Mimi, the semantic codebook is trained with a distillation loss against WavLM features so codebook 0 indices correlate with phonetic structure.
+- **Frame rate (codec):** The number of discrete time steps per second the encoder produces. EnCodec runs at 75 Hz, DAC at 86 Hz, SNAC at multiple rates simultaneously (multi-scale).
+
+## Sources
+
+- Défossez, A., Copet, J., Synnaeve, G., & Adi, Y. (2022). *High Fidelity Neural Audio Compression.* arXiv:2210.13438. — EnCodec architecture, RVQ for audio, multi-scale STFT discriminator.
+- Kumar, R., et al. (2023). *High-Fidelity Audio Compression with Improved RVQGAN.* arXiv:2306.06546. — DAC: snake activations, codebook renewal, improved perceptual quality.
+- Kyuutai Lab. (2024). *SNAC: Multi-Scale Neural Audio Codec.* — Multi-scale quantization assigning codebooks to different temporal resolutions.
+- Kyuutai Lab. (2024). *Moshi: A Speech-Text Foundation Model for Real-Time Dialogue.* — Mimi codec with semantic-acoustic split, WavLM distillation for codebook 0.
+- Zhang, D., et al. (2023). *SpeechTokenizer: Unified Speech Tokenizer for Speech Language Models.* arXiv:2308.16692. — Semantic distillation into codebook 0, acoustic codebooks 1–7.
+- Chen, S., et al. (2021). *WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing.* arXiv:2110.13900. — The teacher model used in semantic codec distillation.

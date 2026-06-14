@@ -260,10 +260,90 @@ The simulation produces a win matrix where Model B wins most matchups on the mou
 
 ## Use It
 
+Cosine similarity in a shared embedding space — the mechanism behind CLIP Score — is the same mechanism behind ICP fit scoring. When you represent a prospect's firmographic and technographic attributes as a vector and your ICP definition as another vector in the same space, the cosine similarity between them tells you how well that prospect aligns with your ideal profile. This is not an analogy: it is the same math, applied to a different pair of vectors.
+
 The evaluation triad maps directly to how you score and qualify in a GTM system. In Zone 08 (vector databases, retrieval), your CRM functions as a retrieval system — you query it to find prospects that match your ICP, and you need metrics to know whether the retrieved results are any good. FID is the population-level signal: just as FID measures whether your generated distribution matches a reference distribution, you can measure whether your CRM population matches your ICP distribution. If your CRM skews toward companies with 10 employees when your ICP is 500+ employees, that is a distributional mismatch — the same class of error FID detects, applied to a different feature space. [CITATION NEEDED — concept: mapping FID distributional distance to ICP fit scoring in CRM systems]
 
 CLIP Score is the pair-level semantic alignment check, and this is where retrieval meets scoring. When you retrieve a prospect from your CRM and generate a personalized outbound message, you need to know: does the message actually align with the prospect's context? CLIP measures cosine similarity between a text embedding and an image embedding; the GTM analog measures cosine similarity between your message embedding and the prospect's attribute embedding (firmographics, technographics, intent signals). A high score means your message semantically matches the prospect's profile. A low score means you sent a generic message that could apply to anyone — the equivalent of a generated image that is technically valid but does not match the prompt. This is the same mechanism: shared embedding space, cosine similarity, threshold for accept/reject. [CITATION NEEDED — concept: CLIP score cosine similarity applied to message-prospect semantic alignment scoring]
 
 Human preference is your pipeline conversion data — the ground truth that neither population metrics nor alignment scores can substitute for. Just as human preference studies reveal that humans prefer images that FID and CLIP cannot distinguish, conversion data reveals that prospects respond to messages that semantic alignment scores cannot predict. A message with a perfect CLIP-score analog (every keyword matches) may convert worse than a message with a lower score but better tone, timing, or social proof. The lesson from generative AI evaluation applies directly: you need all three signals. Population-level fit (does this segment match ICP?), pair-level alignment (does this message match this prospect?), and conversion ground truth (did it actually work?). Reporting only one is the GTM equivalent of citing FID without CLIP Score or human eval — you are hiding a failure mode. [CITATION NEEDED — concept: multi-metric evaluation frameworks for outbound sequence optimization]
 
-The practical workflow mirrors what generative AI teams do: compute population-level metrics continuously (cheap, automated), compute pair-level alignment scores on every generated output (cheap, automated), and run human-preference-style A/B
+The practical workflow mirrors what generative AI teams do: compute population-level metrics continuously (cheap, automated), compute pair-level alignment scores on every generated output (cheap, automated), and run human-preference-style A/B tests on a rotated sample to confirm that the cheap metrics correlate with actual conversion data. If the CLIP-score analog says a message is a 0.95 match but the A/B test shows no lift over a control, your embedding model is miscalibrated for your audience — the same diagnostic you would run if CLIP Score ranked images in an order that humans disagreed with.
+
+The code below implements the pair-level signal — the CLIP analog — using cosine similarity between an ICP vector and prospect attribute vectors. This is the mechanism you would deploy inside a scoring node to decide whether a prospect qualifies for personalized outreach or gets routed to a generic nurture sequence.
+
+```python
+import numpy as np
+
+icp_vector = np.array([0.92, 0.85, 0.78, 0.30, 0.88])
+icp_norm = icp_vector / np.linalg.norm(icp_vector)
+
+crm = {
+    "Northwind Trade":  np.array([0.88, 0.80, 0.75, 0.22, 0.90]),
+    "Contoso Ltd":      np.array([0.35, 0.15, 0.40, 0.72, 0.25]),
+    "Fabrikam Inc":     np.array([0.72, 0.91, 0.68, 0.38, 0.82]),
+    "Tailspin Toys":    np.array([0.20, 0.10, 0.30, 0.85, 0.15]),
+}
+
+conversions = {"Northwind Trade": 1, "Contoso Ltd": 0, "Fabrikam Inc": 1, "Tailspin Toys": 0}
+threshold = 0.97
+
+print("ICP Fit Score — cosine similarity in attribute space\n")
+print(f"{'Score':>8}  {'Prospect':<18} {'Verdict':<12} {'Converted':<10}")
+print("-" * 52)
+
+correct = 0
+for name, attrs in crm.items():
+    attrs_norm = attrs / np.linalg.norm(attrs)
+    score = float(icp_norm @ attrs_norm)
+    qualified = score >= threshold
+    converted = conversions[name]
+    verdict = "QUALIFY" if qualified else "DISQUALIFY"
+    agreed = (qualified == bool(converted))
+    correct += agreed
+    print(f"{score:>8.4f}  {name:<18} {verdict:<12} {'yes' if converted else 'no':<10}")
+
+print(f"\nAgreement with conversion ground truth: {correct}/{len(crm)}")
+```
+
+Run it. The cosine scores rank Northwind and Fabrikam above Contoso and Tailspin. With the threshold at 0.97, the qualifier flags the two prospects that actually converted and rejects the two that did not. That is the happy path. Now lower the threshold to 0.90 and rerun — Contoso gets qualified despite not converting, and agreement drops to 2/4. The threshold is your tuning knob, and conversion data is the ground truth that calibrates it. Without all three layers — population check (are these the right companies to begin with?), pair-level score (does each prospect match ICP?), and conversion ground truth (did the score predict reality?) — you are optimizing blind.
+
+## Exercises
+
+### Exercise 1 — Metric Failure Mode Diagnosis (Medium)
+
+You are given two model checkpoints. Model A produces FID 12.4 and mean CLIP Score 0.31 on your test set. Model B produces FID 18.7 and mean CLIP Score 0.28. A human preference study shows humans prefer Model B's outputs 64% of the time.
+
+**Task:** Write a 3-paragraph analysis explaining (1) what each metric is telling you, (2) why the metrics disagree with human preference, and (3) which model you would ship and what additional evaluation you would run before making the decision final. Be specific about which failure mode each metric exhibits — use the terms from the Concept section.
+
+### Exercise 2 — Multi-Metric Evaluation Pipeline Design (Hard)
+
+Design an evaluation pipeline for a text-to-image model that a team plans to deploy in production. Your pipeline specification must include:
+
+1. **Sample sizes** for FID, CLIP Score, and human preference, with justification for each based on the statistical properties discussed (bias at low sample counts, noise in human ratings).
+2. **Decision criteria**: what combination of metric results triggers a ship / hold / rollback decision. Express this as a decision table with thresholds.
+3. **Cadence**: which metrics run on every training checkpoint, which run nightly, which run weekly. Justify the cadence based on cost and signal latency.
+4. **One scenario** where your pipeline would produce a wrong ship decision and one where it would produce a wrong hold decision. For each, explain which metric failed and what a human reviewer would catch that the pipeline missed.
+
+Write the specification as a structured document (not code). The goal is to demonstrate that you can reason about metric interactions and failure modes in a way that a team lead would trust.
+
+## Key Terms
+
+- **FID (Fréchet Inception Distance):** Population-level metric that extracts Inception-v3 features from two image sets, fits a Gaussian to each, and computes the Fréchet distance between them. Lower is better; requires 10k+ samples and a fixed reference set.
+- **CLIP Score:** Pair-level metric measuring cosine similarity between a text embedding and an image embedding in CLIP's shared space. Higher means better prompt-image alignment. Captures semantics, not aesthetics.
+- **Human Preference:** Ground-truth evaluation via pairwise forced-choice comparison, aggregated to win rates or Elo ratings using a Bradley-Terry model. Captures subjective quality but is expensive, slow, and noisy.
+- **Fréchet Distance:** Distance between two multivariate Gaussian distributions, combining mean shift (`||μ_r − μ_g||²`) and covariance difference (`Tr(Σ_r + Σ_g − 2·(Σ_r·Σ_g)^½)`) into a scalar.
+- **Cosine Similarity:** Dot product of L2-normalized vectors. Measures directional alignment in a vector space, independent of magnitude. Range: [−1, 1]; in CLIP embeddings, typically [0.1, 0.4].
+- **Bradley-Terry Model:** Probabilistic model for pairwise comparisons where P(A beats B) = q_A / (q_A + q_B), with q being latent quality parameters. Elo and win rates are derived from it.
+- **Inception-v3 Feature Space:** The 2048-dimensional representation from the penultimate fully-connected layer of a pretrained Inception-v3 classifier. The de facto standard feature space for FID computation.
+- **Win Rate:** The fraction of pairwise comparisons a model wins against all opponents. Computed from a forced-choice protocol; reported as a percentage or Elo delta.
+
+## Sources
+
+- Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., & Hochreiter, S. (2017). GANs Trained by a Two Time-Scale Update Rule Converge to a Local Nash Equilibrium. *Advances in Neural Information Processing Systems (NeurIPS) 30*. — Introduces FID as a replacement for Inception Score, with analysis of sample-size bias.
+- Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., & Sutskever, I. (2021). Learning Transferable Visual Models From Natural Language Supervision. *Proceedings of the 38th International Conference on Machine Learning (ICML)*. — Introduces CLIP and the shared image-text embedding space that CLIP Score exploits.
+- Salimans, T., Goodfellow, I., Zaremba, W., Cheung, V., Radford, A., & Chen, X. (2016). Improved Techniques for Training GANs. *Advances in Neural Information Processing Systems (NeurIPS) 29*. — Introduces Inception Score, the predecessor metric whose limitations motivated FID.
+- Chiang, W. L., Zheng, L., Sheng, Y., Angelopoulos, A. N., Li, T., Li, D., Zhang, H., Zhu, B., Jordan, M., Gonzalez, J. E., & Stoica, I. (2024). Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference. *arXiv:2403.04132*. — Reference implementation of pairwise human preference protocols with Bradley-Terry aggregation; methodology transfers to image evaluation. [CITATION NEEDED — concept: Bradley-Terry pairwise comparison applied to image generation leaderboards]
+- [CITATION NEEDED — concept: mapping FID distributional distance to ICP fit scoring in CRM systems]
+- [CITATION NEEDED — concept: CLIP score cosine similarity applied to message-prospect semantic alignment scoring]
+- [CITATION NEEDED — concept: multi-metric evaluation frameworks for outbound sequence optimization]

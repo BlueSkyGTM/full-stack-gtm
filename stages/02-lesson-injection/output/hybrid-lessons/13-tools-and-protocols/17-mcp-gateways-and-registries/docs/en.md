@@ -273,4 +273,94 @@ A registry lets you catalog which MCP servers expose which enrichment APIs. Each
 
 A gateway lets you rotate API keys without touching agent configs. When People Data Labs issues a new key, you update one environment variable in the gateway's config and every agent picks it up on the next call — no redeploy, no config drift. This is the same credential centralization pattern that Zone 03 (Enrichment) and Zone 04 (Activation) infrastructure requires at scale: the gateway becomes the single credential holder, and agents authenticate to the gateway via OAuth 2.1, never seeing the upstream API keys.
 
-The rate limiting capability maps to a concrete GTM pain point. People Data Labs and Hunter both enforce monthly API quotas
+The rate limiting capability maps to a concrete GTM pain point. People Data Labs and Hunter both enforce monthly API quotas — typically tiered by plan — and a single misconfigured agent can exhaust an entire month's allocation in hours. Without a gateway, you discover this when the API starts returning 429s and every enrichment waterfall downstream silently fails. With a gateway, the limit is enforced at the proxy: every `tools/call` tagged `enrichment` increments a shared counter, and calls that would exceed the configured threshold are rejected before the upstream API is ever contacted. The agent gets a structured error it can handle (fall back to a different provider, queue the request, surface the limit to the operator) instead of a cryptic HTTP 429 with no context about which caller caused it.
+
+This is the enrichment waterfall governance pattern for Zone 03 — the gateway becomes the place where provider fallback logic, quota tracking, and cost attribution live, rather than being reimplemented in every agent or every Clay table.
+
+The runnable slice below extends the `MCPGateway` with tag-based rate limiting, then simulates an SDR bot hitting the enrichment quota mid-batch. The AI mechanism is **gateway-intercepted JSON-RPC policy enforcement**: the proxy inspects every `tools/call` against a sliding-window counter keyed by tool tag, and short-circuits the request before any backend server is contacted.
+
+```python
+import time
+from collections import defaultdict
+
+class RateLimitedGateway(MCPGateway):
+    def __init__(self, registry, limits, window_seconds=3600):
+        super().__init__(registry)
+        self.limits = limits
+        self.window = window_seconds
+        self.calls = defaultdict(list)
+
+    def _check_rate(self, tag):
+        now = time.time()
+        self.calls[tag] = [t for t in self.calls[tag] if now - t < self.window]
+        return len(self.calls[tag]) < self.limits.get(tag, float("inf"))
+
+    def _call(self, client_id, params):
+        tool_name = params.get("name")
+        resolved = self.registry.resolve_tool(tool_name)
+        if not resolved:
+            return super()._call(client_id, params)
+        tag = resolved.get("tags", "default")
+        if not self._check_rate(tag):
+            limit = self.limits[tag]
+            msg = f"rate_limit: tag '{tag}' cap={limit}/hr exceeded"
+            print(f"[GATEWAY] THROTTLE {client_id}: {msg}")
+            self._log(client_id, "tools/call", tool=tool_name, status="throttled", reason=msg)
+            return {"error": msg, "retry_after": self.window}
+        self.calls[tag].append(time.time())
+        return super()._call(client_id, params)
+
+rl_gateway = RateLimitedGateway(registry, limits={"enrichment": 3, "activation": 10})
+
+for i in range(5):
+    r = rl_gateway.handle(
+        "sdr-bot-01",
+        "tools/call",
+        {"name": "enrich_person", "arguments": {"email": f"prospect{i}@acme.com"}}
+    )
+    status = "OK" if "result" in r else f"BLOCKED: {r.get('error', '')[:50]}"
+    print(f"  enrichment call {i+1}: {status}")
+
+rl_gateway.print_audit()
+```
+
+Run this against the registry from Build It and you will see calls 1–3 route successfully to the People Data Labs backend, then call 4 hits the enrichment cap and returns a structured error with `retry_after`. Call 5 is blocked at the gateway — no backend was contacted, no API quota consumed. The audit log shows the transition from `status=ok` to `status=throttled` with the exact reason. That is the governance surface: one place where policy is defined, one place where it is enforced, one log where it is recorded.
+
+## Exercises
+
+### Exercise 1 — Per-Client Quota Isolation (Medium)
+
+The rate limiter above uses a single global counter per tag, so one agent's traffic counts against every other agent's quota. Modify `RateLimitedGateway` so the sliding-window counter is keyed by `(client_id, tag)` instead of just `tag`. Each agent gets its own allocation. Then add a second tier: a global cap per tag that applies across all clients combined, so individual agents cannot collectively exhaust the upstream provider's monthly quota.
+
+**Verify:** Register a fourth tool, spawn two simulated clients (`sdr-bot-01`, `sdr-bot-02`), and show that each can make calls up to the per-client limit independently, but that the global cap eventually blocks both once their combined usage crosses the threshold. Print the audit log and confirm the `reason` field distinguishes per-client throttling from global throttling.
+
+### Exercise 2 — Schema Drift Detection (Hard)
+
+The registry stores a `schema_hash` for each tool, but the gateway never checks it. In production, an upstream MCP server can change its tool's input schema (rename a parameter, add a required field, change a type) without notice, and agents that cached the old schema will send malformed requests.
+
+Add a `verify_schema` method to the gateway that runs before `_call` forwards to the backend. The method takes the tool name and the caller's arguments, fetches the expected schema from the registry, hashes the caller's arguments using the same SHA-256 scheme from Build It, and compares. If the caller's argument keys do not match the schema's declared parameter list, reject the call with a `schema_drift` error before the backend is contacted.
+
+Then simulate drift: re-register `enrich_person` with a schema that expects `["email", "company_domain"]` (the upstream added a required field), and show that an agent still sending only `{"email": "..."}` gets a structured rejection explaining which parameters are missing. Log the drift event separately from normal rejections so operators can distinguish "the caller made a mistake" from "the upstream changed."
+
+**Verify:** Two calls to the same tool — one with the old schema, one with the new — produce different outcomes (reject vs. forward), and the audit log tags the rejection with `schema_drift` rather than `rejected`.
+
+## Key Terms
+
+- **MCP Registry** — A service catalog storing server metadata, tool schemas, health status, and ownership. The Official MCP Registry uses reverse-DNS namespace verification (`com.example.server`) to prevent naming collisions across publishers.
+- **MCP Gateway** — A proxy layer between MCP clients and backend servers handling authentication (OAuth 2.1), authorization (RBAC per tool/server), rate limiting, and audit logging. Clients authenticate to the gateway, not to individual backends.
+- **Router** — A composition layer that merges multiple backend MCP servers behind a single endpoint. The client sees one unified `tools/list` and the router resolves `tools/call` to the owning backend via the registry.
+- **Control Plane** — The collective infrastructure (registry + gateway + router) that governs how MCP tool calls are discovered, authenticated, routed, and audited. Analogous to an API gateway in microservice architectures.
+- **N+1 Server Problem** — The combinatorial explosion that occurs when each of N agents independently manages connections to M MCP servers, producing N×M processes with duplicated credentials, no shared rate limiting, and no central visibility.
+- **Schema Hash** — A SHA-256 digest of a tool's declared input schema, stored in the registry. Used to detect schema drift when an upstream server changes its tool definition without notification.
+- **Metaregistry** — A community aggregation service (Glama, Smithery, MCP.so, etc.) that lists MCP servers for discovery but does not enforce the namespace verification or curation standards of the Official MCP Registry.
+
+## Sources
+
+- Model Context Protocol Specification — https://modelcontextprotocol.io/specification
+- MCP Registry (Official) — https://github.com/modelcontextprotocol/registry
+- OAuth 2.1 Draft — https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/
+- Kong AI Gateway — https://konghq.com/products/kong-ai-gateway
+- Envoy AI Gateway — https://github.com/envoyproxy/ai-gateway
+- IBM ContextForge (Evozign) — [CITATION NEEDED — concept: IBM ContextForge MCP gateway documentation URL]
+- Cloudflare MCP Portals — [CITATION NEEDED — concept: Cloudflare MCP Portals official documentation URL]
+- 80/20 GTM Engineering Playbook, Zones 03–04 (Enrichment & Activation infrastructure) — [CITATION NEEDED — concept: 80/20 GTM Engineering Handbook enrichment waterfall governance section]

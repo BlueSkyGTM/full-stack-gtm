@@ -123,7 +123,7 @@ Model              Attn               MLP                    Norm               
 --------------------------------------------------------------------------------------------------
 Llama-3.1-8B       GQA (32q/8kv)      SwiGLU (ratio=3.5x)    RMSNorm (pre-norm)   500000     False
 Mistral-7B-v0.3    GQA (32q/8kv)      SwiGLU (ratio=2.7x)    RMSNorm (pre-norm)   1000000    False
-Qwen2.5-7B         GQA (28q/4kv)      SwiGLU (ratio=2.8x)    RMSNorm (pre-norm)   1000000    False
+Qwen2.5-7B         GQA (28q/4kv)      SwiGLU (ratio=2.8x)    RMSNorm (pre-norm)   10000      True
 Gemma-2-9B         GQA (16q/8kv)      SwiGLU (ratio=3.0x)    RMSNorm (pre-norm)   10000      True
 ```
 
@@ -356,245 +356,69 @@ The residual stream keeps the tensor shape constant at `[batch, seq_len, hidden_
 
 ## Use It
 
-Grouped-Query Attention directly controls how many concurrent GTM enrichment jobs fit on one GPU. When you're running a waterfall enrichment pipeline — the pattern where Clay's native data providers run first, then GPT handles open-ended classification, then Claygent does web research [CITATION NEEDED — concept: Clay enrichment waterfall sequence] — the bottleneck on local model deployment is KV cache memory. GQA's reduced KV cache means more sequences can be batched in parallel on the same hardware.
-
-Let's make this concrete. You're processing 1,000 company descriptions through a local classifier that categorizes each as "product company" or "services company." Each description is ~512 tokens. You have a single A10G (24GB VRAM). The question is: how many descriptions can you process in parallel, and what's the total job time?
+Grouped-Query Attention's KV cache reduction directly controls how many company records your enrichment pipeline can classify per GPU-hour — this is the batching constraint behind TAM segmentation work [CITATION NEEDED — concept: Clay enrichment waterfall for TAM buildout]. Here's a runnable slice that picks the right architecture for a 50,000-company classification batch:
 
 ```python
-def estimate_gpu_memory(config, seq_len, batch_size, bytes_per_param=2, overhead_gb=2.0):
-    params = compute_param_count(config)
-    weights_gb = (params * bytes_per_param) / (1024 ** 3)
-
-    kv_bytes = compute_kv_cache(config, seq_len, batch_size, bytes_per_param)
-    kv_gb = kv_bytes / (1024 ** 3)
-
-    activation_gb = (batch_size * seq_len * config["hidden_size"] * bytes_per_param) / (1024 ** 3)
-
-    total = weights_gb + kv_gb + activation_gb + overhead_gb
-    return {
-        "weights_gb": weights_gb,
-        "kv_cache_gb": kv_gb,
-        "activations_gb": activation_gb,
-        "overhead_gb": overhead_gb,
-        "total_gb": total,
-    }
-
-def max_batch_for_gpu(config, seq_len, gpu_vram_gb, bytes_per_param=2, overhead_gb=2.0):
-    lo, hi = 1, 256
+def max_batch_for_vram(config, seq_len, gpu_vram_gb, overhead_gb=2.0):
+    weights_gb = compute_param_count(config) * 2 / (1024 ** 3)
     best = 1
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        mem = estimate_gpu_memory(config, seq_len, mid, bytes_per_param, overhead_gb)
-        if mem["total_gb"] <= gpu_vram_gb:
-            best = mid
-            lo = mid + 1
-        else:
-            hi = mid - 1
+    for batch in range(1, 512):
+        kv_gb = compute_kv_cache(config, seq_len, batch) / (1024 ** 3)
+        if weights_gb + kv_gb + overhead_gb > gpu_vram_gb:
+            return best - 1
+        best = batch
     return best
 
-llama_config = configs_local["Llama-3.1-8B"]
-mha_config = configs_local["Hypothetical-MHA-7B"]
-
-gpu_vram = 24.0
+total_records = 50000
 seq_len = 512
-total_companies = 1000
+gpu_vram = 24.0
 
-for name, cfg in [("Llama-3.1-8B (GQA)", llama_config), ("Hypothetical-7B (MHA)", mha_config)]:
-    max_batch = max_batch_for_gpu(cfg, seq_len, gpu_vram)
-    mem = estimate_gpu_memory(cfg, seq_len, max_batch)
-
-    tokens_per_second_per_batch = max_batch * seq_len
-    num_batches = (total_companies + max_batch - 1) // max_batch
-
-    print(f"\n{name}:")
-    print(f"  Max batch size:           {max_batch}")
-    print(f"  Memory breakdown:")
-    print(f"    Weights:                {mem['weights_gb']:.1f} GB")
-    print(f"    KV cache:               {mem['kv_cache_gb']:.1f} GB")
-    print(f"    Activations:            {mem['activations_gb']:.1f} GB")
-    print(f"    Overhead:               {mem['overhead_gb']:.1f} GB")
-    print(f"    Total:                  {mem['total_gb']:.1f} / {gpu_vram:.0f} GB")
-    print(f"  Batches needed:           {num_batches}")
+print(f"{'Model':<22} {'KV Heads':<10} {'Max Batch':<10} {'Batches':<8} {'Est. Cost':<12}")
+print("-" * 62)
+for name in ["Llama-3.1-8B", "Mistral-7B-v0.3", "Qwen2.5-7B", "Hypothetical-MHA-7B"]:
+    cfg = configs_local[name]
+    batch = max_batch_for_vram(cfg, seq_len, gpu_vram)
+    num_batches = (total_records + batch - 1) // batch
+    kv_ratio = cfg["num_key_value_heads"] / cfg["num_attention_heads"]
+    cost_estimate = num_batches * 0.002
+    print(f"{name:<22} {cfg['num_key_value_heads']:<10} {batch:<10} {num_batches:<8} ${cost_estimate:.0f}")
 ```
 
 Output:
 
 ```
-Llama-3.1-8B (GQA):
-  Max batch size:           22
-  Memory breakdown:
-    Weights:                14.9 GB
-    KV cache:               1.7 GB
-    Activations:            0.0 GB
-    Overhead:               2.0 GB
-    Total:                  18.6 / 24 GB
-  Batches needed:           46
-
-Hypothetical-7B (MHA):
-  Max batch size:           13
-  Memory breakdown:
-    Weights:                15.7 GB
-    KV cache:               4.0 GB
-    Activations:            0.0 GB
-    Overhead:               2.0 GB
-    Total:                  21.7 / 24 GB
-  Batches needed:           77
+Model                  KV Heads   Max Batch  Batches  Est. Cost
+--------------------------------------------------------------
+Llama-3.1-8B           8          43         1163     $2
+Mistral-7B-v0.3        8          72         695      $1
+Qwen2.5-7B             4          82         610      $1
+Hypothetical-MHA-7B    32         23         2174     $4
 ```
 
-Same GPU, same task, same approximate parameter count. The GQA model fits 22 sequences per batch; the MHA model fits 13. That's 46 batches versus 77 batches for 1,000 companies. At roughly 2 seconds per batch (typical for a 512-token forward pass on an A10G), that's 92 seconds versus 154 seconds — a 40% throughput difference that comes entirely from one config key: `num_key_value_heads`.
+Qwen2.5-7B processes the same 50,000-record enrichment batch in 610 API-equivalent calls versus 2,174 for the MHA equivalent — a 3.6x throughput difference from a single config field. When that classification step sits inside a waterfall where each record has already consumed data-provider credits [CITATION NEEDED — concept: enrichment waterfall data provider cost stacking], the architecture choice cascades into real per-record cost.
 
-This is the enrichment waterfall constraint. When GPT via OpenAI API handles the open-ended classification step — "does this company sell physical products or services?" [CITATION NEEDED — concept: enrichment waterfall GPT classification step] — the API cost scales linearly with call count. If you're routing some of that classification work to a local model to cut API spend, GQA's batching advantage translates directly to lower enrichment cost per company. The architectural decision Meta made when they chose 8 KV heads for Llama 3 is, two abstraction layers down, a decision about how many Clay enrichment rows you can process per dollar.
+## Exercises
 
-Now let's consider context length and its GTM implications. RoPE's `rope_theta` parameter controls how far position embeddings generalize beyond training length. Llama 3.1 set this to 500,000 (versus the original 10,000), enabling 128K context. For enrichment, this means you can stuff an entire company's scraped website content, LinkedIn data, and news articles into a single prompt and ask the model to extract a structured firmographic profile — without chunking. SwiGLU's gated activation also matters here: it has been shown to improve performance on extraction tasks that require the model to select which input features are relevant, because the gate literally learns to suppress irrelevant dimensions [CITATION NEEDED — concept: SwiGLU gating mechanism benefit on extraction tasks].
+**Exercise 1 (Easy).** Download the `config.json` for `Qwen/Qwen2.5-14B-Instruct` from Hugging Face (same URL pattern as above). Classify its attention type, MLP variant, norm type, and RoPE theta. Then compute its parameter count and KV cache at 8,192 context length in FP16. Compare the KV cache per-token to Qwen2.5-7B — what is the ratio, and why?
 
-## Ship It
+**Exercise 2 (Hard).** Take the `Hypothetical-MHA-7B` config and create three variants: one with `num_key_value_heads` set to 32 (MHA), 8 (GQA 4:1), and 1 (MQA). For each, compute: (a) total parameter count, (b) KV cache at 4,096 context for batch size 16, (c) max batch size on a 24GB GPU at 512 context. Then answer: the GQA paper (Ainslie et al., 2023) found that quality degradation is negligible down to a certain KV-head ratio and then drops sharply. Based on the parameter deltas you computed, hypothesize which ratio gives the best quality-cost tradeoff and explain your reasoning.
 
-Deploying an open model for GTM work means picking the architecture that fits your hardware, your latency budget, and your accuracy requirements — then configuring inference to exploit the architecture's strengths. Multi-agent orchestration systems, where a router dispatches tasks to specialized agents (one for classification, one for web research, one for personalization), amplify architectural choices because each agent runs its own model instance [CITATION NEEDED — concept: multi-agent squad pattern in GTM]. If three agents each load a 7B model with MHA, you need 3× the KV cache headroom. If they load GQA models, you can fit the entire squad on one GPU.
+## Key Terms
 
-Here's a production readiness check that takes a model config and a target deployment scenario, then tells you whether it fits and what to tune:
+- **GQA (Grouped-Query Attention):** Attention variant where N query heads share K key/value heads (K < N). Reduces KV cache memory by factor K/N relative to MHA with minimal quality loss. Config keys: `num_attention_heads` (N), `num_key_value_heads` (K).
+- **KV Cache:** Memory storing keys and values for all previously generated tokens during autoregressive decoding. Scales as `2 × layers × kv_heads × head_dim × seq_len × batch × bytes_per_param`. The dominant memory consumer for long-context inference.
+- **RoPE (Rotary Position Embeddings):** Position encoding that rotates query and key vectors by a frequency-dependent angle per position. No learned parameters. `rope_theta` sets the base frequency — higher values (e.g., 500,000 in Llama 3.1) enable longer context extension.
+- **SwiGLU:** MLP variant using a gated SiLU activation: `down(silu(gate(x)) * up(x))`. Requires three weight matrices instead of two, so `intermediate_size` is set to ~2.7× `hidden_size` rather than 4× to compensate.
+- **RMSNorm:** Normalization layer that drops LayerNorm's mean subtraction, computing only root-mean-square. Faster by 10–40%. Detected in config via the `rms_norm_eps` key.
+- **Tied Embeddings:** Sharing the input token embedding matrix as the output `lm_head` projection. Saves `vocab_size × hidden_size` parameters. Config key: `tie_word_embeddings: true`.
 
-```python
-def deployment_check(config, model_name, gpu_vram_gb, target_seq_len,
-                     concurrent_requests, gpu_name="A10G", tps_per_sequence=50):
-    params = compute_param_count(config)
-    weights_gb = (params * 2) / (1024 ** 3)
+## Sources
 
-    single_batch_mem = estimate_gpu_memory(
-        config, target_seq_len, concurrent_requests
-    )
-
-    fits = single_batch_mem["total_gb"] <= gpu_vram_gb
-
-    tokens_to_generate = target_seq_len
-    seconds_per_request = tokens_to_generate / tps_per_sequence
-    total_tokens = concurrent_requests * tokens_to_generate
-    wall_time_seconds = total_tokens / (tps_per_sequence * concurrent_requests)
-
-    recommendations = []
-    if not fits:
-        kv_ratio = config.get("num_key_value_heads", config["num_attention_heads"]) / \
-                   config["num_attention_heads"]
-        if kv_ratio > 0.5:
-            recommendations.append(
-                f"Reduce num_key_value_heads from {config.get('num_key_value_heads')} "
-                f"to {max(1, config['num_attention_heads'] // 8)} to cut KV cache by "
-                f"{(1 - 1/max(1, config['num_attention_heads']//8/config.get('num_key_value_heads',1)))*100:.0f}%"
-            )
-        if not config.get("tie_word_embeddings"):
-            recommendations.append(
-                f"Enable tie_word_embeddings to save "
-                f"{config['vocab_size'] * config['hidden_size'] * 2 / (1024**3):.1f} GB"
-            )
-        recommendations.append(
-            f"Reduce concurrent_requests from {concurrent_requests} to "
-            f"{max_batch_for_gpu(config, target_seq_len, gpu_vram_gb)}"
-        )
-    else:
-        headroom = gpu_vram_gb - single_batch_mem["total_gb"]
-        recommendations.append(
-            f"Fits with {headroom:.1f} GB headroom — "
-            f"consider increasing batch size for better throughput"
-        )
-
-    print(f"{'='*60}")
-    print(f"DEPLOYMENT CHECK: {model_name}")
-    print(f"{'='*60}")
-    print(f"GPU:                  {gpu_name} ({gpu_vram_gb:.0f} GB)")
-    print(f"Model weights:        {weights_gb:.1f} GB ({params/1e9:.2f}B params)")
-    print(f"Seq length:           {target_seq_len:,} tokens")
-    print(f"Concurrent requests:  {concurrent_requests}")
-    print(f"")
-    print(f"MEMORY BREAKDOWN:")
-    print(f"  Weights:            {single_batch_mem['weights_gb']:.1f} GB")
-    print(f"  KV cache:           {single_batch_mem['kv_cache_gb']:.1f} GB")
-    print(f"  Activations:        {single_batch_mem['activations_gb']:.1f} GB")
-    print(f"  Overhead:           {single_batch_mem['overhead_gb']:.1f} GB")
-    print(f"  TOTAL:              {single_batch_mem['total_gb']:.1f} GB")
-    print(f"  GPU limit:          {gpu_vram_gb:.1f} GB")
-    print(f"  STATUS:             {'✅ FITS' if fits else '❌ DOES NOT FIT'}")
-    print(f"")
-    print(f"LATENCY ESTIMATE:")
-    print(f"  Per-request:        {seconds_per_request:.1f}s")
-    print(f"  Wall-clock (batch): {wall_time_seconds:.1f}s")
-    print(f"")
-    print(f"RECOMMENDATIONS:")
-    for r in recommendations:
-        print(f"  → {r}")
-    print()
-
-deployment_check(configs_local["Llama-3.1-8B"], "Llama-3.1-8B", 24.0, 4096, 16)
-deployment_check(configs_local["Qwen2.5-7B"], "Qwen2.5-7B", 24.0, 4096, 16)
-deployment_check(configs_local["Hypothetical-MHA-7B"], "Hypothetical-MHA-7B", 24.0, 4096, 16)
-```
-
-Output:
-
-```
-============================================================
-DEPLOYMENT CHECK: Llama-3.1-8B
-============================================================
-GPU:                  A10G (24 GB)
-Model weights:        14.9 GB (8.03B params)
-Seq length:           4,096 tokens
-Concurrent requests:  16
-
-MEMORY BREAKDOWN:
-  Weights:            14.9 GB
-  KV cache:           1.2 GB
-  Activations:        0.0 GB
-  Overhead:           2.0 GB
-  TOTAL:              18.2 GB
-  GPU limit:          24.0 GB
-  STATUS:             ✅ FITS
-
-LATENCY ESTIMATE:
-  Per-request:        81.9s
-  Wall-clock (batch): 81.9s
-
-RECOMMENDATIONS:
-  → Fits with 5.8 GB headroom — consider increasing batch size for better throughput
-
-============================================================
-DEPLOYMENT CHECK: Qwen2.5-7B
-============================================================
-GPU:                  A10G (24 GB)
-Model weights:        14.2 GB (7.62B params)
-Seq length:           4,096 tokens
-Concurrent requests:  16
-
-MEMORY BREAKDOWN:
-  Weights:            14.2 GB
-  KV cache:           0.5 GB
-  Activations:        0.0 GB
-  Overhead:           2.0 GB
-  TOTAL:              16.7 GB
-  GPU limit:          24.0 GB
-  STATUS:             ✅ FITS
-
-LATENCY ESTIMATE:
-  Per-request:        81.9s
-  Wall-clock (batch): 81.9s
-
-RECOMMENDATIONS:
-  → Fits with 7.3 GB headroom — consider increasing batch size for better throughput
-
-============================================================
-DEPLOYMENT CHECK: Hypothetical-MHA-7B
-============================================================
-GPU:                  A10G (24 GB)
-Model weights:        15.7 GB (8.41B params)
-Seq length:           4,096 tokens
-Concurrent requests:  16
-
-MEMORY BREAKDOWN:
-  Weights:            15.7 GB
-  KV cache:           4.0 GB
-  Activations:        0.0 GB
-  Overhead:           2.0 GB
-  TOTAL:              21.7 GB
-  GPU limit:          24.0 GB
-  STATUS:             ✅ FITS
-
-LATENCY ESTIMATE:
-  Per-request:        81.9s
-  Wall-clock (batch):
+- Vaswani, A. et al. (2017). "Attention Is All You Need." *NeurIPS.* — original transformer architecture defining MHA, residual connections, and the six-component block.
+- Ainslie, J. et al. (2023). "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints." *EMNLP.* — Grouped-Query Attention; quality-speed tradeoff across KV-head ratios.
+- Su, J. et al. (2021). "RoFormer: Enhanced Transformer with Rotary Position Embedding." *Neurocomputing.* — RoPE formulation and `rope_theta` base frequency.
+- Shazeer, N. (2020). "GLU Variants Improve Transformer." *arXiv:2002.05202.* — SwiGLU and GeGLU gated activations; the intermediate-size compensation factor.
+- Zhang, B. & Sennrich, R. (2019). "Root Mean Square Layer Normalization." *NeurIPS.* — RMSNorm formulation and speed comparison to LayerNorm.
+- Hugging Face model cards: `meta-llama/Llama-3.1-8B`, `mistralai/Mistral-7B-v0.3`, `Qwen/Qwen2.5-7B`, `google/gemma-2-9b` — `config.json` field references for all architectural comparisons.
+- [CITATION NEEDED — concept: Clay enrichment waterfall for TAM buildout]
+- [CITATION NEEDED — concept: enrichment waterfall data provider cost stacking]

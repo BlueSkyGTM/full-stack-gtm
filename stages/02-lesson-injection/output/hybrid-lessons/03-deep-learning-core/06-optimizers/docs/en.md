@@ -256,4 +256,84 @@ np.random.seed(42)
 n_samples = 800
 n_features = 20
 
-X = np.random.randn
+X = np.random.randn(n_samples, n_features)
+true_w = np.random.randn(n_features)
+logits = X @ true_w + 0.5 * np.random.randn(n_samples)
+y = (1 / (1 + np.exp(-logits)) > 0.5).astype(float)
+
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
+
+def bce_loss_and_grad(w, X, y):
+    p = sigmoid(X @ w)
+    eps = 1e-7
+    loss = -np.mean(y * np.log(p + eps) + (1 - y) * np.log(1 - p + eps))
+    grad = X.T @ (p - y) / len(y)
+    return loss, grad
+
+def train(optimizer_class, lr, n_steps=300, **kwargs):
+    w = np.zeros(n_features)
+    opt = optimizer_class([w], lr=lr, **kwargs)
+    losses = []
+    for _ in range(n_steps):
+        loss, grad = bce_loss_and_grad(opt.get_params()[0], X, y)
+        opt.step([grad])
+        losses.append(loss)
+    return losses, opt.get_params()[0]
+
+adam_losses, adam_w = train(Adam, lr=0.05)
+sgdm_losses, sgdm_w = train(SGD_Momentum, lr=0.5, momentum=0.9)
+adamw_losses, adamw_w = train(AdamW, lr=0.05, weight_decay=0.001)
+
+print(f"{'Optimizer':<28} {'Final Loss':<12} {'Accuracy':<10}")
+print("-" * 50)
+for name, losses, w in [("Adam (lr=0.05)", adam_losses, adam_w),
+                         ("SGD+Momentum (lr=0.5)", sgdm_losses, sgdm_w),
+                         ("AdamW (lr=0.05, wd=0.001)", adamw_losses, adamw_w)]:
+    acc = np.mean((sigmoid(X @ w) > 0.5).astype(float) == y)
+    print(f"{name:<28} {losses[-1]:<12.6f} {acc:<10.4f}")
+```
+
+Adam and AdamW land at similar accuracy, but AdamW's weight decay keeps the weight norms smaller — which means the classifier is less likely to overfit when you deploy it on new companies outside the training set. SGD+Momentum reaches comparable accuracy too, but only because you hand-tuned the learning rate to 10x Adam's. Change the random seed and that 10x ratio shifts, which is exactly the sensitivity problem Adam was designed to solve.
+
+This is the optimizer's role in a Signal Machine pipeline: not scoring leads, but ensuring the scoring model converges to weights that generalize. The features themselves come from upstream enrichment (company size, tech stack, hiring velocity) — this is Cluster 1.2, TAM Refinement & ICP Scoring. The optimizer is invisible to the end user, but it determines whether the ICP model trains in 30 seconds or 30 minutes, and whether it converges to a useful boundary or stalls in a saddle point halfway through.
+
+## Exercises
+
+### Exercise 1: Learning Rate Finder (Easy)
+
+Write a function that tests a single optimizer across exponentially-spaced learning rates on the lead-scoring data and reports which range produces stable convergence. Use `lrs = np.logspace(-4, 0, 20)` to generate 20 learning rates from 0.0001 to 1.0. For each LR, train Adam for 100 steps and record the final loss. Print a table showing LR, final loss, and whether training diverged (loss > initial loss). Identify the LR range where loss decreases monotonically — this is the stable zone for that optimizer on that dataset.
+
+### Exercise 2: Gradient Clipping for Spike Robustness (Hard)
+
+Real enrichment data contains outliers: a company with 50,000 employees next to companies with 50. These produce gradient spikes that cause Adam's second moment to explode, destabilizing training. Add a `clip_grad_norm` parameter to your Adam class that rescales the gradient if its L2 norm exceeds a threshold before the moment updates. Implement the rescaling as `grads = grads * min(1.0, max_norm / (np.linalg.norm(grads) + 1e-6))`. Then create a corrupted version of the lead-scoring dataset by adding 5 rows with feature values of 1000.0, train both clipped and unclipped Adam, and print a side-by-side comparison of final loss and accuracy. Report the step number where the unclipped version first produces a loss spike (loss increases by more than 2x over the previous step).
+
+## Key Terms
+
+- **SGD (Stochastic Gradient Descent):** Gradient descent using gradients computed on mini-batches rather than the full dataset. Same update rule as vanilla GD, but the stochastic gradient introduces noise that can help escape shallow local minima.
+
+- **Momentum:** An exponential moving average of past gradients that accelerates movement in consistent directions and damps oscillations in conflicting ones. Implemented as a velocity vector `v` that accumulates a fraction of each new gradient.
+
+- **First Moment (m):** In Adam, the exponentially decaying running average of the gradient. Plays the same role as momentum — it smooths noisy gradient directions over time.
+
+- **Second Moment (v):** In Adam, the exponentially decaying running average of squared gradients. Used to normalize each parameter's update: parameters with large recent gradients get smaller effective step sizes, and vice versa. This is the "adaptive" in adaptive learning rate.
+
+- **Bias Correction:** The terms `m̂ = m / (1 - β₁ᵗ)` and `v̂ = v / (1 - β₂ᵗ)` that undo the initialization bias of starting the moment estimates at zero. Without these, the first ~100 steps of Adam move too slowly because `m` and `v` are artificially small.
+
+- **Adam:** An optimizer that combines momentum (first moment) with per-parameter adaptive learning rates (second moment). The update is `w -= lr · m̂ / (√v̂ + ε)`, which scales each parameter's step by the inverse of its recent gradient magnitude.
+
+- **AdamW:** A variant of Adam that applies weight decay directly to the parameters (`w -= lr · wd · w`) rather than folding it into the gradient. This "decoupled" weight decay produces uniform regularization across all parameters, unlike standard Adam where the adaptive scaling distorts the regularization strength per parameter.
+
+- **Weight Decay:** L2 regularization applied by shrinking weights toward zero on each update step. Prevents overfitting by discouraging large weight values. The distinction between L2 regularization (added to gradient) and decoupled weight decay (applied to params directly) is what separates Adam from AdamW.
+
+## Sources
+
+1. Kingma, D.P. & Ba, J. (2014). "Adam: A Method for Stochastic Optimization." *arXiv preprint arXiv:1412.6980.* — Defines the Adam optimizer, including bias-corrected first and second moment estimates.
+
+2. Loshchilov, I. & Hutter, F. (2019). "Decoupled Weight Decay Regularization." *ICLR 2019.* arXiv:1711.05101. — Introduces AdamW, showing that decoupled weight decay outperforms L2 regularization when combined with adaptive learning rates.
+
+3. Rumelhart, D.E., Hinton, G.E. & Williams, R.J. (1986). "Learning representations by back-propagating errors." *Nature,* 321(6088), 533–536. — Original formulation of gradient-based learning with momentum.
+
+4. Sutskever, I., Martens, J., Dahl, G. & Hinton, G. (2013). "On the importance of initialization and momentum in deep learning." *ICML 2013.* — Systematic analysis of momentum's effect on convergence in deep networks, establishing the 0.9 default.
+
+5. Tieleman, T. & Hinton, G. (2012). "Lecture 6.5 — RMSProp." *Coursera: Neural Networks for Machine Learning.* — Introduces RMSProp, the per-parameter adaptive learning rate mechanism that Adam's second moment generalizes.

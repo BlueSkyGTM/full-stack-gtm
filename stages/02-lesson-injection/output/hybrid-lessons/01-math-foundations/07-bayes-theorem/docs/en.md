@@ -144,336 +144,90 @@ Two signals moved the account from 2% to 68%. This is how enrichment waterfalls 
 
 ## Use It
 
-This Bayesian update pattern is the scoring mechanism behind Zone 1 (ICP Fit) and Zone 2 (Signal Detection). A lead scoring model does not need to call itself Bayesian to implement this logic. Every enrichment tool that stacks signals — firmographic match, technographic data, intent signals, engagement metrics — applies some version of "prior plus evidence equals updated score." The question is whether they do it with calibrated probabilities or with arbitrary point values that have no relationship to actual conversion rates.
-
-The naive Bayes classifier applies this pattern at scale. "Naive" refers to one assumption: every signal is conditionally independent given the class label. In practice, this assumption is always violated — "Fortune 500 employee count" and "enterprise revenue band" are correlated, not independent. Despite the violation, naive Bayes works well for scoring because the correlations tend to push the score in the same direction, so the model overestimates confidence but ranks accounts correctly.
-
-[CITATION NEEDED — concept: specific enrichment tool (Clay, Apollo, 6sense) confirming use of Naive Bayes or Bayesian update for lead scoring internally]
-
-Let us build a naive Bayes classifier on a small synthetic dataset of accounts with firmographic and intent features, then evaluate it.
-
-```python
-import random
-random.seed(42)
-
-def generate_accounts(n=200):
-    accounts = []
-    for _ in range(n):
-        is_buyer = random.random() < 0.10
-        if is_buyer:
-            tier = "enterprise" if random.random() < 0.6 else "mid"
-            visits = random.choice([2, 3, 3, 4, 5, 6])
-            demo = random.random() < 0.55
-            competitor = random.random() < 0.3
-        else:
-            tier = "enterprise" if random.random() < 0.15 else "mid"
-            visits = random.choice([0, 0, 1, 1, 2, 3])
-            demo = random.random() < 0.08
-            competitor = random.random() < 0.1
-        accounts.append({
-            "tier": tier,
-            "pricing_visits": visits,
-            "demo_requested": demo,
-            "competitor_page": competitor,
-            "bought": is_buyer
-        })
-    return accounts
-
-accounts = generate_accounts()
-
-buyers = [a for a in accounts if a["bought"]]
-non_buyers = [a for a in accounts if not a["bought"]]
-
-p_buyer = len(buyers) / len(accounts)
-p_non_buyer = len(non_buyers) / len(accounts)
-
-def count_if(lst, condition):
-    return sum(1 for a in lst if condition(a))
-
-p_enterprise_given_buyer = count_if(buyers, lambda a: a["tier"] == "enterprise") / len(buyers)
-p_enterprise_given_non = count_if(non_buyers, lambda a: a["tier"] == "enterprise") / len(non_buyers)
-
-p_demo_given_buyer = count_if(buyers, lambda a: a["demo_requested"]) / len(buyers)
-p_demo_given_non = count_if(non_buyers, lambda a: a["demo_requested"]) / len(non_buyers)
-
-p_competitor_given_buyer = count_if(buyers, lambda a: a["competitor_page"]) / len(buyers)
-p_competitor_given_non = count_if(non_buyers, lambda a: a["competitor_page"]) / len(non_buyers)
-
-def avg_visits(lst):
-    return sum(a["pricing_visits"] for a in lst) / len(lst)
-
-avg_visits_buyers = avg_visits(buyers)
-avg_visits_non = avg_visits(non_buyers)
-
-print(f"Training data: {len(buyers)} buyers, {len(non_buyers)} non-buyers")
-print(f"P(buyer) = {p_buyer:.3f}")
-print(f"P(enterprise | buyer)     = {p_enterprise_given_buyer:.3f}  | non = {p_enterprise_given_non:.3f}")
-print(f"P(demo | buyer)           = {p_demo_given_buyer:.3f}  | non = {p_demo_given_non:.3f}")
-print(f"P(competitor | buyer)     = {p_competitor_given_buyer:.3f}  | non = {p_competitor_given_non:.3f}")
-print(f"Avg pricing visits | buyer= {avg_visits_buyers:.2f}  | non = {avg_visits_non:.2f}")
-```
-
-Output:
-```
-Training data: 19 buyers, 181 non-buyers
-P(buyer) = 0.095
-P(enterprise | buyer)     = 0.632  | non = 0.149
-P(demo | buyer)           = 0.579  | non = 0.077
-P(competitor | buyer)     = 0.316  | non = 0.094
-Avg pricing visits | buyer= 3.84  | non = 1.16
-```
-
-Now classify held-out accounts using naive Bayes. Each signal contributes a likelihood ratio, and we multiply them together (equivalent to sequential updating):
+Sequential Bayesian updating in log-odds space is the scoring mechanism behind enrichment waterfalls — Zone 1.2 (TAM Refinement & ICP Scoring). The script below scores five accounts across three signals and ranks them by posterior conversion probability.
 
 ```python
 import math
 
-def classify(account):
-    log_p_buyer = math.log(p_buyer)
-    log_p_non = math.log(p_non_buyer)
-
-    tier_enterprise = account["tier"] == "enterprise"
-    pe_b = p_enterprise_given_buyer if tier_enterprise else (1 - p_enterprise_given_buyer)
-    pe_n = p_enterprise_given_non if tier_enterprise else (1 - p_enterprise_given_non)
-    log_p_buyer += math.log(pe_b)
-    log_p_non += math.log(pe_n)
-
-    d = account["demo_requested"]
-    pd_b = p_demo_given_buyer if d else (1 - p_demo_given_buyer)
-    pd_n = p_demo_given_non if d else (1 - p_demo_given_non)
-    log_p_buyer += math.log(pd_b)
-    log_p_non += math.log(pd_n)
-
-    c = account["competitor_page"]
-    pc_b = p_competitor_given_buyer if c else (1 - p_competitor_given_buyer)
-    pc_n = p_competitor_given_non if c else (1 - p_competitor_given_non)
-    log_p_buyer += math.log(pc_b)
-    log_p_non += math.log(pc_n)
-
-    max_log = max(log_p_buyer, log_p_non)
-    exp_b = math.exp(log_p_buyer - max_log)
-    exp_n = math.exp(log_p_non - max_log)
-    prob_buyer = exp_b / (exp_b + exp_n)
-
-    return prob_buyer
-
-test_accounts = generate_accounts(n=100)
-
-threshold = 0.5
-tp = fp = tn = fn = 0
-
-for a in test_accounts:
-    score = classify(a)
-    predicted = score >= threshold
-    actual = a["bought"]
-    if predicted and actual:
-        tp += 1
-    elif predicted and not actual:
-        fp += 1
-    elif not predicted and not actual:
-        tn += 1
-    else:
-        fn += 1
-
-precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-
-print(f"True positives:  {tp}")
-print(f"False positives: {fp}")
-print(f"True negatives:  {tn}")
-print(f"False negatives: {fn}")
-print(f"Precision: {precision:.3f}")
-print(f"Recall:    {recall:.3f}")
-
-sample = test_accounts[:5]
-print("\nSample predictions:")
-for a in sample:
-    score = classify(a)
-    print(f"  tier={a['tier']:10s} visits={a['pricing_visits']} demo={a['demo_requested']} competitor={a['competitor_page']} -> P(buyer)={score:.3f}  actual={a['bought']}")
-```
-
-Output:
-```
-True positives:  8
-False positives: 2
-True negatives:  88
-False negatives: 2
-Precision: 0.800
-Recall:    0.800
-
-Sample predictions:
-  tier=mid        visits=1 demo=False competitor=False -> P(buyer)=0.003  actual=False
-  tier=mid        visits=0 demo=False competitor=False -> P(buyer)=0.001  actual=False
-  tier=mid        visits=1 demo=False competitor=False -> P(buyer)=0.003  actual=False
-  tier=mid        visits=2 demo=True competitor=False -> P(buyer)=0.083  actual=False
-  tier=enterprise visits=3 demo=True competitor=True -> P(buyer)=0.864  actual=True
-```
-
-We are using log-space addition instead of direct multiplication. This avoids numerical underflow when chaining many signals — the product of twenty small probabilities rounds to zero in floating point, but the sum of their logs does not. This is the same technique production scoring systems use when they stack dozens of enrichment attributes.
-
-The classifier uses a categorical model for tier (enterprise vs. mid), a Bernoulli model for demo_requested and competitor_page (binary signals), and we omitted pricing_visits from the classifier above for simplicity — extending it requires choosing a distribution for count data (Poisson or discretized bins). The naive assumption is that these features are independent given the label, which is false in practice (enterprise accounts request more demos) but produces usable rankings because the violations are monotonic.
-
-## Ship It
-
-Now build a command-line Bayesian lead scorer that takes a CSV of accounts with signals and outputs a ranked list with posterior conversion probabilities. This is the same pattern enrichment waterfalls use to stack signal confidence — each signal contributes a likelihood ratio, the product determines the final score, and you rank accounts by posterior.
-
-The script below is self-contained. It generates a sample CSV, loads signal configuration, applies sequential Bayesian updates, and writes scored output:
-
-```python
-import csv
-import json
-import math
-import os
-import random
-
-SIGNAL_CONFIG = {
-    "enterprise_tier": {
-        "p_given_buyer": 0.63,
-        "p_given_non_buyer": 0.15
-    },
-    "pricing_visits_2plus": {
-        "p_given_buyer": 0.78,
-        "p_given_non_buyer": 0.25
-    },
-    "demo_requested": {
-        "p_given_buyer": 0.58,
-        "p_given_non_buyer": 0.08
-    },
-    "competitor_page": {
-        "p_given_buyer": 0.32,
-        "p_given_non_buyer": 0.09
-    },
-    "job_change_signal": {
-        "p_given_buyer": 0.45,
-        "p_given_non_buyer": 0.18
-    }
+SIGNALS = {
+    "enterprise": {"p_buyer": 0.63, "p_non": 0.15},
+    "pricing_visit": {"p_buyer": 0.78, "p_non": 0.25},
+    "demo_request": {"p_buyer": 0.58, "p_non": 0.08},
 }
-
 BASE_PRIOR = 0.05
 
-def bayes_update(prior, p_e_true, p_e_false):
-    if prior >= 1.0:
-        return 1.0
-    if prior <= 0.0:
-        return 0.0
-    evidence = p_e_true * prior + p_e_false * (1 - prior)
-    if evidence == 0:
-        return 0.0
-    posterior = (p_e_true * prior) / evidence
-    return min(max(posterior, 0.0), 1.0)
+def score(signals_present):
+    log_odds = math.log(BASE_PRIOR / (1 - BASE_PRIOR))
+    for sig, present in signals_present.items():
+        cfg = SIGNALS[sig]
+        p_t = cfg["p_buyer"] if present else (1 - cfg["p_buyer"])
+        p_f = cfg["p_non"] if present else (1 - cfg["p_non"])
+        log_odds += math.log(p_t) - math.log(p_f)
+    return 1 / (1 + math.exp(-log_odds))
 
-def score_account(signals_present, prior=BASE_PRIOR):
-    posterior = prior
-    contributions = {}
-    for signal_name, present in signals_present.items():
-        if signal_name not in SIGNAL_CONFIG:
-            continue
-        cfg = SIGNAL_CONFIG[signal_name]
-        if present:
-            before = posterior
-            posterior = bayes_update(posterior, cfg["p_given_buyer"], cfg["p_given_non_buyer"])
-            contributions[signal_name] = posterior - before
-        else:
-            p_not_true = 1 - cfg["p_given_buyer"]
-            p_not_false = 1 - cfg["p_given_non_buyer"]
-            before = posterior
-            posterior = bayes_update(posterior, p_not_true, p_not_false)
-            contributions[signal_name] = posterior - before
-    return posterior, contributions
+accounts = [
+    ("Acme Corp", {"enterprise": True, "pricing_visit": True, "demo_request": True}),
+    ("Globex LLC", {"enterprise": False, "pricing_visit": True, "demo_request": False}),
+    ("Initech", {"enterprise": False, "pricing_visit": False, "demo_request": False}),
+    ("Umbrella", {"enterprise": True, "pricing_visit": False, "demo_request": True}),
+    ("Hooli", {"enterprise": True, "pricing_visit": True, "demo_request": False}),
+]
 
-def generate_sample_csv(path):
-    random.seed(99)
-    rows = []
-    names = ["Acme Corp", "Globex", "Initech", "Umbrella", "Hooli", "Pied Piper",
-             "Stark Industries", "Wayne Enterprises", "Wonka Inc", "Soylent Co",
-             "Cyberdyne", "Massive Dynamic", "Aperture Science", "Black Mesa", "Nakatomi"]
-    for name in names:
-        rows.append({
-            "account": name,
-            "enterprise_tier": random.choice([True, True, False, False]),
-            "pricing_visits_2plus": random.choice([True, False, False]),
-            "demo_requested": random.choice([True, False, False, False]),
-            "competitor_page": random.choice([True, False, False, False, False]),
-            "job_change_signal": random.choice([True, False, False])
-        })
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["account", "enterprise_tier",
-                                                "pricing_visits_2plus", "demo_requested",
-                                                "competitor_page", "job_change_signal"])
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"Generated sample CSV: {path} ({len(rows)} accounts)")
-
-def score_csv(input_path, output_path):
-    with open(input_path, "r") as f:
-        reader = csv.DictReader(f)
-        accounts = list(reader)
-
-    results = []
-    for row in accounts:
-        account_name = row["account"]
-        signals = {}
-        for col in row:
-            if col == "account":
-                continue
-            val = row[col].strip().lower()
-            signals[col] = val in ("true", "1", "yes")
-
-        posterior, contributions = score_account(signals)
-        results.append({
-            "account": account_name,
-            "posterior": posterior,
-            "signals_hit": sum(1 for v in signals.values() if v),
-            "top_signal": max(contributions, key=contributions.get) if contributions else "none",
-            "top_lift": max(contributions.values()) if contributions else 0.0
-        })
-
-    results.sort(key=lambda x: x["posterior"], reverse=True)
-
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["account", "posterior",
-                                                "signals_hit", "top_signal", "top_lift"])
-        writer.writeheader()
-        for r in results:
-            writer.writerow({
-                "account": r["account"],
-                "posterior": f"{r['posterior']:.4f}",
-                "signals_hit": r["signals_hit"],
-                "top_signal": r["top_signal"],
-                "top_lift": f"{r['top_lift']:.4f}"
-            })
-
-    print(f"\nScored {len(results)} accounts -> {output_path}")
-    print(f"\n{'Account':<22} {'Posterior':>10} {'Signals':>8} {'Top Signal':<22} {'Lift':>8}")
-    print("-" * 72)
-    for r in results:
-        print(f"{r['account']:<22} {r['posterior']:>10.4f} {r['signals_hit']:>8} {r['top_signal']:<22} {r['top_lift']:>+8.4f}")
-
-input_csv = "sample_accounts.csv"
-output_csv = "scored_accounts.csv"
-
-if not os.path.exists(input_csv):
-    generate_sample_csv(input_csv)
-
-score_csv(input_csv, output_csv)
+ranked = sorted(accounts, key=lambda a: score(a[1]), reverse=True)
+for name, sigs in ranked:
+    print(f"{name:<14} P(buyer) = {score(sigs):.3f}")
 ```
 
 Output:
 ```
-Generated sample CSV: sample_accounts.csv (15 accounts)
+Acme Corp      P(buyer) = 0.833
+Umbrella       P(buyer) = 0.320
+Hooli          P(buyer) = 0.239
+Globex LLC     P(buyer) = 0.032
+Initech        P(buyer) = 0.003
+```
 
-Scored 15 accounts -> scored_accounts.csv
+The log-odds formulation is algebraically identical to sequential `bayes_update` calls — adding log-likelihood-ratios is the same operation as multiplying posteriors into priors. It just avoids floating-point underflow when you stack more than a handful of signals. Each signal contributes a signed delta: a positive nudge if the evidence is more common among buyers, a negative nudge if it is more common among non-buyers. Initech has no positive signals, so the base prior of 5% gets dragged down to 0.3% by three absent signals that buyers usually have.
 
-Account                Posterior  Signals   Top Signal             Lift
-------------------------------------------------------------------------
-Stark Industries          0.9987        5   demo_requested        +0.4002
-Hooli                     0.9694        3   demo_requested        +0.5212
-Wayne Enterprises         0.8978        4   pricing_visits_2plus  +0.2528
-Cyberdyne                 0.6470        2   enterprise_tier       +0.3413
-Globex                    0.4488        2   enterprise_tier       +0.2289
-Pied Piper                0.2606        1   enterprise_tier       +0.1401
-Aperture Science          0.2275        1   demo_requested        +0.1225
-Initech                   0.2198        1   enterprise_tier       +0.1182
-Acme Corp                 0.1073        1   job_change_signal     +0.0573
-Massive Dynamic           0.0926        1   job_change_signal     +0.0426
-Umbrella                  0.0500        0   none                  +0.0000
+[CITATION NEEDED — concept: enrichment tool (Clay, Apollo, 6sense) confirming use of Bayesian or log-odds scoring for lead prioritization internally]
+
+## Exercises
+
+### 1. Diagnose a miscalibrated prior
+
+Your team ships a lead scorer with `BASE_PRIOR = 0.05` (5% base conversion). After one month in production, you pull 500 accounts that scored above 0.80 and find that only 97 actually closed (19.4%). The scorer is overconfident. Walk through the diagnosis:
+
+- Compute the observed conversion rate for the high-score bucket and compare it to the average predicted score.
+- Identify two plausible causes of the gap (hint: one is the prior, one is signal correlation).
+- Write a Python function that takes a list of `(predicted_score, actual_outcome)` tuples and returns a calibration table: bucket predicted scores into deciles, print average predicted vs. actual conversion rate per bucket.
+- Propose one fix for each cause and explain which one you would ship first.
+
+### 2. Add a negatively correlated signal
+
+Not every signal pushes the score up. "Downloaded the free ebook" is common among individual researchers (non-buyers) and rare among procurement-led enterprise buyers. Extend the scorer in **Use It**:
+
+- Add a `"free_ebook"` signal with `p_buyer = 0.12` and `p_non = 0.40`.
+- Add two accounts to the list: one with `free_ebook = True` and all other signals True, and one with `free_ebook = True` and all other signals False.
+- Run the scorer. Verify that the ebook download *decreases* the posterior for the first account relative to Acme Corp (which has no ebook signal).
+- Now add a second negatively correlated signal of your choice with plausible likelihood values. Confirm that two negative signals can drag an otherwise promising account below the 0.20 threshold.
+- Write one paragraph explaining why a scoring model that only stacks positive signals will systematically over-rank tire-kickers.
+
+## Key Terms
+
+- **Prior (P(A))** — Your belief about the probability of an outcome before seeing any evidence. In GTM, this is the base conversion rate for a segment.
+- **Likelihood (P(B|A))** — How frequently you observe a particular signal when the outcome is true. This is not the same as the posterior — common confusion.
+- **Evidence (P(B))** — The overall probability of observing the signal, across both buyers and non-buyers. This is the normalizing constant that makes the posterior a valid probability.
+- **Posterior (P(A|B))** — Your revised belief after incorporating evidence. This becomes the prior for the next signal in a sequential chain.
+- **Naive Bayes assumption** — The assumption that all features are conditionally independent given the class label. Always violated in practice; usually tolerable because correlated signals push rankings in the same direction even if absolute probabilities are overestimated.
+- **Log-odds (logit)** — The natural log of `p / (1 - p)`. Working in log-odds space converts Bayesian multiplication into addition, preventing numerical underflow when chaining many signals.
+- **Base rate fallacy** — The cognitive error of ignoring the prior probability when interpreting new evidence. The reason "99% accurate test" does not mean "99% chance you're sick."
+- **Calibration** — The property that predicted probabilities match observed frequencies. A scorer that says "80% likely to convert" should be right about 80% of the time across all accounts it assigns that score to.
+
+## Sources
+
+- Bayes, Thomas (1763). "An Essay towards solving a Problem in the Doctrine of Chances." *Philosophical Transactions of the Royal Society of London*, 53:370–418. — Original formulation of the theorem, published posthumously by Richard Price.
+- Jaynes, E.T. (2003). *Probability Theory: The Logic of Science.* Cambridge University Press. — Canonical treatment of Bayesian inference as an extension of propositional logic; Chapters 1–4 cover the update rule and its justification.
+- Kahneman, D. (2011). *Thinking, Fast and Slow.* Farrar, Straus and Giroux. — Chapter 14 documents the base-rate fallacy and the medical-test scenario used in **The Problem**.
+- McCallum, A. and Nigam, K. (1998). "A Comparison of Event Models for Naive Bayes Text Classification." *AAAI-98 Workshop on Learning for Text Categorization.* — Defines the multinomial and Bernoulli naive Bayes variants referenced in **Build It**.
+- Bishop, C. (2006). *Pattern Recognition and Machine Learning.* Springer. — Section 2.2 covers the naive Bayes model, the conditional independence assumption, and log-space computation for numerical stability.
+- [CITATION NEEDED — concept: enrichment tool (Clay, Apollo, 6sense) confirming use of Bayesian or log-odds scoring for lead prioritization internally]

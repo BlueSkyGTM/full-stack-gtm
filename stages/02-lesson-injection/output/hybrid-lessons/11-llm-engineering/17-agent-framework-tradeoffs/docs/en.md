@@ -297,9 +297,9 @@ class AgnoAgent:
             if tool_name == "research":
                 results.update(self.tools[tool_name](results["company"]))
             elif tool_name == "score":
-                results.update(self.tools[tool_name"](results))
+                results.update(self.tools[tool_name](results))
             elif tool_name == "summarize":
-                results["output"] = self.tools[tool_name"](results)
+                results["output"] = self.tools[tool_name](results)
             self.tool_call_log.append({
                 "tool": tool_name,
                 "input_keys": [k for k in results.keys()],
@@ -320,118 +320,59 @@ Run all four blocks in sequence and you see the same output produced through fou
 
 ## Use It
 
-The ICP-scoring pipeline is a real GTM workload, not a toy. In revenue intelligence, the same pattern powers account qualification, lead routing, and personalized outreach generation. The framework you chose for the pipeline determines how you evaluate its outputs — and evaluation is where GTM teams live or die. Evals are the A/B testing mechanism for agent-generated content before it reaches a prospect [CITATION NEEDED — concept: evals as A/B testing for GTM sequences, Zone 11].
-
-Consider what happens when you need to debug a bad ICP score. A prospect was scored 85/100, the summary went out, and the prospect replied with confusion because the summary mentioned the wrong industry. Where do you look? In LangGraph, you load the checkpoint after the research node and inspect the exact state that fed into the scoring node — you see the raw research data, the score computation input, and the summary input as three separate, typed objects. In CrewAI, you inspect `task1.output` and `task2.output`, which are dictionaries but not part of a shared schema, so you rely on the task descriptions to understand what each field means. In AutoGen, you parse a message log looking for `RESEARCH_RESULT:` strings and hope the agent formatted them consistently. In Agno, you inspect the tool-call log, which tells you which tools ran and in what order, but the intermediate state is a flat dictionary that the agent mutated in place.
-
-That debugging experience maps directly to evaluation quality. If you cannot isolate the step that produced a bad output, you cannot build a targeted eval for that step. The eval pipeline for an ICP scorer needs three layers: research accuracy (did the agent find correct company data?), scoring correctness (does the score match your rubric?), and summary quality (does the summary accurately reflect the score and data?). Each layer needs independently addressable outputs.
+The mechanism that determines whether your ICP pipeline is debuggable in production is **per-step state isolation**: whether each pipeline step (research, score, summarize) emits an independently addressable, typed output that you can inspect, replay, and evaluate without rerunning the whole chain. This is the GTM pattern behind Cluster 1.2 — TAM Refinement & ICP Scoring — and it is the same property that determines whether you can build an eval harness when an AE reports "the scores are wrong."
 
 ```python
-print("=== Eval Harness: Per-Step Isolation ===")
+print("=== GTM ICP Eval: Per-Step State Isolation ===")
 
-eval_cases = [
-    {"company": "Acme Corp", "industry": "fintech", "employees": 450, "expected_score_range": (70, 90)},
-    {"company": "Globex Inc", "industry": "retail", "employees": 50, "expected_score_range": (40, 60)},
-    {"company": "Initech", "industry": "fintech", "employees": 1200, "expected_score_range": (80, 100)},
+cases = [
+    ("Acme Corp", "fintech", 450, (70, 90)),
+    ("Globex Inc", "retail", 50, (40, 60)),
+    ("Initech", "fintech", 1200, (80, 100)),
 ]
 
-def eval_research_step(company, expected):
-    actual = research(company)
-    matches = (
-        actual["industry"] == expected["industry"]
-        and actual["employees"] == expected["employees"]
-    )
-    return matches, actual
+for company, exp_ind, exp_emp, score_range in cases:
+    r_data = research(company)
+    r_ok = r_data["industry"] == exp_ind and r_data["employees"] == exp_emp
+    s_data = score(r_data)
+    s_ok = score_range[0] <= s_data["icp_score"] <= score_range[1]
+    m_text = summarize(r_data, s_data)
+    m_ok = str(s_data["icp_score"]) in m_text and company in m_text
+    print(f"{company}: research={'PASS' if r_ok else 'FAIL'} "
+          f"score={'PASS' if s_ok else 'FAIL'}({s_data['icp_score']}) "
+          f"summary={'PASS' if m_ok else 'FAIL'}")
 
-def eval_score_step(research_data, expected_range):
-    actual_score = score(research_data)["icp_score"]
-    in_range = expected_range[0] <= actual_score <= expected_range[1]
-    return in_range, actual_score
-
-def eval_summary_step(research_data, score_data):
-    summary = summarize(research_data, score_data)
-    score_mentioned = str(score_data["icp_score"]) in summary
-    company_mentioned = research_data["company"] in summary
-    return score_mentioned and company_mentioned, summary
-
-for case in eval_cases:
-    r_pass, r_data = eval_research_step(case["company"], case)
-    s_pass, s_actual = eval_score_step(r_data, case["expected_score_range"])
-    m_pass, m_summary = eval_summary_step(r_data, {"icp_score": s_actual})
-    print(f"{case['company']}: research={'PASS' if r_pass else 'FAIL'} "
-          f"score={'PASS' if s_pass else 'FAIL'}({s_actual}) "
-          f"summary={'PASS' if m_pass else 'FAIL'}")
-
-print("\nThis eval structure requires per-step state isolation.")
-print("LangGraph: checkpoint after each node gives you this for free.")
-print("CrewAI: task outputs are addressable but not typed.")
-print("AutoGen: parse message log to reconstruct intermediate state.")
-print("Agno: tool-call log gives tool names but not structured I/O.")
+print("\nTriage map:")
+print("  research FAIL -> enrichment source broken")
+print("  score FAIL    -> scoring rubric broken")
+print("  summary FAIL  -> LLM prompt broken")
+print("  all PASS      -> pipeline healthy; check outreach channel")
 ```
 
-This eval harness is the GTM feedback loop. When a sales team reports that ICP scores are inaccurate, you do not rerun the entire pipeline and eyeball the output — you run the eval harness and see which step fails. If research accuracy drops, the problem is in your data enrichment source. If scoring correctness drops, the problem is in your scoring rubric. If summary quality drops, the problem is in your LLM prompt. Framework choice determines whether that triage is a checkpoint inspection or a conversation-log archaeology project.
+When the eval reports `research=FAIL` for Globex, you fix the enrichment provider — you do not touch the scoring logic or the summary prompt. That surgical triage is only possible because each step's output is isolated. In LangGraph, you load the checkpoint after the research node and inspect the exact dict that fed into scoring. In CrewAI, `task1.output` exists but is not typed, so you read task descriptions to remember what each field means. In AutoGen, you grep the message log for `RESEARCH_RESULT:` and hope the agent formatted it. In Agno, the tool-call log gives you tool names but the intermediate state is a flat dict mutated in place — you see what ran, not what it produced in a structured form.
 
-## Ship It
+The eval harness is the GTM feedback loop. Run it nightly against your prospect list. When reply rates drop, run the eval first — if `score=FAIL` spiked overnight, your enrichment provider changed its industry taxonomy and your rubric needs updating. You found the root cause in seconds because the framework gave you addressable state. If you had picked AutoGen, you would be parsing message logs at 2 AM.
 
-Production agent systems fail in ways that demos do not show. The four frameworks handle these failures differently, and the differences are architectural — you cannot patch over them with a wrapper.
+## Exercises
 
-**Retry granularity** is the first production concern. When the scoring LLM call times out, what do you retry? LangGraph retries from the failed node because the state graph knows the exact node and its input state. CrewAI retries the task, but the task may have implicit dependencies on prior task outputs that the framework passes as context — you are trusting the framework's context assembly. AutoGen retries by re-sending the last message, but the agent that receives it may produce a different reply because LLMs are non-deterministic. Agno retries the last tool call, which is clean for tool failures but ambiguous for reasoning failures (the model thought wrong, not the tool).
+1. **Add a failing case and diagnose the break.** Add a fourth eval case: `("Hooli", "adtech", 5000, (70, 100))`. Run the harness. The `score` step will `FAIL` because adtech gets no bonus in the `score` function — the base is 50, plus 12 for employees > 200, totaling 62, which is below 70. Modify the `score` function to add a `+15` bonus for companies with more than 2,000 employees. Re-run. Which step's output changed? Which didn't? This is the per-step isolation property: you changed one function and the eval tells you exactly which downstream steps are affected.
 
-**Cost attribution** is the second. In a GTM pipeline processing thousands of prospects, you need to know which step consumes the most tokens. LangGraph nodes are named functions — you wrap each with a token counter and get per-node attribution. CrewAI tasks are named but share context implicitly, so token counts include accumulated context from prior tasks. AutoGen messages accumulate, and each agent reply includes the full conversation history — the last agent in a five-agent chat pays for all prior messages in its context window. Agno tool calls are individually attributable, but the reasoning between tool calls (the model's internal chain of thought) is a single block.
+2. **Convert the AutoGen mock to emit typed state.** The AutoGen pattern serializes everything through free-text messages tagged with `RESEARCH_RESULT:` and `SCORE_RESULT:`. Rewrite `ConversableAgent.generate_reply` so that each agent appends a JSON-serializable dict to a shared `state` object instead of embedding data in message strings. Then rewrite the Writer agent to read from that shared state rather than parsing message content. What did you just build? (Answer: you reinvented LangGraph's state graph inside AutoGen's conversation loop — which is the architectural friction the lesson describes.) Now do the same for the Agno mock: add a second agent and a routing mechanism so the two agents can hand work to each other. How many lines of coordination code did you write?
 
-```python
-print("=== Production: Retry + Cost Attribution ===")
+## Key Terms
 
-from functools import wraps
+- **State Graph (LangGraph):** A directed graph where each node is a state-transformation function and each edge is an explicit, developer-declared transition. Conditional edges branch on state values. State is a typed schema shared across all nodes.
+- **Task Resolution (CrewAI):** The framework's mechanism for determining execution order from task dependencies and agent role assignments rather than explicit developer-declared edges. State lives in task outputs passed as context to downstream tasks.
+- **Conversable Agent (AutoGen):** An agent that participates in a message-passing loop managed by a GroupChat router. State lives in the conversation history — an append-only list of messages with no typed schema between agents.
+- **Tool-Call Loop (Agno):** A linear execution pattern where a single agent calls tools, receives results, and repeats until producing a final answer. No built-in primitive for multi-agent coordination or fan-out.
+- **Checkpoint:** A serializable snapshot of pipeline state at a specific node or step, enabling retry, replay, and time-travel debugging from a known-good state. Only possible when state is a typed, addressable object rather than an unstructured log.
+- **Per-Step State Isolation:** The property that each pipeline step emits an independently addressable, typed output. Determines whether you can build a targeted eval per step or must rerun the entire pipeline to debug a single failure.
 
-token_usage = {}
+## Sources
 
-def track_tokens(node_name):
-    def decorator(fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            simulated_tokens = len(str(args)) + len(str(kwargs)) + 150
-            token_usage[node_name] = token_usage.get(node_name, 0) + simulated_tokens
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    if attempt == 1 and node_name == "score":
-                        raise TimeoutError("LLM timeout (simulated)")
-                    result = fn(*args, **kwargs)
-                    return result
-                except Exception as e:
-                    print(f"  [{node_name}] attempt {attempt + 1} failed: {e}")
-                    if attempt == max_retries - 1:
-                        raise
-            return result
-        return wrapper
-    return decorator
-
-@track_tokens("research")
-def prod_research(company):
-    return research(company)
-
-@track_tokens("score")
-def prod_score(data):
-    return score(data)
-
-@track_tokens("summarize")
-def prod_summarize(r, s):
-    return summarize(r, s)
-
-print("Running pipeline with retry + token tracking...\n")
-r = prod_research("Acme Corp")
-s = prod_score(r)
-m = prod_summarize(r, s)
-
-print(f"\nFinal output: {m}")
-print(f"\nToken usage by node:")
-for node, tokens in token_usage.items():
-    print(f"  {node}: {tokens} simulated tokens")
-print(f"  Total: {sum(token_usage.values())} simulated tokens")
-
-print("\n=== Retry Pattern Comparison ===")
-print("LangGraph: retry from failed node. State checkpoint survives.")
-print("CrewAI: retry task. Context reassembly may differ on retry.")
-print("AutoGen: resend message. Non-deterministic reply possible.")
-print("Agno: retry tool call. Clean for tool errors, messy for reasoning errors.")
+- LangGraph — StateGraph API, conditional edges, checkpointing: https://langchain-ai.github.io/langgraph/concepts/low_level/
+- CrewAI — Agent, Task, Crew, and kickoff documentation: https://docs.crewai.com/concepts/crews
+- AutoGen — ConversableAgent, GroupChat, and termination conditions: https://microsoft.github.io/autogen/0.2/docs/topics/patterns/group-chat/
+- Agno — Agent abstraction, tools, and session memory: https://docs.agno.com/agents/introduction
+- [CITATION NEEDED — concept: evals as A/B testing for GTM sequences, Zone 11 mapping]
+- [CITATION NEEDED — concept: reply classification as eval feedback loop, Zone 11]

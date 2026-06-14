@@ -99,4 +99,97 @@ for col in feature_cols:
 
 print(f"\n  Any-feature z-score flags: {df.loc[z_any, 'account'].tolist()}")
 
-print("\n=== IQR Flags (
+print("\n=== IQR Flags (multiplier=1.5) ===")
+iqr_any = pd.Series(False, index=df.index)
+for col in feature_cols:
+    flags = iqr_flags(df[col])
+    iqr_any = iqr_any | flags
+    flagged_accts = df.loc[flags, "account"].tolist()
+    print(f"  {col:20s}: {flagged_accts}")
+
+print(f"\n  Any-feature IQR flags: {df.loc[iqr_any, 'account'].tolist()}")
+```
+
+Run it. Both methods catch `acct_bot` cleanly—its page views are 30 standard deviations above the mean. Neither catches `acct_power`. Its values sit inside the tails of each individual distribution. Only the *combination* is anomalous, and single-feature statistics are blind to that.
+
+Now the Isolation Forest. It evaluates all four features jointly, so it can catch multivariate anomalies.
+
+```python
+from sklearn.ensemble import IsolationForest
+
+iso = IsolationForest(n_estimators=200, contamination=0.02, random_state=42)
+df["iso_score"] = iso.decision_function(df[feature_cols])
+df["iso_flag"] = iso.fit_predict(df[feature_cols])
+
+flagged = df[df["iso_flag"] == -1].sort_values("iso_score")
+print("\n=== Isolation Forest Flags ===")
+print(flagged[["account"] + feature_cols + ["iso_score"]].to_string(index=False))
+```
+
+Run it. Both `acct_bot` and `acct_power` surface now. The Isolation Forest scores them by how quickly random splits isolate them from the pack—`acct_bot` gets a deeply negative score because its page view count alone separates it almost immediately. `acct_power` gets a milder negative score because each feature is plausible in isolation, but the *joint pattern* of all four being high simultaneously means random splits still isolate it faster than a normal account.
+
+This is the tradeoff. Statistical methods give you a clean, explainable score per feature. Isolation Forest gives you a single multivariate score that catches more but is harder to explain to a stakeholder who wants to know *which* feature triggered the flag.
+
+## Use It
+
+Isolation Forest flags multivariate outliers in account engagement vectors by isolating points that require fewer random splits than normal points—the mechanism we built above. This is the detector for Cluster 3.1, Pipeline Analytics & Signal Detection: flag accounts whose engagement pattern deviates from the learned distribution and route them to a Slack webhook for review.
+
+```python
+import numpy as np, pandas as pd, json, urllib.request
+from sklearn.ensemble import IsolationForest
+
+np.random.seed(7)
+df = pd.DataFrame({
+    "account": [f"acct_{i:04d}" for i in range(150)] + ["acct_suspect"],
+    "page_views": np.append(np.random.normal(40, 12, 150), 320),
+    "email_opens": np.append(np.random.normal(4, 2, 150), 0),
+    "meetings_booked": np.append(np.random.normal(1.5, 1, 150), 9),
+})
+
+features = ["page_views", "email_opens", "meetings_booked"]
+iso = IsolationForest(n_estimators=200, contamination=0.015, random_state=7)
+df["score"] = iso.fit_predict(df[features])
+df["confidence"] = iso.decision_function(df[features])
+flagged = df[df["score"] == -1].sort_values("confidence")
+
+WEBHOOK_URL = "https://hooks.slack.com/services/REPLACE/WITH/REAL"
+
+for _, row in flagged.iterrows():
+    payload = {
+        "text": f"Anomaly: {row['account']} "
+                f"(confidence {row['confidence']:.3f}) — "
+                f"pv={row['page_views']:.0f}, opens={row['email_opens']:.0f}, "
+                f"mtg={row['meetings_booked']:.0f}"
+    }
+    print(f"Would POST to webhook: {payload['text']}")
+    # urllib.request.Request(WEBHOOK_URL, data=json.dumps(payload).encode(),
+    #                        headers={"Content-Type": "application/json"})
+
+print(f"\nFlagged {len(flagged)} of {len(df)} accounts.")
+```
+
+Replace `WEBHOOK_URL` with a real Slack incoming webhook to route flagged accounts to a channel. The webhook call is commented out so the script runs without external dependencies—uncomment after you have a live URL. The detector scores every account each run; new anomalies surface as soon as the engagement vector shifts, without manual threshold tuning.
+
+[CITATION NEEDED — concept: GTM pipeline webhook routing for flagged anomalies, Slack integration pattern]
+
+## Exercises
+
+**Exercise 1 (Easy):** Rerun the Z-score and IQR detection from Build It but change the `acct_power` values so that only *one* feature is extreme instead of all four. Confirm whether the single-feature methods now catch it. Write one sentence explaining why multivariate detection was unnecessary in this modified case.
+
+**Exercise 2 (Medium):** Load the Build It Isolation Forest code and sweep `contamination` across `[0.005, 0.01, 0.02, 0.05, 0.10]`. For each value, print how many of the 202 accounts get flagged. Then answer: at which contamination value does the detector start flagging normal accounts alongside the two injected anomalies? Document your reasoning for why this happens, referencing how the `contamination` parameter interacts with the score distribution.
+
+## Key Terms
+
+- **Z-score:** Number of standard deviations a value sits from the mean. Values beyond ±3 are flagged as anomalies under a normality assumption.
+- **IQR (Interquartile Range):** Distance between the 25th and 75th percentile. Used as a robust spread measure that does not assume normality.
+- **Isolation Forest:** Ensemble of random trees that isolates anomalies in fewer splits than normal points. Handles multivariate data without distributional assumptions.
+- **Contamination:** The expected fraction of anomalies in the dataset. Sets the decision threshold on the Isolation Forest score distribution.
+- **Local Outlier Factor:** Density-based anomaly score comparing a point's local density to its neighbors'. Catches contextual anomalies that global methods miss.
+- **Point vs. Contextual Anomaly:** A point anomaly is unusual in isolation. A contextual anomaly is unusual only relative to its expected context (time, segment, cohort).
+
+## Sources
+
+- Scikit-learn maintainers, "Isolation Forest," *scikit-learn User Guide*, section 2.7. [https://scikit-learn.org/stable/modules/outlier_detection.html](https://scikit-learn.org/stable/modules/outlier_detection.html)
+- Liu, Ting, and Zhou, "Isolation Forest," *Proceedings of the 2008 Eighth IEEE International Conference on Data Mining*, pp. 413–422.
+- Breunig, Kriegel, Ng, and Sander, "LOF: Identifying Density-Based Local Outliers," *Proceedings of the 2000 ACM SIGMOD International Conference on Management of Data*, pp. 93–104.
+- [CITATION NEEDED — concept: GTM pipeline webhook routing for flagged anomalies, Slack integration pattern]

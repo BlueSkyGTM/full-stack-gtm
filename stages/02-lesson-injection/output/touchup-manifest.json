@@ -464,7 +464,8 @@
     "lesson": "18-feature-selection",
     "topic": "Feature Selection",
     "output_file": "stages\\02-lesson-injection\\output\\hybrid-lessons\\02-ml-fundamentals\\18-feature-selection\\docs\\en.md",
-    "status": "pending"
+    "status": "failed",
+    "updated_at": "2026-06-14T01:38:16Z"
   },
   {
     "id": "03-deep-learning-core/01-the-perceptron",
@@ -472,7 +473,8 @@
     "lesson": "01-the-perceptron",
     "topic": "The Perceptron",
     "output_file": "stages\\02-lesson-injection\\output\\hybrid-lessons\\03-deep-learning-core\\01-the-perceptron\\docs\\en.md",
-    "status": "pending"
+    "status": "failed",
+    "updated_at": "2026-06-14T01:38:16Z"
   },
   {
     "id": "03-deep-learning-core/02-multi-layer-networks",
@@ -480,7 +482,8 @@
     "lesson": "02-multi-layer-networks",
     "topic": "Multi-Layer Networks and Forward Pass",
     "output_file": "stages\\02-lesson-injection\\output\\hybrid-lessons\\03-deep-learning-core\\02-multi-layer-networks\\docs\\en.md",
-    "status": "pending"
+    "status": "failed",
+    "updated_at": "2026-06-14T01:38:16Z"
   },
   {
     "id": "03-deep-learning-core/03-backpropagation",
@@ -488,7 +491,8 @@
     "lesson": "03-backpropagation",
     "topic": "Backpropagation from Scratch",
     "output_file": "stages\\02-lesson-injection\\output\\hybrid-lessons\\03-deep-learning-core\\03-backpropagation\\docs\\en.md",
-    "status": "pending"
+    "status": "failed",
+    "updated_at": "2026-06-14T01:38:49Z"
   },
   {
     "id": "03-deep-learning-core/04-activation-functions",
@@ -496,7 +500,8 @@
     "lesson": "04-activation-functions",
     "topic": "Activation Functions",
     "output_file": "stages\\02-lesson-injection\\output\\hybrid-lessons\\03-deep-learning-core\\04-activation-functions\\docs\\en.md",
-    "status": "pending"
+    "status": "failed",
+    "updated_at": "2026-06-14T01:38:49Z"
   },
   {
     "id": "03-deep-learning-core/05-loss-functions",
@@ -504,6 +509,7 @@
     "lesson": "05-loss-functions",
     "topic": "Loss Functions",
     "output_file": "stages\\02-lesson-injection\\output\\hybrid-lessons\\03-deep-learning-core\\05-loss-functions\\docs\\en.md",
-    "status": "pending"
+    "status": "failed",
+    "updated_at": "2026-06-14T01:38:49Z"
   }
 ]

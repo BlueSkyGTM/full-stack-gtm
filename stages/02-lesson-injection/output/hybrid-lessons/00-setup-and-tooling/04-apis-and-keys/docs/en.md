@@ -165,108 +165,65 @@ If the key is a placeholder, the SDK raises `AuthenticationError` — which is t
 
 ## Use It
 
-The `APIClient` you just built is the authentication layer underneath every GTM enrichment workflow. When Clay executes a waterfall — trying Apollo first, falling back to Hunter, then People Data Labs — each step is an authenticated HTTP call with the same shape your client produces: read the provider's key from the environment, inject it into the header, parse the JSON response, handle the error code. [CITATION NEEDED — concept: Clay waterfall internal call mechanism]
+Bearer-token HTTP authorization — the same shared-secret mechanism that authenticates calls to the Anthropic Messages API for LLM text generation — also authenticates every call inside a Clay enrichment waterfall that queries Apollo, Hunter, and People Data Labs for contact data. [CITATION NEEDED — concept: Clay enrichment waterfall provider call sequence] This is Cluster 1.2, TAM Refinement & ICP Scoring. The `APIClient` pattern you built above is the exact layer that sits between your contact list and those providers: read the key, inject the header, handle the status code.
 
-Call a real enrichment-style endpoint to see the pattern end to end. The Hunter API finds email addresses for a given domain and uses key-in-query authentication — the key appears as a URL parameter rather than a header. This is the pattern your `APIClient` needs to handle when the provider does not support header-based auth:
+The slice below simulates an enrichment lookup — the same request shape Clay sends to Apollo's people-search endpoint — using `httpbin.org` to echo the authenticated request so you can verify the header injection without a real key:
 
 ```python
-import os
-import requests
+import os, requests, time
 
-HUNTER_KEY = os.environ.get("HUNTER_API_KEY", "")
+os.environ.setdefault("APOLLO_API_KEY", "demo-apollo-key")
 
-if not HUNTER_KEY:
-    print("Set HUNTER_API_KEY to run a live lookup.")
-    print("Demo mode: showing the request shape without calling the API.")
-    demo_url = "https://api.hunter.io/v2/email-finder"
-    demo_params = {
-        "domain": "anthropic.com",
-        "first_name": "Dario",
-        "last_name": "Amodei",
-        "api_key": "YOUR_KEY_HERE",
-    }
-    print(f"GET {demo_url}")
-    print(f"Params: {{k: v for k, v in demo_params.items() if k != 'api_key'}}")
-    print(f"Key location: query string (visible in server logs)")
-else:
-    response = requests.get(
-        "https://api.hunter.io/v2/email-finder",
-        params={
-            "domain": "anthropic.com",
-            "first_name": "Dario",
-            "last_name": "Amodei",
-            "api_key": HUNTER_KEY,
-        },
-        timeout=10,
-    )
-    print(f"[{response.status_code}] Response:")
-    data = response.json()
-    if response.status_code == 200:
-        email = data.get("data", {}).get("email", "not found")
-        print(f"  Email: {email}")
-    else:
-        print(f"  Error: {data.get('errors', response.text)}")
+def enrich_contact(domain, title, max_retries=3):
+    key = os.environ["APOLLO_API_KEY"]
+    for attempt in range(max_retries):
+        resp = requests.post(
+            "https://httpbin.org/anything",
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"},
+            json={"q_organization_domains": domain, "q_titles": title},
+            timeout=10,
+        )
+        print(f"[{resp.status_code}] Attempt {attempt + 1}: {domain} / {title}")
+        if resp.status_code == 200:
+            body = resp.json()
+            print(f"  Authorization sent: {body['headers'].get('Authorization', 'MISSING')[:20]}...")
+            return body["json"]
+        if resp.status_code == 429:
+            wait = 2 ** attempt
+            print(f"  Rate limited — backing off {wait}s")
+            time.sleep(wait)
+            continue
+        return {"error": f"HTTP {resp.status_code}"}
+    return {"error": "max retries exceeded"}
+
+result = enrich_contact("anthropic.com", "Head of Sales")
+print(f"Enrichment payload echoed: {result}")
 ```
 
-Run this without a key and it prints the request shape — you see exactly where the key goes and why key-in-query is riskier than key-in-header. Set `HUNTER_API_KEY` in your environment and it makes a live lookup, returning a real email address if Hunter has one. The response shape — a JSON object with a `data` key containing the email, confidence score, and source — is the same structure Clay receives when it calls Hunter as part of a waterfall step.
+Run this and the server echoes back the exact `Authorization` header your client injected, confirming the key never touched the URL, the query string, or the response body. Swap the `httpbin.org` URL for Apollo's real `/v1/mixed_people/search` endpoint and set a live `APOLLO_API_KEY` — the auth layer does not change.
 
-The key-in-query pattern that Hunter uses has a concrete downside you can observe. If your HTTP client logs full URLs (many do by default), the `api_key` parameter appears in plaintext in those logs. If you use a reverse proxy or CDN, their access logs capture the full query string. The header pattern avoids this entirely because headers are typically not logged at the proxy level. When you build enrichment pipelines that process thousands of requests, this difference determines whether your key ends up in a log aggregator that 47 people at your company can search.
+## Exercises
 
-## Ship It
+**Exercise 1 (Easy):** Add a `retry_on_5xx` parameter to the `APIClient.get()` method. When `retry_on_5xx=True` and the server returns a 500-level status, sleep for `2 ** attempt` seconds and retry up to three times before raising `ServerError`. Test against `https://httpbin.org/status/500`, which always returns 500.
 
-Production enrichment runs at scale — 10,000 contacts, 5 providers, rate limits on each. The `APIClient` handles single requests correctly, but a production pipeline needs three additional capabilities: retry with exponential backoff on 429 responses, per-provider rate-limit tracking, and key rotation without downtime.
+**Exercise 2 (Hard):** Build a `MultiProviderEnrichmentClient` that accepts a list of `(name, base_url, key_env_var)` tuples and implements a waterfall: query the first provider, and if it returns no result (empty `data` key or HTTP error), fall back to the next provider. Return the first non-empty result along with which provider produced it. Use `httpbin.org` endpoints that simulate different responses (`/anything` for success, `/status/404` for not-found) to test the fallback chain without real API keys.
 
-Exponential backoff is a debounce mechanism. When the server returns 429, it is telling you to slow down. Your client waits before retrying — first 1 second, then 2, then 4, then 8 — doubling each time until the request succeeds or you hit a maximum retry count. This prevents the thundering-herd problem where 10 concurrent workers all retry simultaneously and keep hitting the limit. Here is the backoff wrapper added to the client:
+## Key Terms
 
-```python
-import os
-import time
-import requests
+- **API Key** — A long string generated by the server and presented by the client on every request to prove identity. Treated as a shared secret; never encrypted in transit beyond HTTPS.
+- **Bearer Token** — An authorization scheme (`Authorization: Bearer <token>`) where the server treats any holder of the token as authorized. The token "bears" the authorization.
+- **Key-in-Query** — Authentication by appending the API key as a URL parameter (`?api_key=...`). Simpler to test but exposes the key in server and proxy logs.
+- **OAuth 2.0 Client Credentials** — A two-step flow where a client exchanges a static ID and secret for a short-lived access token, then uses that token for subsequent requests. Used by Salesforce and HubSpot for server-to-server integrations.
+- **Exponential Backoff** — A retry strategy where wait time doubles after each failed attempt (1s, 2s, 4s, 8s), preventing thundering-herd retries against a rate-limited server.
+- **Environment Variable** — A key-value pair stored in the process environment (`os.environ`) rather than in source code, loaded at runtime so secrets never enter version control.
 
-class AuthError(Exception):
-    pass
+## Sources
 
-class RateLimitError(Exception):
-    pass
-
-class ServerError(Exception):
-    pass
-
-class APIClient:
-    def __init__(self, base_url, key_env_var="DEMO_API_KEY"):
-        self.base_url = base_url.rstrip("/")
-        self.api_key = os.environ.get(key_env_var)
-        if not self.api_key:
-            raise AuthError(
-                f"Environment variable '{key_env_var}' is not set."
-            )
-
-    def _headers(self):
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-    def get(self, path, params=None, max_retries=4):
-        url = f"{self.base_url}{path}"
-        for attempt in range(max_retries):
-            response = requests.get(
-                url, headers=self._headers(), params=params, timeout=10
-            )
-            print(
-                f"[{response.status_code}] GET {url} "
-                f"(attempt {attempt + 1}/{max_retries})"
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            if response.status_code == 401:
-                raise AuthError(
-                    "Server rejected the API key."
-                )
-            if response.status_code == 429:
-                backoff = 2 ** attempt
-                print(f"  Rate limited. Sleeping {backoff}s before retry.")
-                time.sleep(backoff)
-                continue
-            if response.status_code >=
+- Anthropic API authentication documentation: <https://docs.anthropic.com/en/api/getting-started-auth>
+- Hunter API documentation (key-in-query pattern): <https://hunter.io/api-documentation>
+- Apollo API documentation (key-in-header pattern): <https://docs.apollo.io/reference/overview>
+- HTTP Authentication Scheme Registry (Bearer): <https://www.rfc-editor.org/rfc/rfc6750>
+- OAuth 2.0 Client Credentials Grant: <https://www.rfc-editor.org/rfc/rfc6749#section-4.4>
+- [CITATION NEEDED — concept: Clay enrichment waterfall provider call sequence and internal auth handling]
+- [CITATION NEEDED — concept: HubSpot server-to-server OAuth client credentials flow]

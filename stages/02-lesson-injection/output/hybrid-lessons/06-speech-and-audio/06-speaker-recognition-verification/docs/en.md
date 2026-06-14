@@ -175,29 +175,68 @@ Speaker verification is 1:1 identity confirmation: "this audio matches this enro
 
 The EER concept transfers directly to GTM signal evaluation. Equal error rate is where false accepts equal false rejects. In lead routing, that is where the rate of unqualified leads leaking into sequences equals the rate of qualified leads being filtered out. You would not accept that tradeoff blindly in speaker verification — you would tune the threshold based on the cost asymmetry between false accepts and false rejects. The same logic applies to signal thresholds in an Inbound-Led Outbound workflow. [CITATION NEEDED — concept: specific EER/threshold tuning applied to Clay signal routing]
 
-## Ship It
-
-Production deployment requires three things the demo skipped: threshold calibration on real data, anti-spoofing integration, and latency profiling. The code below computes EER from a list of scored trials — the same analysis you would run on your call recordings before picking a production threshold.
-
 ```python
 import numpy as np
 from sklearn.metrics import roc_curve
-import json
 
 np.random.seed(42)
 
-n_genuine = 500
-n_spoof = 500
+n_qualified = 200
+n_unqualified = 200
 
-genuine_scores = np.random.normal(0.72, 0.10, n_genuine).clip(0, 1)
-spoof_scores = np.random.normal(0.18, 0.12, n_spoof).clip(0, 1)
+qualified_scores = np.clip(np.random.normal(0.74, 0.10, n_qualified), 0, 1)
+unqualified_scores = np.clip(np.random.normal(0.31, 0.14, n_unqualified), 0, 1)
 
-labels = np.concatenate([np.ones(n_genuine), np.zeros(n_spoof)])
-scores = np.concatenate([genuine_scores, spoof_scores])
+labels = np.concatenate([np.ones(n_qualified), np.zeros(n_unqualified)])
+scores = np.concatenate([qualified_scores, unqualified_scores])
 
 fpr, tpr, thresholds = roc_curve(labels, scores)
 fnr = 1.0 - tpr
-
 eer_idx = np.argmin(np.abs(fpr - fnr))
 eer = (fpr[eer_idx] + fnr[eer_idx]) / 2.0
-eer_threshold = thresholds
+eer_threshold = thresholds[eer_idx]
+
+THRESHOLD = 0.55
+
+print(f"Lead routing via embedding similarity  |  threshold = {THRESHOLD}")
+print(f"  qualified avg score:   {qualified_scores.mean():.4f}")
+print(f"  unqualified avg score: {unqualified_scores.mean():.4f}")
+print(f"  EER = {eer:.4f}  at threshold = {eer_threshold:.4f}")
+
+routed_qual = (qualified_scores > THRESHOLD).sum()
+routed_unqual = (unqualified_scores > THRESHOLD).sum()
+print(f"\n  At threshold {THRESHOLD}:")
+print(f"    qualified routed:     {routed_qual}/{n_qualified}  (missed {n_qualified - routed_qual})")
+print(f"    unqualified leaked:   {routed_unqual}/{n_unqualified}")
+print(f"    precision = {routed_qual / (routed_qual + routed_unqual):.4f}")
+```
+
+This is Cluster 2.2 — Persona & Role Identification. The embedding similarity pattern is the mechanism: instead of asking "is this the same speaker?" you ask "does this inbound signal match an enrolled ICP pattern?" The cosine threshold is the dial, and EER gives you the principled starting point for setting it.
+
+## Exercises
+
+1. **EER sweep.** Take the `qualified_scores` and `unqualified_scores` arrays from the Use It code. Compute precision, recall, and F1 for thresholds `[0.40, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75]`. Print a table. Identify which threshold maximizes F1, and compare it to the EER-optimal threshold. Explain why they differ — what does that tell you about using EER as a default threshold versus task-specific tuning?
+
+2. **Open-set identification under gallery growth.** Simulate an open-set identification system with an enrollment gallery. Generate 50 synthetic "speaker" embeddings in a 128-d space: 25 target speakers (random unit vectors) and 25 non-enrolled distractors. For each test embedding, compute cosine similarity against all 25 enrolled speakers and apply a rejection threshold of 0.25. Measure false identification rate (distractor assigned an enrolled identity) at gallery sizes of 5, 10, 15, 20, 25. Plot the relationship. Confirm or reject the claim from the Concept section that identification error degrades as gallery size increases — and quantify the slope.
+
+## Key Terms
+
+- **Speaker Embedding** — A fixed-length vector (typically 192–512 dimensions) extracted from an audio waveform by a trained neural network, representing speaker identity. Same-speaker utterances produce vectors that cluster together in the embedding space.
+- **ECAPA-TDNN** — Emphasized Channel Attention, Propagation and Aggregation Time-Delay Neural Network. The dominant speaker recognition architecture as of 2026, producing 192-d embeddings with channel attention and multi-scale feature aggregation.
+- **AAM-Softmax** — Additive Angular Margin Softmax loss. Enforces a minimum angular gap between embedding clusters of different speakers during training, producing more separable embeddings than triplet loss.
+- **Equal Error Rate (EER)** — The error rate at the threshold where false acceptance rate equals false rejection rate. The standard benchmark for comparing speaker recognition systems.
+- **Cosine Similarity** — The dot product of two L2-normalized vectors, producing a score in [-1, 1]. Used as the default comparison metric between speaker embeddings.
+- **Open-Set Identification** — 1:N speaker identification with a rejection threshold: if the best match score is below the threshold, the system returns "unknown" rather than forcing a match to the nearest enrolled speaker.
+- **Anti-Spoofing** — A separate binary classifier that detects replay, synthesis, and voice conversion attacks. Trained on datasets like ASVspoof; outputs a bonafide probability that gates the verification decision.
+- **Mel Spectrogram** — A 2D time-frequency representation of audio where frequency bins are spaced according to the mel scale (approximating human auditory perception). The standard input representation for speaker recognition encoders.
+
+## Sources
+
+- Desplanques, B., Thienpondt, J., & Demuynck, K. (2020). *ECAPA-TDNN: Emphasized Channel Attention, Propagation and Aggregation in TDNN Based Speaker Verification.* Interspeech 2020.
+- Nagrani, A., Chung, J. S., & Zisserman, A. (2017). *VoxCeleb: A Large-Scale Speaker Identification Dataset.* Interspeech 2017. (VoxCeleb1) / Chung, J. S., et al. (2018). *VoxCeleb2: Deep Speaker Recognition.* Interspeech 2018.
+- Deng, J., Guo, J., Xue, N., & Zafeiriou, S. (2019). *ArcFace: Additive Angular Margin Loss for Deep Face Recognition.* CVPR 2019. (AAM-Softmax / ArcFace loss formulation)
+- Snyder, D., Garcia-Romero, D., Sell, G., Povey, D., & Khudanpur, S. (2018). *X-Vectors: Robust DNN Embeddings for Speaker Recognition.* ICASSP 2018.
+- Wang, X., et al. (2023). *AASIST: Audio Anti-Spoofing Using Integrated Spectro-Temporal Graph Attention Networks.* ASVspoof Challenge / Interspeech 2022.
+- Ravanelli, M., et al. (2021). *SpeechBrain: A General-Purpose Speech Toolkit.* arXiv:2106.04624.
+- ASVspoof Challenge. (2025). *ASVspoof 5: Automatic Speaker Verification Spoofing and Countermeasures Challenge.* https://www.asvspoof.org/
+- [CITATION NEEDED — concept: specific EER/threshold tuning applied to Clay signal routing]

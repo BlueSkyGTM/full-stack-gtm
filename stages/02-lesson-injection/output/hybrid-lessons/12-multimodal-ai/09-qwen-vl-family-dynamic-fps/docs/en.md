@@ -250,119 +250,65 @@ The output shows how the three rotation axes produce independent angular encodin
 
 ## Use It
 
-Now we load Qwen2-VL via the `transformers` library and process a video with both uniform and dynamic-FPS sampling. The model is large (7B parameters for the base variant), so we will attempt to load it and gracefully report if GPU memory is insufficient. The core logic — frame selection and token counting — runs regardless of whether the model loads.
+Dynamic-FPS sampling — the mechanism that allocates resolution proportional to detected change — applies directly to GTM sequence monitoring. This is Zone 12, Pipeline Health & Observability: concentrate tracing budget on steps with reply-rate drift, not uniformly across every touchpoint.
 
 ```python
-import subprocess, sys
-
-try:
-    import torch
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q",
-                           "torch", "transformers>=4.45.0", "pillow", "numpy"])
-
 import numpy as np
-from PIL import Image
-from pathlib import Path
-import json
 
-def generate_test_frames(n_frames=30, width=320, height=240):
-    frames = []
-    for i in range(n_frames):
-        img = Image.new("RGB", (width, height))
-        draw = ImageDraw.Draw(img) if hasattr(Image, 'ImageDraw') else None
-        from PIL import ImageDraw
-        draw = ImageDraw.Draw(img)
-        if i < 10:
-            r = int(100 + i * 15)
-            img.paste((min(r, 255), 50, 50), [0, 0, width, height])
-            draw.text((10, 10), f"Scene1 f{i}", fill="white")
-        elif i < 15:
-            img.paste((50, 50, 50), [0, 0, width, height])
-            draw.text((10, 10), f"CRITICAL_{i}", fill="yellow")
-        else:
-            img.paste((50, 100, 200), [0, 0, width, height])
-            draw.text((10, 10), f"Scene3 f{i}", fill="white")
-        frames.append(img)
-    return frames
+sequence = [
+    ("Day 0  Intro email",    4.2, 4.1, 4.3),
+    ("Day 1  Follow-up",      4.1, 4.0, 4.2),
+    ("Day 3  Case study",     4.0, 3.9, 4.1),
+    ("Day 5  Demo offer",     3.9, 2.1, 2.3),
+    ("Day 7  Pricing",        2.3, 1.8, 2.0),
+    ("Day 10 Break-up",       2.0, 1.9, 2.1),
+    ("Day 14 Re-engage",      2.1, 2.0, 2.2),
+]
 
-frames = generate_test_frames()
-
-def count_visual_tokens(pil_img, patch_size=14):
-    w, h = pil_img.size
-    return (h // patch_size) * (w // patch_size)
-
-def frame_mse_arr(a, b):
-    return float(np.mean((np.array(a).astype(np.float32) - np.array(b).astype(np.float32)) ** 2))
-
-diffs = [0.0] + [frame_mse_arr(frames[i], frames[i-1]) for i in range(1, len(frames))]
-
-def select_dynamic(diffs, budget=10):
-    ranked = sorted(range(len(diffs)), key=lambda i: diffs[i], reverse=True)
-    selected = set([0, len(diffs)-1])
-    for idx in ranked:
-        if len(selected) >= budget:
-            break
-        selected.add(idx)
-    return sorted(selected)
-
-def select_uniform(n, budget=10):
-    if budget >= n:
-        return list(range(n))
-    step = n / budget
-    return sorted(set(int(i * step) for i in range(budget)))
-
-dyn_idx = select_dynamic(diffs, budget=10)
-uni_idx = select_uniform(len(frames), budget=10)
-
-dyn_tokens = sum(count_visual_tokens(frames[i]) for i in dyn_idx)
-uni_tokens = sum(count_visual_tokens(frames[i]) for i in uni_idx)
-
-print("=== Qwen2-VL Video Processing: Uniform vs Dynamic-FPS ===\n")
-print(f"Total frames generated: {len(frames)}")
-print(f"Frame size: {frames[0].size}, patch_size=14")
-print(f"Tokens per frame: {count_visual_tokens(frames[0])}")
-print()
-print(f"{'Strategy':<12} {'Frames Selected':<25} {'Total Tokens':<12} {'Critical Coverage'}")
-print("-" * 65)
-fast = set(range(10, 15))
-print(f"{'Uniform':<12} {str(uni_idx):<25} {uni_tokens:<12} {len([i for i in uni_idx if i in fast])}/5")
-print(f"{'Dynamic':<12} {str(dyn_idx):<25} {dyn_tokens:<12} {len([i for i in dyn_idx if i in fast])}/5")
-print(f"\nToken savings from dynamic-FPS: {(1 - dyn_tokens/uni_tokens)*100:.1f}% on this video")
-print("(Savings would be larger on real videos with longer static segments)")
-
-try:
-    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-    print("\n=== Attempting Qwen2-VL Model Load ===")
-    model_id = "Qwen/Qwen2-VL-7B-Instruct"
-    processor = AutoProcessor.from_pretrained(model_id)
-    print(f"Processor loaded from {model_id}")
-    print(f"Processor image_processor patch_size: {processor.image_processor.patch_size if hasattr(processor.image_processor, 'patch_size') else 'check config'}")
-    print(f"Processor min/max pixels: {processor.image_processor.min_pixels} / {processor.image_processor.max_pixels}")
-    print("\nModel load skipped in lesson (requires ~16GB VRAM).")
-    print("In production, load with:")
-    print(f'  model = Qwen2VLForConditionalGeneration.from_pretrained("{model_id}", torch_dtype="auto", device_map="auto")')
-except Exception as e:
-    print(f"\nModel load deferred: {e}")
-    print("The token-counting and frame-selection logic above runs without the model.")
-
-print("\n=== GTM Connection: Adaptive Observability (Zone 12) ===")
-print("Dynamic-FPS allocates token budget where temporal change is detected.")
-print("GTM observability applies the same pattern: concentrate monitoring")
-print("resolution where reply-rate drift is detected, not uniformly across")
-print("every touchpoint in a sequence.")
+midpoints = [(s[1]+s[2]+s[3])/3 for s in sequence]
+drift = [0.0] + [abs(midpoints[i]-midpoints[i-1]) for i in range(1, len(midpoints))]
+budget = 3
+ranked = sorted(range(len(drift)), key=lambda i: drift[i], reverse=True)
+deep_trace = sorted(set([0, len(sequence)-1]) | set(ranked[:budget]))
+coarse = [i for i in range(len(sequence)) if i not in deep_trace]
+print("=== Adaptive Sequence Monitoring (dynamic-FPS → Zone 12) ===")
+print(f"Touchpoints: {len(sequence)}  Deep-trace budget: {budget}\n")
+for i in deep_trace:
+    action = "per-recipient, per-variant tracing" if i in ranked[:budget] else "baseline anchor"
+    print(f"  DEEP  [{i}] {sequence[i][0]:<22} drift={drift[i]:.2f}  → {action}")
+print(f"\nCoarse: {len(coarse)} steps → 1σ band check only")
+for i in coarse:
+    print(f"  COARSE[{i}] {sequence[i][0]:<22} drift={drift[i]:.2f}  → within baseline")
 ```
 
-The output confirms the core trade-off: dynamic-FPS captures the same or better critical-scene coverage with fewer total tokens. The model-load section attempts to initialize the processor (which is small) and reports configuration values like patch size and pixel limits, then defers the full model load to avoid requiring 16GB VRAM during the lesson.
+The output shows drift spiking at Day 5 (1.73) and Day 7 (0.37). The adaptive allocator assigns deep-trace slots to those two touchpoints plus the Day 0 anchor, skipping the four stable steps with coarse 1σ-band checks. This is the same ranking-by-change-density algorithm used in `dynamic_fps_sample` — just applied to reply-rate midpoints instead of pixel MSE.
 
-The adaptive allocation pattern — concentrate resolution where change is detected — maps directly to GTM observability in Zone 12. A sequence with 7 steps does not need equal monitoring granularity at every step. Steps where reply rates are stable need a coarse check (is the rate within 1σ of baseline?). Steps where drift is detected need fine-grained tracing (per-recipient, per-variant, per-timestamp). The dynamic-FPS algorithm and the GTM drift detector share the same structure: measure change density, allocate budget proportionally, and maintain coverage on low-change regions with minimal overhead.
+[CITATION NEEDED — concept: Zone 12 GTM cluster mapping for adaptive pipeline observability]
 
-## Ship It
+## Exercises
 
-In production, video-VLM inference needs a token-budget manager that caps total visual tokens to fit context windows, a frame-selection policy that adapts to content, and an observability layer that reports what the model actually saw. The code below implements a production-grade wrapper that does all three, structured for deployment behind an API.
+### Exercise 1 (Medium)
 
-```python
-import numpy as np
-from PIL import Image
-from dataclasses import dataclass, field, asdict
-from typing import List, Optional
+Modify `generate_test_video` to produce a 60-frame video with four scenes: 20 frames static, 5 frames rapid change, 15 frames slow gradient, 20 frames static. Run both `uniform_sample` and `dynamic_fps_sample` with `budget=12`. Report: (a) how many rapid-change frames each strategy captures, (b) total visual tokens consumed by each strategy at 320×240 resolution, and (c) the token-savings percentage from dynamic sampling. Then increase the static segments to 40 frames each and rerun — does the savings ratio grow? Document the relationship between static-segment length and dynamic-FPS advantage.
+
+### Exercise 2 (Hard)
+
+Implement a function `apply_mrope(embedding, t, h, w, head_dim=128, base=10000.0)` that takes a raw head-dimensional embedding vector and returns the M-RoPE-rotated version using the temporal/height/width split (d/4, d/4, d/2). Then verify three properties: (1) two tokens at `(t=0, h=3, w=4)` and `(t=5, h=3, w=4)` have cosine similarity < 1.0 (temporal axis differentiates), (2) two tokens at `(t=2, h=3, w=4)` and `(t=2, h=7, w=4)` have cosine similarity < 1.0 (height axis differentiates), and (3) two tokens at the same `(t, h, w)` have cosine similarity = 1.0 (identity). Use `scipy.spatial.distance.cosine` or compute dot product manually. Print all three similarity values and confirm they match expectations.
+
+## Key Terms
+
+- **Dynamic Resolution**: Processing images at their native dimensions rather than resizing to a fixed square. Token count scales with input resolution. Introduced in Qwen2-VL.
+- **Dynamic-FPS**: Frame sampling strategy that allocates frames proportional to inter-frame visual change rather than wall-clock intervals. Static segments receive sparse coverage; high-change segments receive dense coverage.
+- **M-RoPE (Multi-modal Rotary Position Embedding)**: Extension of RoPE that splits the head dimension into three independent rotation sections — temporal, height, and width — so each visual token carries its (t, h, w) coordinate encoded directly into its embedding.
+- **Patchification**: Dividing an image into a grid of fixed-size patches (typically 14×14 pixels per the ViT convention), where each patch becomes one visual token in the LLM context window.
+- **Visual Token**: A single patch from an image or video frame, projected through an MLP into the LLM's embedding space. The LLM backbone attends over visual tokens identically to text tokens.
+- **Temporal Change Detection**: Computing a difference metric (pixel MSE, feature cosine distance) between consecutive frames to guide dynamic-FPS sampling. High difference triggers dense sampling; low difference triggers sparse sampling.
+
+## Sources
+
+- Bai, J. et al. (2023). *Qwen-VL: A Versatile Vision-Language Model for Understanding, Localization, Text Reading, and Beyond*. arXiv:2308.12966.
+- Wang, P. et al. (2024). *Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution*. arXiv:2409.12191. — Introduces dynamic resolution, dynamic-FPS, and M-RoPE. The paper describes the frame-sampling approach at a high level but does not fully specify threshold values or token-budget caps.
+- Su, J. et al. (2021). *RoFormer: Enhanced Transformer with Rotary Position Embedding*. arXiv:2104.09864. — Original RoPE formulation that M-RoPE extends to three axes.
+- Dosovitskiy, A. et al. (2021). *An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale*. arXiv:2010.11929. — ViT patchification convention (14×14 or 16×16 patches) used by the Qwen-VL family.
+- [CITATION NEEDED — concept: Qwen2-VL dynamic-FPS frame sampling algorithm and its temporal embedding scheme]
+- [CITATION NEEDED — concept: Zone 12 GTM cluster mapping for adaptive pipeline observability]

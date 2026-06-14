@@ -140,4 +140,91 @@ class RepoSummarizerServer:
         print(f"  Pass 2 (synthesize): {pass2}")
         return pass2
 
-ll
+llm = MockLLM()
+client = SamplingClient(llm)
+server = RepoSummarizerServer(client)
+
+files = ["file_utils.py", "config.py", "test_utils.py", "README.md", "setup.py"]
+result = server.summarize(files)
+print(f"\nFinal summary: {result}")
+print(f"Total sampling requests: {len(client.requests_received)}")
+print(f"Model preferences sent: {json.dumps(client.requests_received[0]['params']['modelPreferences'])}")
+```
+
+Running this produces:
+
+```
+  Pass 1 (identify): Key file identified: file_utils.py — contains core utility functions.
+  Pass 2 (synthesize): The repository is a Python utility library with 3 modules: file handling, config parsing, and tests.
+
+Final summary: The repository is a Python utility library with 3 modules: file handling, config parsing, and tests.
+Total sampling requests: 2
+Model preferences sent: {"hints": [{"name": "claude-sonnet-4-20250514"}], "intelligencePriority": 0.8, "speedPriority": 0.3, "costPriority": 0.3}
+```
+
+Two things to notice. First, the server called `_sample` twice and built up a conversation history — pass 2 sees the result of pass 1 because the server appended the assistant response to the messages array before the second call. That is the agent loop: the server controls the context window, not the client. Second, the model preferences travel with every request. The server expressed a preference for intelligence over speed or cost, but the client is free to ignore it — the hint is a suggestion, not a command. A production client like Claude Desktop honors these preferences when it can, and silently falls back to its default model when it cannot.
+
+## Use It
+
+Server-initiated LLM completion via `sampling/createMessage` creates an agent loop that lets an enrichment server hold a scoring rubric in its own code while borrowing the client's model for the actual reasoning. This maps to **Cluster 1.3 — Account & Contact Enrichment**, where the pattern is: fetch raw data from a provider, ask the LLM to extract signals, ask the LLM again to score those signals against an ICP definition, and return a structured verdict. The server owns the rubric and the loop; the client owns the API key and the model.
+
+```python
+import json
+
+MOCK = ["Growth signals: 150% YoY ARR growth, Series B ($40M), 200+ employees, expanding EU.",
+        "ICP Score: 87 — strong fit on all four criteria."]
+
+class LLM:
+    def __init__(self): self.i = 0
+    def complete(self, msgs, sys):
+        r = MOCK[min(self.i, len(MOCK) - 1)]; self.i += 1; return r
+
+class Client:
+    def __init__(self, llm): self.llm = llm; self.reqs = []
+    def sample(self, messages, system=""):
+        self.reqs.append({"messages": messages, "systemPrompt": system})
+        return self.llm.complete(messages, system)
+
+class ICPScoreServer:
+    def __init__(self, client): self.client = client
+    def score(self, account):
+        s1 = self.client.sample(
+            [{"role": "user", "content": {"type": "text",
+              "text": f"Company data: {json.dumps(account)}"}}],
+            "Extract the 3 strongest growth signals. Be concise.")
+        s2 = self.client.sample(
+            [{"role": "user", "content": {"type": "text",
+              "text": f"Signals:\n{s1}\n\nICP: SaaS, 50+ employees, Series A-C, US/EU.\nScore 0-100."}}],
+            "Return score and one-line justification.")
+        return {"account": account["name"], "score": s2, "signals": s1}
+
+c = Client(LLM())
+server = ICPScoreServer(c)
+result = server.score({"name": "DataCo", "headcount": 85, "model": "SaaS",
+                        "funding": "Series B", "region": "EU"})
+print(json.dumps(result, indent=2))
+print(f"Sampling passes: {len(c.reqs)}")
+```
+
+The two-pass structure mirrors what a real enrichment tool does: pass 1 extracts structured signals from messy provider data (Apollo, LinkedIn, Crunchbase), pass 2 scores those signals against your ICP definition. The server could add a pass 3 that checks for disqualifiers (e.g., company is a competitor's customer). Each pass is a separate `sampling/createMessage` call, and the server decides when the loop converges — when the score is above threshold, or when a disqualifier fires, or when it runs out of passes. That convergence logic lives in the server, not in a prompt.
+
+## Exercises
+
+**Exercise 1 (Easy):** Modify the `ICPScoreServer` to include a third sampling pass that generates a one-line outreach hook based on the growth signals from pass 1 and the score from pass 2. Add the mock response and verify the full three-pass loop executes. Observe how `client.reqs` grows to 3 entries.
+
+**Exercise 2 (Hard):** Add a convergence condition to the `RepoSummarizerServer.summarize` method. Instead of always running exactly two passes, run pass 1, check if the output contains the word "utility" — if it does, run pass 2 with a system prompt that says "Focus on the testing infrastructure." If it does not, run pass 2 with the original synthesis prompt. This is a conditional agent loop: the server branches based on LLM output. Print which branch was taken.
+
+## Key Terms
+
+- **Sampling (`sampling/createMessage`):** An MCP protocol method where a server sends a request to the client asking it to run an LLM completion. The server specifies messages, system prompt, model preferences, and token limits. The client decides whether to execute, possibly after user approval.
+- **Server-requested completion:** An LLM inference call initiated by the server rather than the client. Inverts the normal call direction: instead of client → LLM → server, the flow is client → server → (server requests) → client → LLM → client → server.
+- **Agent loop:** A control structure where a server iteratively calls the LLM via sampling, examines the result, and decides whether to call again with refined context. The server holds the stopping condition and branching logic.
+- **Model preferences (`modelPreferences`):** A set of hints in a sampling request — model names, `intelligencePriority`, `speedPriority`, `costPriority` — that tell the client which model characteristics the server prefers. Non-binding: the client may override.
+- **Human-in-the-loop approval:** A client-side gate where the user is asked to approve or reject a sampling request before the LLM runs it. The client controls whether this gate exists and how it is presented.
+- **Tool-in-sampling:** An experimental extension (SEP-1577) allowing servers to include tool definitions inside sampling requests, so the LLM can call back into server tools mid-completion. Behavior varies across SDK versions.
+
+## Sources
+
+- MCP Specification, "Sampling" section — `modelcontextprotocol.io/specification` (describes `sampling/createMessage`, `modelPreferences`, and the human-in-the-loop approval model).
+- MCP Python SDK documentation — `github.com/modelcontextprotocol/python-sdk` (server and client sampling implementations).
+- [CITATION NEEDED — concept: SEP-1577 tool definitions inside sampling requests, merged late 2025] — the specific proposal and its merge status could not be independently verified against a primary source. The tool-in-sampling pattern is observable in MCP SDK prereleases but the SEP number and merge timeline are unconfirmed.

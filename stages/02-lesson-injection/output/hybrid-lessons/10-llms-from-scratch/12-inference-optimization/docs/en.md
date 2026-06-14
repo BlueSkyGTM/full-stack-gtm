@@ -336,60 +336,82 @@ The batched version processes all 16 prompts in a single forward pass per decode
 
 ## Use It
 
-Quantization and batching are not abstract infrastructure concerns in a GTM context. When your enrichment pipeline runs 50,000 accounts through a scoring model, the per-inference cost compounds linearly. At $0.002 per OpenAI API call for a small prompt, 50,000 records costs $100 per run. Run that daily and you are at $3,000/month for one enrichment field. Swap to a self-hosted INT4-quantized 7B model serving via vLLM with continuous batching, and the same 50,000 inferences cost roughly $0.30 in GPU time — the cost of electricity and amortized hardware. [CITATION NEEDED — concept: inference cost optimization in GTM enrichment workflows]
-
-The multi-agent orchestration pattern described in Zone 10 compounds this further. An agent squad with a router, a researcher, a copywriter, and a reviewer means 4-5 LLM calls per account, not one. At 50,000 accounts, that is 250,000 inferences per run. Without inference optimization — quantization to reduce per-call memory, continuous batching to pack concurrent agent calls into GPU time, KV cache management to handle the long shared context prefixes that agent prompts produce — the multi-agent architecture is not economically viable. The agent squad pattern works when inference cost per record stays under a threshold that makes the enrichment pipeline's output worth more than its compute cost. [CITATION NEEDED — concept: cost thresholds for multi-agent GTM systems]
-
-Prefix caching is particularly relevant here. In a Clay-style waterfall enrichment workflow, multiple steps share a common context: the account's firmographic data, the persona being targeted, the campaign context. If your inference server supports prefix caching (vLLM does), the shared 500-token preamble is computed once and cached. Each subsequent call that starts with the same prefix skips prefill for those tokens entirely. Across a 50,000-record run where every call shares the same 500-token system prompt and account context template, prefix caching can reduce total prefill compute by 60-80%. This is not a marginal optimization — it is the difference between a pipeline that completes in 2 hours versus 8 hours on the same hardware.
-
-The practical decision for a GTM engineer is not "which model is best" but "what is the cheapest model that meets my quality threshold for this specific task." Account scoring might tolerate INT4 quantization because the output is a numeric score, not prose. Personalized email generation might require FP16 or INT8 because nuance in tone matters. Follow-up cadence timing decisions might work with a distilled 1B model because the task is classification, not generation. Configuration of batch size and precision per task — rather than defaulting to the same API call for every step — is where inference optimization becomes a GTM strategy. [CITATION NEEDED — concept: per-task model selection in GTM pipelines]
-
-## Ship It
-
-Deploy a quantized model behind an OpenAI-compatible endpoint using vLLM. This gives you a local server that accepts the same request format as the OpenAI API, so your existing pipeline code works without modification.
-
-First, create the serving configuration:
+Batched inference amortizes weight reads across requests, which is the mechanism that makes high-volume account enrichment pipelines economically viable — this is the Clay waterfall at Cluster 1.2 (TAM Refinement & ICP Scoring). The script below simulates scoring 20 accounts sequentially vs. batched, then extrapolates to a 50,000-record enrichment run so you can see why per-record inference cost matters.
 
 ```python
-import subprocess
-import time
-import requests
-import json
-import concurrent.futures
-import statistics
+import torch, time
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-SERVER_CMD = [
-    "python", "-m", "vllm.entrypoints.openai.api_server",
-    "--model", "Qwen/Qwen2.5-0.5B-Instruct",
-    "--quantization", "awq",
-    "--max-model-len", "2048",
-    "--gpu-memory-utilization", "0.85",
-    "--max-num-seqs", "64",
-    "--port", "8000",
+MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+tok = AutoTokenizer.from_pretrained(MODEL_ID)
+tok.pad_token = tok.eos_token
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=torch.float32, device_map="cpu").eval()
+
+ACCOUNTS = [
+    {"name": f"Acme-{i}", "industry": ["SaaS","Fintech","Healthcare"][i%3], "employees": 50+i*37}
+    for i in range(20)
+]
+PROMPTS = [
+    f"Score 1-10: {a['name']}, {a['industry']}, {a['employees']} employees. Score:"
+    for a in ACCOUNTS
 ]
 
-print("Starting vLLM server...")
-server_process = subprocess.Popen(
-    SERVER_CMD,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    text=True,
-)
+t0 = time.perf_counter()
+for p in PROMPTS:
+    inp = tok(p, return_tensors="pt")
+    model.generate(**inp, max_new_tokens=5, do_sample=False)
+seq_s = time.perf_counter() - t0
 
-print("Waiting for server to be ready...")
-for attempt in range(120):
-    try:
-        resp = requests.get("http://localhost:8000/health", timeout=2)
-        if resp.status_code == 200:
-            print(f"Server ready after {attempt + 1} attempts")
-            break
-    except requests.ConnectionError:
-        pass
-    time.sleep(2)
-else:
-    print("Server failed to start within timeout")
-    server_process.terminate()
-    exit(1)
+t0 = time.perf_counter()
+batch = tok(PROMPTS, return_tensors="pt", padding=True, truncation=True)
+with torch.no_grad():
+    model.generate(**batch, max_new_tokens=5, do_sample=False, pad_token_id=tok.pad_token_id)
+bat_s = time.perf_counter() - t0
 
-PROMPT = "Write a two-sentence product description for a CRM tool."
-TOKENS_PER_RESPONSE = 50
+records = 50000
+print(f"Sequential:   {seq_s:.1f}s for {len(PROMPTS)} records ({len(PROMPTS)/seq_s:.1f} rec/sec)")
+print(f"Batched:      {bat_s:.1f}s for {len(PROMPTS)} records ({len(PROMPTS)/bat_s:.1f} rec/sec)")
+print(f"Speedup:      {seq_s/bat_s:.1f}x")
+print(f"50k records @ sequential: {records/(len(PROMPTS)/seq_s)/60:.0f} min")
+print(f"50k records @ batched:    {records/(len(PROMPTS)/bat_s)/60:.0f} min")
+```
+
+At 50,000 records, the difference between sequential and batched is the difference between a pipeline that finishes overnight and one that finishes before your standup. In a Clay enrichment workflow where each account triggers a scoring call, a research call, and a personalization call, that 3-5x batch speedup compounds across every step. [CITATION NEEDED — concept: batch inference throughput in GTM enrichment pipelines]
+
+## Exercises
+
+### Exercise 1: Measure Prefill vs. Decode Latency (Medium)
+
+Write a script that measures prefill and decode latency separately for a single prompt. Use the HuggingFace `generate()` method with `max_new_tokens=1` to isolate prefill cost (prompt processing only), then run the same prompt with `max_new_tokens=50` and compute `(total_time - prefill_time) / 49` as per-token decode latency. Test with three prompt lengths: 10 tokens, 200 tokens, and 1,000 tokens.
+
+**Deliverable:** A table showing prefill time, decode time per token, and the ratio of prefill to total for each prompt length. Verify that prefill time scales roughly linearly with prompt length while decode time per token stays constant. Explain why decode time per token is constant regardless of prompt length (hint: what does the KV cache eliminate?).
+
+### Exercise 2: Simulate Continuous Batching Scheduling (Hard)
+
+Implement a simplified continuous-batching scheduler in pure Python. Create 50 mock requests, each with a random prompt length (10-200 tokens) and a random output length (5-100 tokens). Implement two strategies:
+
+1. **Static batching**: Group requests into batches of 8, process each batch to completion (all requests in the batch finish before the next batch starts), track total wall-clock time assuming 0.1s per decode step.
+2. **Continuous batching**: At each 0.1s decode step, remove finished requests from the active set, add waiting requests up to a max of 8 concurrent, and continue until all 50 are done.
+
+**Deliverable:** Print total wall-clock time for both strategies and the speedup ratio. Then modify the output-length distribution to be more skewed (most requests short, a few very long) and re-run. The convoy effect should become more pronounced — explain why static batching degrades faster than continuous batching as the variance in output length increases.
+
+## Key Terms
+
+- **Prefill phase**: The initial processing of the input prompt where all tokens are processed in parallel. Compute-bound: the GPU's math units are the bottleneck.
+- **Decode phase**: Autoregressive token generation one token at a time. Memory-bound: the time to read model weights from GPU memory dominates.
+- **KV cache**: Stored key and value attention projections for all previously processed tokens, eliminating the need to recompute attention over prior context at each decode step. Grows linearly with sequence length.
+- **PagedAttention**: A memory management technique (implemented in vLLM) that divides the KV cache into fixed-size blocks allocated on demand, reducing memory waste from 60-80% to under 4%.
+- **Quantization**: Reducing weight precision from FP16 to INT8 or INT4, cutting memory footprint by 2-4x. Post-training methods (GPTQ, AWQ) calibrate the quantization grid against representative inputs to minimize error.
+- **Continuous batching**: Iteration-level scheduling where the batch is recomposed at every decode step — finished requests exit immediately, new requests join mid-flight. Eliminates the convoy effect where short requests wait for long ones.
+- **Speculative decoding**: A draft model guesses the next K tokens cheaply; the target model verifies all K in a single forward pass. Effective speedup depends on the draft model's acceptance rate.
+
+## Sources
+
+- Kwon, W., Li, Z., Zhuang, S., et al. (2023). "Efficient Memory Management for Large Language Model Serving with PagedAttention." *SOSP 2023*. — vLLM and PagedAttention architecture.
+- Frantar, E., Ashkboos, S., Hoefler, T., & Alistarh, D. (2022). "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers." *arXiv:2210.17323*.
+- Lin, J., Tang, J., Tang, H., et al. (2023). "AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration." *arXiv:2306.00978*.
+- Leviathan, Y., Kalman, M., & Matias, Y. (2023). "Fast Inference from Transformers via Speculative Decoding." *arXiv:2211.17192*.
+- Sanh, V., Debut, L., Chaumond, J., & Wolf, T. (2019). "DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter." *arXiv:1910.01108*.
+- Dettmers, T., Pagnoni, M., Holtzman, A., & Zettlemoyer, L. (2023). "QLoRA: Efficient Finetuning of Quantized LLMs." *NeurIPS 2023*. — NF4 quantization and BitsAndBytes 4-bit configuration.
+- vLLM Documentation: <https://docs.vllm.ai> — continuous batching, prefix caching, and OpenAI-compatible server configuration.
+- [CITATION NEEDED — concept: batch inference throughput in GTM enrichment pipelines]

@@ -282,117 +282,60 @@ Each inference call prints the allocated visual token count alongside the respon
 
 ## Use It
 
-The visual-token budget invariant — the same ~2880 tokens whether processing one screenshot or twenty video frames — maps directly to the **Enrichment** cluster in GTM engineering. When your enrichment waterfall hits a row for a prospect account, that account's visual signals (homepage screenshot, landing-page variants, demo video) can now flow through one model endpoint instead of three. This collapses serving complexity and lets you treat visual enrichment as one more column in your data table, not a separate pipeline.
-
-For **single-image enrichment**, screenshot each prospect's homepage at crawl time. Pass the screenshot to LLaVA-OneVision with a structured extraction prompt: company name, headline value proposition, visible tech stack indicators (e.g., "Powered by Stripe" badges, HubSpot chat widgets), pricing tier names. Write the extracted fields back to your enrichment table as new columns. This captures positioning language that the raw HTML misses — because the most important messaging often lives in hero images, not in meta tags. The model's OCR capability (inherited from stage-one single-image training) handles text embedded in graphics. In a Clay workflow, this becomes one enrichment step in your waterfall: after firmographic enrichment pulls company size and industry, the visual enrichment step reads the screenshot and fills in positioning and tech-stack fields that no text API provides.
-
-For **multi-image enrichment**, pull historical snapshots of a prospect's landing page from the Wayback Machine or your own screenshot archive. Pass two or three snapshots to the model and ask it to identify what changed: new product launches, pricing shifts, repositioning from one buyer persona to another. This is a signal no real-time crawl can produce, because the signal exists in the *delta* between snapshots, not in any single snapshot. The multi-image cross-referencing capability — which emerged from stage-two curriculum training — is what makes this possible. The model's attention mechanism attends across image boundaries, comparing the hero section of snapshot A to the hero section of snapshot B in the same forward pass. Feed this delta signal into your lead-scoring model: a prospect who recently added a pricing page or changed their target buyer persona is further along in an evaluation cycle and deserves a higher-priority outbound sequence.
-
-For **video enrichment**, process recorded product demos that prospects publish on YouTube or their own sites. Sample frames at 0.5fps (one frame every two seconds — the budget solver above shows this keeps a 60-second demo under 600 visual tokens), pass the frame sequence to the model, and extract: feature names mentioned, pricing revealed on-screen, competitive comparisons shown, integration logos visible. This pre-call research feeds directly into your SDR's talk track. Instead of an SDR spending fifteen minutes watching a demo, the enrichment pipeline produces a structured summary in seconds. The temporal reasoning capability — inherited from stage-three video training, but built on the multi-image cross-referencing from stage two — lets the model track how features are introduced over time and identify the climactic "key feature" reveal that usually appears in the last third of a demo.
-
-## Ship It
-
-The token-budget invariant that lets LLaVA-OneVision handle all three modalities also creates a specific observability requirement: **visual-token-budget drift is your degradation signal**. When screenshots arrive at unexpected resolutions, when video frame sampling produces more frames than the budget anticipates, or when the projection layer starts receiving tokens outside its training distribution, output quality degrades silently. The model still returns text — it just returns worse text. Zone 12 observability (tracing, logging, and feedback-loop monitoring) is how you catch this before your enrichment table fills with garbage.
-
-Instrument every inference call with four traces: `modality`, `num_visual_tokens_allocated`, `num_visual_tokens_actual`, and `response_length`. When `num_visual_tokens_actual` consistently exceeds `num_visual_tokens_allocated` by more than 20%, your input pipeline is producing images or videos at higher resolution than the budget expects. This is the visual equivalent of reply-rate drift in an email sequence — the system is still running, but the quality is eroding.
+The visual-token budget mechanism — one ~2880-token allocation regardless of whether the input is a homepage screenshot, a set of Wayback Machine snapshots, or a sampled demo video — collapses visual enrichment into a single function call in your GTM data pipeline (Enrichment cluster). Instead of maintaining three model endpoints, you route every prospect's visual signals through one entry point and write structured fields back to your account table.
 
 ```python
-import json
-import time
-from datetime import datetime
-
-class VisualEnrichmentTracer:
-    def __init__(self, log_path="/tmp/visual_enrichment_trace.jsonl"):
-        self.log_path = log_path
-        self.budget_threshold = SINGLE_IMAGE_BUDGET * 1.2
-    
-    def trace(self, account_id, modality, num_inputs, tokens_per_input, response, prompt_hash):
-        total_tokens = num_inputs * tokens_per_input
-        over_budget = total_tokens > self.budget_threshold
-        short_response = len(response) < 20
-        
-        entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "account_id": account_id,
-            "modality": modality,
-            "num_inputs": num_inputs,
-            "tokens_per_input": tokens_per_input,
-            "total_visual_tokens": total_tokens,
-            "over_budget": over_budget,
-            "response_length": len(response),
-            "short_response_flag": short_response,
-            "prompt_hash": prompt_hash,
-        }
-        
-        with open(self.log_path, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-        
-        return entry
-    
-    def health_check(self):
-        entries = []
-        try:
-            with open(self.log_path) as f:
-                entries = [json.loads(line) for line in f]
-        except FileNotFoundError:
-            return {"status": "no_traces_yet", "entries": 0}
-        
-        total = len(entries)
-        over = sum(1 for e in entries if e["over_budget"])
-        short = sum(1 for e in entries if e["short_response_flag"])
-        
-        return {
-            "total_calls": total,
-            "over_budget_calls": over,
-            "over_budget_rate": f"{over/total*100:.1f}%" if total else "N/A",
-            "short_response_calls": short,
-            "short_response_rate": f"{short/total*100:.1f}%" if total else "N/A",
-            "status": "degraded" if over/total > 0.15 if total else False else "healthy",
-        }
-
-tracer = VisualEnrichmentTracer()
-
-simulated_calls = [
-    ("acme-corp", "single", 1, 2880, "Acme Corp provides cloud infrastructure monitoring with usage-based pricing starting at $49/mo.", "hash_001"),
-    ("beta-inc", "multi", 4, 576, "Beta Inc shifted from developer-focused to enterprise positioning between Q2 and Q4.", "hash_002"),
-    ("gamma-llc", "video", 16, 196, "", "hash_003"),
-    ("delta-co", "multi", 8, 576, "Delta Co added a pricing page and removed the 'Request a Demo' CTA.", "hash_004"),
-    ("epsilon-io", "single", 1, 3100, "Epsilon IO uses Snowflake and dbt, pricing starts at $2,000/mo enterprise tier.", "hash_005"),
+PROSPECTS = [
+    {"id": "acme-corp", "signals": [("single", {}), ("video", {"duration_sec": 30, "fps": 1})]},
+    {"id": "beta-inc", "signals": [("multi", {"count": 3})]},
+    {"id": "gamma-io", "signals": [("single", {}), ("multi", {"count": 5})]},
 ]
 
-for call in simulated_calls:
-    entry = tracer.trace(*call)
-    flags = []
-    if entry["over_budget"]:
-        flags.append("OVER_BUDGET")
-    if entry["short_response_flag"]:
-        flags.append("SHORT_RESPONSE")
-    flag_str = f" [{', '.join(flags)}]" if flags else ""
-    print(f"{entry['account_id']:<12} {entry['modality']:<8} tokens={entry['total_visual_tokens']:>5} resp_len={entry['response_length']:>3}{flag_str}")
+def enrich_visual(prospect_id, modality, budget_kwargs):
+    budget = compute_visual_token_budget(modality, **budget_kwargs)
+    mock_output = {
+        "single": {"positioning": "usage-based infra monitoring", "pricing": "$49/mo starter"},
+        "multi": {"delta": "added pricing page in Q3", "persona_shift": "SMB to enterprise"},
+        "video": {"key_feature": "real-time anomaly detection", "competitors_named": "Datadog"},
+    }[modality]
+    return {"id": prospect_id, "modality": modality, "tokens": budget["total_visual_tokens"], **mock_output}
 
-health = tracer.health_check()
-print(f"\nPipeline Health: {health['status']}")
-print(f"  Total calls:        {health['total_calls']}")
-print(f"  Over-budget rate:   {health['over_budget_rate']}")
-print(f"  Short-response rate:{health['short_response_rate']}")
+print(f"{'Account':<12} {'Modality':<8} {'Tokens':>7}  Enrichment Fields")
+print("-" * 75)
+for p in PROSPECTS:
+    for modality, kwargs in p["signals"]:
+        row = enrich_visual(p["id"], modality, kwargs)
+        fields = ", ".join(f"{k}={v}" for k, v in row.items() if k not in ("id", "modality", "tokens"))
+        print(f"{row['id']:<12} {row['modality']:<8} {row['tokens']:>7}  {fields}")
 ```
 
-The tracer above shows two degradation signals: `over_budget` flags inputs where the actual token count exceeds the budget threshold (Epsilon-IO's screenshot arrived at 3100 tokens instead of 2880 — likely a higher-resolution capture than expected), and `short_response_flag` catches empty or near-empty outputs (Gamma-LLC's video produced no response — likely a frame-sampling failure that produced zero decodable frames). In a production enrichment pipeline, either signal should trigger an alert. The over-budget rate exceeding 15% means your screenshot crawler is capturing images at resolutions the projection layer was not trained on. The short-response rate exceeding 5% means either your frame sampler is broken or the model is receiving corrupted inputs.
+Each row in the output is one enrichment column written back to your CRM or Clay table. A prospect like acme-corp generates two rows — one from the homepage screenshot (positioning + pricing extracted via the AnyRes single-image path) and one from the demo video (key feature + competitor names extracted via the temporal frame-sequence path). Both rows pass through the same model endpoint, the same projection layer, the same language-model backbone. The only thing that differs is how visual tokens were arranged before they entered the context window.
 
-This tracing setup monitors your visual-enrichment pipeline in real time; token-budget drift and response-length collapse are your model-degradation signals, exactly as reply-rate drift signals sequence fatigue in outbound campaigns. Wire the tracer output into whatever dashboard your team already uses for pipeline health — Datadog, Grafana, or even a Slack webhook that posts when degradation rate crosses threshold. The point is not to build new observability infrastructure. The point is to extend your existing Zone 12 tracing to cover the visual modality that your text-only enrichment never needed.
+In a Clay enrichment waterfall, this replaces what would otherwise be three separate enrichment steps — one calling an OCR API, one calling a screenshot-comparison service, one calling a video-transcription API — with one step that accepts any visual input and returns structured fields. The token-budget solver runs before the model call to verify the input stays within the ~2880-token window; if a prospect's homepage screenshot arrives at an unexpected resolution and generates 3400 tokens, that is your degradation signal before the output even reaches your CRM.
 
 ## Exercises
 
-**Easy.** Modify the single-image inference prompt to extract a different set of fields from the same homepage screenshot. Instead of company name and value proposition, extract: primary CTA text, number of navigation menu items, and whether a chat widget is visible. Run the modified prompt and observe how the model's OCR capability handles UI elements versus marketing copy. Compare the token allocation — it should be identical because the image did not change, only the prompt did.
+**Medium.** Build a visual enrichment table for five accounts in your ICP. For each account, capture one current homepage screenshot. Run the single-image inference path with a prompt that extracts: primary CTA text, visible tech-stack badges (e.g., "Powered by Stripe", HubSpot chat widget), and pricing tier names. Write the results to a CSV. Then, for one of the five accounts, use the Wayback Machine to retrieve a homepage snapshot from 6+ months ago. Pass the current and historical screenshots together through the multi-image path and ask the model to identify what changed in positioning, pricing, or target audience. Add the delta as a new column. The exercise demonstrates that one model endpoint populated every field in your enrichment table across two modalities.
 
-**Medium.** Capture screenshots of two competitors in the same market (e.g., Linear vs. Jira, or Notion vs. Confluence). Pass both to the multi-image inference path with a prompt asking the model to identify three points of visual differentiation in design language, target audience signals, and feature emphasis. Write the output to a structured comparison table. Then swap the image order and run again — check whether the model's comparison is order-dependent or stable.
-
-**Hard.** Download a 60-second product demo video. Run the video inference path at three different frame rates: 2fps, 1fps, and 0.5fps. For each frame rate, record: total visual tokens consumed, features mentioned in the output, and whether the model identifies the same "key feature" across all three runs. The token budget solver from Build It should predict the token counts before you run — verify the predictions match. If output consistency drops sharply between 1fps and 0.5fps, that is the temporal-resolution floor for this video — sampling below it loses critical transitions.
+**Hard.** Download a 60-second product demo video from a prospect's website or YouTube channel. Run the video inference path at three frame rates: 2fps, 1fps, and 0.5fps. Before each run, use the `compute_visual_token_budget` function to predict the total visual token count — verify the prediction matches the actual allocation printed by `run_inference`. For each frame rate, record: total visual tokens consumed, features mentioned in the model's output, and whether the model identifies the same "key feature" across all three runs. If output consistency drops sharply between 1fps and 0.5fps (e.g., the model identifies a different key feature or misses a critical on-screen transition), that frame rate is your temporal-resolution floor for this video length. Sampling below it loses information faster than it saves tokens. Write up the trade-off curve: tokens saved vs. information lost.
 
 ## Key Terms
 
-**Visual-token budget** — The fixed number of tokens (~2880 in LLaVA-OneVision) allocated to encode visual input, regardless of whether the input is one image, multiple images, or video frames. This invariant enables a single projection layer to handle all three modalities without distribution shift.
+**Visual-token budget** — The fixed number of tokens (~2880 in LLaVA-OneVision) allocated to encode visual input, regardless of whether the input is one image, multiple images, or video frames. This invariant enables a single projection layer to handle all three modalities without distribution shift between training stages or inference calls.
 
-**AnyRes patching** — A strategy for partitioning a single high-resolution image into a grid of patches, each encoded separately, to preserve fine-grained detail (OCR, small text) that a single low-resolution encoding would lose. Produces up to 2880 tokens per image.
+**AnyRes patching** — A strategy for partitioning a single high-resolution image into a grid of patches, each encoded separately, to preserve fine-grained detail (OCR, small text) that a single low-resolution encoding would lose. Produces up to 2880 tokens per image in the single-image modality.
 
-**Token arrangement** —
+**Token arrangement** — The way visual tokens from one or more inputs are ordered and delimited in the language model's context window before the attention mechanism processes them. For single-image inputs, tokens form one contiguous sequence. For multi-image inputs, positional markers (`<image 1>`, `<image 2>`) delimit each image's token block so the language model can attribute features to specific images. For video inputs, frame tokens are concatenated in temporal order so the model can reason about sequence and causality. The arrangement is the only thing that changes between modalities — the vision encoder, projection layer, and language model are identical.
+
+**Training curriculum** — A three-stage sequential training procedure where each stage initializes from the previous stage's weights. Stage one (single-image) builds OCR and scene understanding. Stage two (multi-image) inherits those skills and adds cross-image comparison. Stage three (video) inherits cross-image reasoning and adds temporal understanding. The curriculum produces emergent capabilities — like multi-view scene reasoning — that no single stage trained for explicitly.
+
+**Projection layer** — A multi-layer perceptron (MLP) that maps raw visual features from the vision encoder's output space into the language model's embedding space. Because the visual-token budget is held constant across modalities, this layer sees a consistent input distribution during training and inference, which is what allows skill transfer between curriculum stages.
+
+## Sources
+
+- Li, B., Zhang, Y., Chen, K., et al. (2024). "LLaVA-OneVision: Easy Visual Task Transfer." arXiv:2408.03326. https://arxiv.org/abs/2408.03326
+- Zhai, X., Mustafa, B., Kolesnikov, A., Beyer, L. (2023). "Sigmoid Loss for Language Image Pre-Training (SigLIP)." arXiv:2303.15343. https://arxiv.org/abs/2303.15343
+- Yang, A., et al. (2024). "Qwen2.5 Technical Report." Alibaba Cloud. https://qwenlm.github.io/blog/qwen2.5/
+- Liu, H., Li, C., Wu, Q., Lee, Y.J. (2024). "Visual Instruction Tuning (LLaVA)." arXiv:2304.08485. https://arxiv.org/abs/2304.08485
+- [CITATION NEEDED — concept: LLaVA-OneVision training data mixture ratios for single-image vs. multi-image vs. video tasks]
+- [CITATION NEEDED — concept: Clay enrichment waterfall integration with vision-language model endpoints]

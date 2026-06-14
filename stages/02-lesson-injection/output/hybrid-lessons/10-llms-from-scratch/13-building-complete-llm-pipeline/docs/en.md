@@ -278,239 +278,65 @@ print(f"\nSession total tokens spent: {pipeline.tokens_spent_this_session}")
 
 ## Use It
 
-The pipeline above is structurally identical to what GTM teams call an enrichment waterfall — sequential calls with validation gates and graceful fallback when a source returns unusable data. In a GTM context, the "schema" is the data contract your CRM expects: company name, industry, employee count, intent signal. The "fallback chain" is trying a primary enrichment source, and if it returns garbage or nothing, falling through to a cheaper or faster source. The pipeline stages — validate input, assemble the call, check the budget, retry on failure, parse, validate — are the same stages whether the underlying call is an LLM API or a third-party data provider.
+Schema-validated LLM extraction with a model fallback chain is the exact mechanism behind a GTM enrichment waterfall — try the high-quality source, validate the output against a schema contract, and fall through to a cheaper source if the output fails validation rather than returning a fabricated field.
 
-The multi-agent orchestration pattern in Zone 10 — what the handbook calls a "task squad with a router" — is a generalization of this pipeline. One stage lays the groundwork (input validation, prompt assembly), another does the heavy lifting (the API call), another cements the result (parsing, schema validation). The router is the fallback logic that decides when to try a different model. When you build enrichment workflows that score leads or categorize accounts through LLM calls, you are building task squads whether you call them that or not. The pipeline class above is the router and the squad in one.
+[CITATION NEEDED — concept: Clay enrichment waterfall internal architecture]
 
-Here is a GTM-specific run that enriches a raw company description into structured CRM fields, with a fallback chain that tries a cheaper model if the primary fails — the same architecture Clay uses when it falls through enrichment data providers in sequence.
-
-[CITATION NEEDED — concept: Clay waterfall architecture internals]
+This is **Cluster 1.2 — TAM Refinement & ICP Scoring**. The pipeline you built is what runs inside an enrichment platform when it processes a list of 500 target accounts: each account description goes through input validation, prompt assembly, token budgeting, the API call, parsing, schema checking, and fallback — all before a single field lands in your CRM.
 
 ```python
-import anthropic
-import json
-import time
-from dataclasses import dataclass
-from typing import Optional
-
-TYPE_MAP = {"str": str, "int": int, "float": float, "bool": bool, "list": list}
-
-@dataclass
-class EnrichmentResult:
-    input_hash: str
-    model: str
-    tokens: int
-    cost_usd: float
-    status: str
-    data: Optional[dict] = None
-    error: Optional[str] = None
-
-PRICING = {
-    "claude-sonnet-4-5-20250514": {"input": 3.00, "output": 15.00},
-    "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
-}
-
-class GTMEnrichmentPipeline:
-    def __init__(self, primary="claude-sonnet-4-5-20250514", fallback="claude-3-5-haiku-20241022"):
-        self.primary = primary
-        self.fallback = fallback
-        self.client = anthropic.Anthropic()
-        self.total_cost = 0.0
-        self.total_tokens = 0
-
-    def _hash_input(self, text):
-        import hashlib
-        return hashlib.sha256(text.encode()).hexdigest()[:12]
-
-    def _compute_cost(self, model, input_tokens, output_tokens):
-        p = PRICING.get(model, {"input": 0, "output": 0})
-        return (input_tokens * p["input"] + output_tokens * p["output"]) / 1_000_000
-
-    def _extract_fields(self, text, schema, model):
-        schema_desc = json.dumps(schema, indent=2)
-        prompt = (
-            f"Extract structured account data from this description.\n\n"
-            f"Return JSON matching this schema:\n{schema_desc}\n\n"
-            f"Description: {text}\n\nReturn ONLY JSON."
-        )
-        response = self.client.messages.create(
-            model=model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
-        if raw.startswith("```"):
-            raw = "\n".join(raw.split("\n")[1:])
-            if raw.rstrip().endswith("```"):
-                raw = raw.rstrip()[:-3]
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start == -1 or end == -1:
-            raise ValueError("No JSON in response")
-        data = json.loads(raw[start:end + 1])
-        for field_name, type_str in schema.items():
-            if field_name not in data:
-                raise ValueError(f"Missing: {field_name}")
-            if not isinstance(data[field_name], TYPE_MAP.get(type_str, str)):
-                raise ValueError(f"{field_name} wrong type")
-        return data, response.usage.input_tokens, response.usage.output_tokens
-
-    def enrich(self, account_description, schema):
-        input_hash = self._hash_input(account_description)
-        result = EnrichmentResult(
-            input_hash=input_hash,
-            model=self.primary,
-            tokens=0,
-            cost_usd=0.0,
-            status="running",
-        )
-
-        for model in [self.primary, self.fallback]:
-            try:
-                print(f"  Trying {model}...")
-                data, in_tok, out_tok = self._extract_fields(account_description, schema, model)
-                cost = self._compute_cost(model, in_tok, out_tok)
-                result.data = data
-                result.model = model
-                result.tokens = in_tok + out_tok
-                result.cost_usd = cost
-                result.status = "enriched"
-                self.total_cost += cost
-                self.total_tokens += in_tok + out_tok
-                print(f"  Success: {in_tok + out_tok} tokens, ${cost:.6f}")
-                return result
-            except Exception as e:
-                print(f"  Failed on {model}: {e}")
-                result.error = str(e)
-                result.model = model
-                continue
-
-        result.status = "failed"
-        return result
-
-
-ACCOUNT_SCHEMA = {
+CRM_SCHEMA = {
     "company_name": "str",
     "industry": "str",
     "employee_band": "str",
-    "tech_stack": "list",
     "icp_fit_score": "float",
+    "tech_stack": "list",
 }
 
-enricher = GTMEnrichmentPipeline()
-
-accounts = [
-    "Stripe is a payments infrastructure company. They serve businesses of all sizes with "
-    "payment processing, billing, and fraud detection. About 8,000 employees. "
-    "They use TypeScript, Ruby, Go, and lots of internal tools.",
-
-    "Notion makes a note-taking and project management app. ~600 employees. "
-    "They use React, TypeScript, Node.js, and PostgreSQL on AWS.",
+targets = [
+    "Stripe — payments infrastructure company, ~8000 employees, uses TypeScript, Ruby, Go, and internal tools.",
+    "Notion — productivity and note-taking software, ~600 employees, uses React, TypeScript, Node.js, PostgreSQL.",
+    "Linear — issue tracking and project management, ~120 employees, uses GraphQL, TypeScript, Rust.",
 ]
 
-for i, account in enumerate(accounts, 1):
-    print(f"\n--- Account {i} ---")
-    result = enricher.enrich(account, ACCOUNT_SCHEMA)
-    print(f"  Hash: {result.input_hash}")
-    print(f"  Status: {result.status}")
-    print(f"  Model: {result.model}")
-    if result.data:
-        print(f"  Data: {json.dumps(result.data, indent=2)}")
+print(f"Enriching {len(targets)} accounts...\n")
+for i, desc in enumerate(targets, 1):
+    print(f"--- Account {i}/{len(targets)} ---")
+    r = pipeline.run(desc, CRM_SCHEMA)
+    if r.output:
+        print(f"  → {r.output['company_name']} | ICP fit: {r.output['icp_fit_score']} | via {r.model_used}")
+    else:
+        print(f"  → FAILED at {r.stage_completed}: {r.error}")
 
-print(f"\n{'=' * 60}")
-print(f"Session totals: {enricher.total_tokens} tokens, ${enricher.total_cost:.6f}")
+print(f"\nSession total: {pipeline.tokens_spent_this_session} tokens across {len(targets)} accounts")
 ```
 
-## Ship It
+Each account either returns five validated CRM fields or a structured error with the stage that failed. No silent blank fields. No prose where JSON should be. When the primary model fails — rate limit, malformed JSON, missing field — the fallback model gets the same input and the same schema contract. If both fail, the `PipelineResult` carries the error string and the stage name so you can build a review queue instead of losing the record.
 
-Production means three things this pipeline does not do yet: structured logging that survives in a log aggregator, a cost gate that refuses to run when the budget is spent, and a health check that confirms the pipeline can complete a full cycle. The logging format below emits one JSON object per pipeline run with everything an operator needs: input hash, model, tokens, cost, latency, pass/fail, retry count. The cost accumulator tracks spend per session and raises before execution when the budget is exhausted. The health check runs one enrichment cycle with a known input and a known expected output, and returns a structured status.
+This is the same pattern you would build in Clay when you stack enrichment columns: LLM extraction as the first provider, a cheaper model or a different prompt as the second, a null-return as the terminal state. The difference is that here you own every stage, you see every retry, and you control the schema contract.
 
-```python
-import anthropic
-import json
-import time
-import hashlib
-import logging
-from dataclasses import dataclass, asdict
-from typing import Optional
+## Exercises
 
-logger = logging.getLogger("llm_pipeline")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-)
+**Exercise 1 — Cost tracking (medium).** Add a `PRICING` dictionary to the `LLMPipeline` class that maps each model name to its per-million-token input and output rates. Modify `_call_with_retry` to return the cost alongside tokens, and add a `session_cost_usd` accumulator to the class. After each `run()` call, print the cost. After all runs, refuse new calls if `session_cost_usd` exceeds a `session_budget_usd` threshold set in `__init__`. Verify by running the pipeline five times and checking that the sixth call raises a `RuntimeError` when you set the budget to $0.01.
 
-PRICING = {
-    "claude-sonnet-4-5-20250514": {"input": 3.00, "output": 15.00},
-    "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
-}
+**Exercise 2 — Three-tier fallback with dead-letter queue (hard).** Extend the fallback chain to a third tier: if both `primary_model` and `fallback_model` fail, write the raw input, the schema, and both error messages to a JSONL file called `dead_letter.jsonl` with a UUID and timestamp. Then add a `replay()` method that reads `dead_letter.jsonl`, re-runs each failed input through the pipeline with a more lenient schema (fewer required fields), and logs which inputs succeed on replay versus which need manual review. Test by intentionally passing inputs that will produce invalid JSON (e.g., descriptions in a language the model struggles with) until the third tier triggers, then run `replay()` and confirm the dead-letter file shrinks.
 
-class ProductionPipeline:
-    def __init__(self, session_budget_usd=5.0):
-        self.client = anthropic.Anthropic()
-        self.primary_model = "claude-sonnet-4-5-20250514"
-        self.fallback_model = "claude-3-5-haiku-20241022"
-        self.session_budget_usd = session_budget_usd
-        self.session_spend_usd = 0.0
-        self.session_runs = 0
+## Key Terms
 
-    def _cost(self, model, in_tok, out_tok):
-        p = PRICING[model]
-        return (in_tok * p["input"] + out_tok * p["output"]) / 1_000_000
+- **Pipeline stage** — A discrete decision point in the processing chain (validation, assembly, accounting, API call, parsing, schema check, fallback) where execution can succeed, retry, degrade, or fail with a structured error.
+- **Exponential backoff** — A retry strategy that doubles the wait time between consecutive retries (1s, 2s, 4s) to avoid hammering a rate-limited or overloaded API.
+- **Schema validation** — A post-parsing check that confirms every required field exists in the model's JSON output and has the correct Python type, rejecting the result if any field is missing or mistyped.
+- **Fallback chain** — An ordered list of models (or data sources) that the pipeline tries sequentially when the primary call fails, each subject to the same schema contract as the primary.
+- **Enrichment waterfall** — A GTM pattern where multiple data providers are tried in sequence for each record, with the first provider returning valid data winning; functionally identical to the LLM fallback chain.
+- **Token accounting** — A pre-call estimate of input and output token costs used to refuse inputs that would exceed the context window or the session budget before money is spent.
+- **Structured error** — A `PipelineResult` with a populated `error` field and a `stage_completed` value indicating which stage failed, so downstream code can route failures to a review queue instead of crashing.
+- **Dead-letter queue** — A persistence store (file, database table) for inputs that exhausted all fallback tiers, preserving the raw input and error context for manual review or later replay.
 
-    def _hash(self, text):
-        return hashlib.sha256(text.encode()).hexdigest()[:16]
+## Sources
 
-    def _log_run(self, record):
-        logger.info(json.dumps(record))
-
-    def _check_budget(self):
-        remaining = self.session_budget_usd - self.session_spend_usd
-        if remaining <= 0:
-            raise RuntimeError(
-                f"Session budget exhausted: ${self.session_spend_usd:.4f} spent, "
-                f"${self.session_budget_usd:.4f} budget"
-            )
-
-    def run(self, text, schema, model=None):
-        start_time = time.time()
-        model = model or self.primary_model
-        input_hash = self._hash(text)
-        record = {
-            "input_hash": input_hash,
-            "model": model,
-            "tokens_in": 0,
-            "tokens_out": 0,
-            "cost_usd": 0.0,
-            "latency_ms": 0,
-            "status": "running",
-            "retries": 0,
-            "error": None,
-        }
-
-        self._check_budget()
-
-        try:
-            prompt = (
-                f"Extract data matching this schema:\n{json.dumps(schema)}\n\n"
-                f"Input: {text}\n\nReturn ONLY JSON."
-            )
-            response = self.client.messages.create(
-                model=model,
-                max_tokens=512,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response.content[0].text.strip()
-            if raw.startswith("```"):
-                raw = "\n".join(raw.split("\n")[1:])
-                if raw.rstrip().endswith("```"):
-                    raw = raw.rstrip()[:-3]
-            start = raw.find("{")
-            end = raw.rfind("}")
-            data = json.loads(raw[start:end + 1])
-
-            cost = self._cost(model, response.usage.input_tokens, response.usage.output_tokens)
-            self.session_spend_usd += cost
-            self.session_runs += 1
-
-            record["tokens_in"]
+- Anthropic. (2025). *Messages API — Rate Limits*. Retrieved from https://docs.anthropic.com/en/api/rate-limits
+- Anthropic. (2025). *API Errors — Handling Rate Limits and Retries*. Retrieved from https://docs.anthropic.com/en/api/errors
+- Anthropic. (2025). *Models — Claude Sonnet 4.5 and Claude 3.5 Haiku*. Retrieved from https://docs.anthropic.com/en/docs/about-claude/models
+- JSON Schema Organization. (2024). *JSON Schema Specification*. Retrieved from https://json-schema.org/
+- AWS Architecture Blog. (2020). *Exponential Backoff and Jitter*. Retrieved from https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
+- [CITATION NEEDED — concept: Clay enrichment waterfall internal architecture]

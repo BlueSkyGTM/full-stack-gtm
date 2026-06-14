@@ -146,11 +146,9 @@ This is the exact template format the LLaVA checkpoint expects. The `<image>` to
 
 ## Use It
 
-Visual instruction tuning lets you build enrichment agents that read screenshots, logos, PDFs, and webpage captures—the exact signals a text scraper cannot reach. In a Zone 2 enrichment workflow, the multimodal model's ability to follow instructions about visual content replaces brittle OCR-plus-regex pipelines with a single inference call that outputs structured data.
+Visual instruction tuning—the two-stage training procedure that teaches a multimodal model to follow natural language instructions about image content—lets you build enrichment agents that extract structured account intelligence from screenshots, pricing pages, and pitch deck PDFs that text scrapers cannot parse. This is the core mechanism for GTM enrichment workflows that need to process visual signals: company logos on partner pages, pricing tables behind demo walls, technology badges in stack diagrams, and slide content from investor decks. A single LLaVA inference call replaces a fragile pipeline of OCR → regex → field mapping with one model that reads layout, icons, and spatial relationships directly.
 
-Consider a concrete GTM scenario: you have a list of 500 target accounts and need to classify each by product category, pricing model, and apparent company stage. Text scraping their homepages gives you the marketing copy, but it misses the pricing page behind a "Book a Demo" wall, the technology badges in a screenshot of their stack page, or the investor logos in a pitch deck PDF. A LLaVA-style model processes the rendered screenshot directly—it sees layout, icons, color schemes, and spatial relationships between elements that carry signal. The enrichment output is structured JSON per account, populated from visual context that no HTML parser extracts.
-
-The pipeline below loads a LLaVA-1.5 checkpoint with 4-bit quantization and runs it on an image URL. This code requires a CUDA GPU and will download ~4GB of weights on first run. If you do not have a GPU available, read the code for the API shape—the `image-to-text` pipeline from HuggingFace handles ViT encoding, projection, token concatenation, and LLM generation in one call.
+The code below loads LLaVA-1.5-7B in 4-bit quantization and runs a structured extraction against an image. It requires a CUDA GPU and downloads ~4 GB on first run. If you lack a GPU, read it for the API shape—the HuggingFace `image-to-text` pipeline handles ViT encoding, MLP projection, token concatenation, and LLM generation in one call.
 
 ```python
 import torch
@@ -170,75 +168,49 @@ pipe = pipeline(
     device_map="auto",
 )
 
-prompt = "USER: <image>\nAnalyze this company screenshot. List: (1) product category, (2) pricing model if visible, (3) any technology partner logos. Output as bullet points.\nASSISTANT:"
+prompt = (
+    "USER: <image>\n"
+    "Analyze this company homepage. Extract exactly:\n"
+    "(1) Product category in 3-5 words\n"
+    "(2) Pricing model if visible (freemium/subscription/enterprise/custom)\n"
+    "(3) Technology partner logos visible (list names)\n"
+    "Output as bullet points.\n"
+    "ASSISTANT:"
+)
 
-image_url = "https://ilfvhvsangktfjzkbvae.supabase.co/storage/v1/object/public/demo-screenshots/sample_landing.png"
+image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Commons-logo.svg/320px-Commons-logo.svg.png"
 
-outputs = pipe(image_url, prompt=prompt, generate_kwargs={"max_new_tokens": 200, "temperature": 0.3})
-generated_text = outputs[0]["generated_text"]
-
-assistant_response = generated_text.split("ASSISTANT:")[-1].strip()
-print(assistant_text)
+result = pipe(image_url, prompt=prompt, generate_kwargs={"max_new_tokens": 200, "temperature": 0.3})
+response = result[0]["generated_text"].split("ASSISTANT:")[-1].strip()
+print(response)
 ```
 
-The output is free-form text. For structured enrichment, wrap the model in a parsing layer—either a regex extractor for bullet-point formats or a second LLM call that converts the freeform response into JSON. The key design decision in a GTM enrichment pipeline is prompt engineering: the system prompt must constrain the model to output fields that map to your CRM schema. "Product category" maps to an industry vertical field. "Pricing model: freemium" maps to a tier classification. The model's visual instruction tuning is what makes it follow these extraction instructions against image content rather than ignoring the image and hallucinating from priors.
-
-## Ship It
-
-Multimodal inference concatenates 576 visual tokens with text tokens before the transformer's forward pass, so peak VRAM scales with both image resolution and prompt length. For the 7B variant at fp16, the model weights alone consume ~13 GB. At 4-bit quantization via bitsandbytes, that drops to ~4 GB of weights, with the remaining VRAM budget consumed by the KV cache for the concatenated image-plus-prompt sequence. A 7B model in 4-bit with a 600-token visual prefix and 200-token generation fits comfortably in 8 GB VRAM.
-
-The serving pattern that matters for production is image caching. If your enrichment pipeline runs multiple prompts against the same screenshot—first extracting product info, then pricing, then tech stack—re-encoding the image through CLIP on each call wastes compute. Cache the projected visual embeddings after the first ViT forward pass and reuse them. This is the multimodal equivalent of caching embeddings in a text retrieval pipeline.
-
-```python
-import torch
-import gc
-
-def vram_report(label=""):
-    if not torch.cuda.is_available():
-        print(f"[{label}] CUDA not available — CPU mode")
-        return
-    allocated = torch.cuda.memory_allocated() / 1e9
-    reserved = torch.cuda.memory_reserved() / 1e9
-    peak = torch.cuda.max_memory_allocated() / 1e9
-    print(f"[{label}] Allocated: {allocated:.2f} GB | Reserved: {reserved:.2f} GB | Peak: {peak:.2f} GB")
-
-vram_report("before model load")
-
-try:
-    from transformers import AutoModelForCausalLM, AutoProcessor, BitsAndBytesConfig
-    model_id = "llava-hf/llava-1.5-7b-hf"
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        quantization_config=bnb_config,
-        device_map="auto",
-    )
-    vram_report("after model load")
-    
-    model_vocab_size = model.config.text_config.vocab_size
-    print(f"Model vocab size: {model_vocab_size}")
-    print(f"Image token index: {model.config.image_token_index}")
-    
-except Exception as e:
-    print(f"Model load skipped (no GPU or weights): {e}")
-    print("In production: load with BitsAndBytesConfig(load_in_4bit=True)")
-    print("Expected VRAM at 4-bit: ~6 GB for 7B variant")
-
-gc.collect()
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
-vram_report("after cleanup")
-```
-
-This runs on any machine—it detects CUDA availability and reports actual VRAM if present, or prints the expected values if not. The `torch.cuda.max_memory_allocated()` call gives you the peak, which is the number that matters for capacity planning. In a GTM enrichment service processing screenshots at throughput, peak VRAM during the forward pass—not steady-state—is what causes OOM crashes under batch load.
-
-For observability, the VRAM metrics from this function feed directly into the tracing layer described in the GTM engineering handbook's Zone 12 framework. [CITATION NEEDED — concept: specific VRAM/alerting thresholds for multimodal enrichment pipelines in production GTM systems]. The operational signal is drift: if the model starts producing shorter outputs, truncating responses, or returning empty strings on screenshots that previously yielded clean extractions, that is your enrichment-quality degradation signal. Log output length distributions and extraction success rates per batch, not just latency and VRAM. A multimodal model that hallucinates pricing tiers from screenshots because the projection layer degraded during a bad fine-tune will still return 200 OK with plausible-looking text—only structured output validation catches that.
+For production enrichment, wrap this in a parsing layer that converts the bullet-point output to JSON fields mapped to your CRM schema. "Pricing model: freemium" becomes `{"pricing_tier": "self_serve"}`. "Technology partner: Stripe" becomes `{"payment_stack": ["stripe"]}`. The visual instruction tuning is what makes the model follow these extraction instructions against image content rather than ignoring the image and hallucinating from its text priors. At 500 target accounts per enrichment batch, throughput is the bottleneck: each screenshot costs one forward pass through 576 visual tokens plus generation. Cache the projected visual embeddings if you run multiple prompts against the same image.
 
 ## Exercises
 
-**Easy — Projector parameter audit.** Modify the `LLaVAProjector` class to accept an arbitrary number of MLP layers (1, 2, 3, 4) via a `num_layers` parameter. Print the parameter count for each configuration with dimensions 1024 → 4096. Identify which configuration matches LLaVA-1.5 (two layers, 25.2M params) and which matches original LLaVA (one layer, 4.2M params).
+**Easy — Projector parameter audit.** Modify the `LLaVAProjector` class to accept an arbitrary number of MLP layers via a `num_layers` parameter. Print the parameter count for each configuration (1, 2, 3, 4 layers) with dimensions 1024 → 4096. Identify which configuration matches LLaVA-1.5 (two layers, ~25.2M params) and which matches original LLaVA (one layer, ~4.2M params). Confirm that a three-layer projector roughly triples the parameter count of the linear baseline.
 
-**Easy — Prompt template construction.** Build a LLaVA-format prompt that instructs the model to extract three specific fields from a competitor's pricing page screenshot: product name, price, and billing frequency. Write the prompt string, verify the `<image>` token placement, and count the total character length. Confirm the instruction segment ends with `[/
+**Hard — Prompt engineering for structured extraction.** Build a LLaVA-format prompt that instructs the model to extract three fields from a competitor's pricing page screenshot: product name, monthly price in USD, and billing frequency (monthly/annual). Write the full prompt string using the Vicuna template with a system message. Verify the `<image>` placeholder position and count the total character length. Then write a Python function `parse_enrichment_output(model_response)` that takes the freeform model output and returns a dictionary `{"product": str, "price_usd": float, "billing": str}` using regex or keyword matching. Test it against two sample outputs: one clean (`"• Product: Acme CRM\n• Price: $49/month\n• Billing: Monthly"`) and one noisy (`"I can see a pricing page. The Pro plan costs $49 per month, billed monthly."`). Your parser should handle both.
+
+## Key Terms
+
+**Visual Instruction Tuning** — The Stage 2 training procedure that unfreezes both the projector and LLM and trains on instruction-response pairs about images (describe, reason, compare). Teaches the model to follow natural language directions about visual content rather than just captioning it.
+
+**Projection Layer (Projector)** — The only new architecture in LLaVA. Maps CLIP ViT patch embeddings (dim 1024) into the LLM's embedding space (dim 4096). Original LLaVA used a single linear layer (~4.2M params); LLaVA-1.5 upgraded to a two-layer MLP with GELU (~25.2M params).
+
+**Feature Alignment (Stage 1)** — Pretraining step where only the projector trains on ~558K image-caption pairs while both ViT and LLM remain frozen. The projector learns to translate CLIP's contrastive embedding space into representations the LLM can consume autoregressively.
+
+**Patch Tokens** — The 576 output vectors from CLIP ViT-L/14 when processing a 336×336 image. Each represents a 14×14 pixel region. Unlike BLIP-2's Q-Former, LLaVA passes all 576 tokens directly to the LLM—no learned query compression.
+
+**Image Token Placeholder (`<image>`)** — A special token in the Vicuna chat template that the model's processor replaces with 576 projected visual embeddings during the forward pass. Index -200 in the tokenizer configuration.
+
+**Q-Former** — BLIP-2's bottleneck module that compresses image features into 32 learned query tokens. LLaVA's design deliberately removed it in favor of direct token concatenation, eliminating 188M trainable parameters and architecture coupling between vision encoder and LLM backbone choices.
+
+## Sources
+
+- Liu, H., Li, C., Wu, Q., & Lee, Y. J. (2023). *Visual Instruction Tuning.* arXiv:2304.08485. — Original LLaVA paper. Describes the linear projector architecture, two-stage training recipe, and the GPT-4-based instruction data synthesis pipeline from COCO captions.
+- Liu, H., Li, C., Li, Y., & Lee, Y. J. (2023). *Improved Baselines with Visual Instruction Tuning.* arXiv:2310.03744. — LLaVA-1.5 paper. Introduces the two-layer MLP projector, reports 576 patch tokens from ViT-L/14 at 336×336, and documents the 558K alignment + 158K instruction tuning data scales.
+- Radford, A., Kim, J. W., Hallacy, C., et al. (2021). *Learning Transferable Visual Models From Natural Language Supervision.* arXiv:2103.00020. — CLIP paper. Defines the ViT-L/14 vision encoder architecture whose patch embeddings serve as LLaVA's frozen visual input.
+- Li, J., Li, D., Savarese, S., & Hoi, S. (2023). *BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models.* arXiv:2301.12597. — Q-Former architecture that LLaVA's design explicitly replaces. Provides the 188M parameter count and two-stage proxy-loss training that motivated LLaVA's simplification.
+- [CITATION NEEDED — concept: multimodal model usage in GTM account enrichment workflows, specifically screenshot-to-structured-data extraction pipelines for ICP scoring]

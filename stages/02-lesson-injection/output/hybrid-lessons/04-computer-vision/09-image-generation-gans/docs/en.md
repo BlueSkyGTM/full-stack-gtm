@@ -132,4 +132,71 @@ The direct mechanism transfer for GANs in a GTM context is **synthetic data augm
 
 The specific scenario: your GTM team has labeled 200 examples of "high-intent support tickets" and 5,000 examples of "low-intent." A classifier trained on this imbalance will be biased toward the majority class. Oversampling by duplication teaches the model to memorize, not generalize. A cGAN trained on the 200 high-intent examples learns their distribution and manufactures new, diverse samples that fill out the minority class without duplication. This is a data pipeline operation — Transform step — and it slots into the same enrichment waterfall architecture: your data source feeds the cGAN, the cGAN generates synthetic samples, the augmented dataset feeds the classifier, the classifier outputs intent scores.
 
-The honest qualifier: GANs are not the default production choice for image generation in 2024 — diffusion models hold that slot. If your pipeline needs more *images*, use a diffusion model or an API. The niche where GANs still win is **real-time single-sample generation latency**. A trained generator produces one sample in a single forward pass (milliseconds on GPU). A diffusion model requires 20–1000 denoising steps per sample. If your GTM application needs on-the-fly personalized creative generation with sub-100ms latency — dynamic ad creative, real-time avatar generation in a sales
+The honest qualifier: GANs are not the default production choice for image generation in 2024 — diffusion models hold that slot. If your pipeline needs more *images*, use a diffusion model or an API. The niche where GANs still win is **real-time single-sample generation latency**. A trained generator produces one sample in a single forward pass (milliseconds on GPU). A diffusion model requires 20–1000 denoising steps per sample. If your GTM application needs on-the-fly personalized creative generation with sub-100ms latency — dynamic ad creative, real-time avatar generation in a sales room — the single-pass generator is the architecture that meets the budget.
+
+Below: a conditional GAN generates synthetic minority-class feature vectors for an intent-classification pipeline.
+
+```python
+import torch, torch.nn as nn, torch.optim as optim
+torch.manual_seed(42)
+
+minority = torch.randn(200, 4) + torch.tensor([2.0, 1.0, -1.0, 0.5])
+labels = torch.ones(200, 1)
+target_count = 4800
+
+G = nn.Sequential(nn.Linear(5, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 4))
+D = nn.Sequential(nn.Linear(4, 64), nn.LeakyReLU(0.2), nn.Linear(64, 64), nn.LeakyReLU(0.2), nn.Linear(64, 1), nn.Sigmoid())
+optG, optD = optim.Adam(G.parameters(), lr=1e-3, betas=(0.5, 0.999)), optim.Adam(D.parameters(), lr=1e-3, betas=(0.5, 0.999))
+bce = nn.BCELoss()
+
+for step in range(2000):
+    idx = torch.randint(0, 200, (256,))
+    real = minority[idx]
+    cond = torch.ones(256, 1)
+    z = torch.randn(256, 4)
+    optD.zero_grad()
+    lossD = bce(D(real), torch.ones(256, 1)) + bce(D(G(torch.cat([z, cond], 1)).detach()), torch.zeros(256, 1))
+    lossD.backward(); optD.step()
+    optG.zero_grad()
+    lossG = bce(D(G(torch.cat([z, cond], 1))), torch.ones(256, 1))
+    lossG.backward(); optG.step()
+
+with torch.no_grad():
+    synthetic = G(torch.cat([torch.randn(target_count, 4), torch.ones(target_count, 1)], 1))
+    aug = torch.cat([minority, synthetic])
+    print(f"Minority before: 200  |  After augmentation: {aug.shape[0]}")
+    print(f"Real mean:      {minority.mean(0).tolist()}")
+    print(f"Synthetic mean: {synthetic.mean(0).tolist()}")
+    print(f"Real std:       {minority.std(0).tolist()}")
+    print(f"Synthetic std:  {synthetic.std(0).tolist()}")
+    print(f"D accuracy on synthetic: {((D(synthetic) > 0.5).float().mean()):.3f}  (want near 0.5 = indistinguishable)")
+```
+
+The synthetic mean and std should land close to the real minority-class statistics. The D accuracy on synthetic samples — if near 0.5 — means the discriminator cannot distinguish generated from real: the augmentation is viable for downstream training. This is the Transform stage in the pipeline: raw labeled data → cGAN → augmented dataset → classifier. The next stage feeds the augmented set into a logistic regression or gradient-boosted model for intent scoring. [CITATION NEEDED — concept: cGAN-based synthetic data augmentation in GTM intent classification pipelines]
+
+## Exercises
+
+**Exercise 1 — Induce and diagnose mode collapse.** Change `sample_real` to use five Gaussian centers instead of three, spread further apart (coordinates on a pentagon with radius 4). Reduce the generator's hidden dimension from 64 to 16. Train for 3000 epochs. At the final checkpoint, check whether the generated sample x-range and y-range cover all five clusters or collapse to one or two. Report which clusters the generator covers and which it ignores. Then revert the hidden dimension to 64 and retrain — does the larger capacity fix the collapse, or do you need a different intervention (lower D learning rate, minibatch discrimination)?
+
+**Exercise 2 — Swap to Wasserstein loss.** Replace the BCE-based discriminator with a WGAN critic: remove the Sigmoid from *D*, use `lossD = -(d_real.mean() - d_fake.mean())` and `lossG = -d_fake.mean()`. Apply weight clipping on *D* parameters to the range [-0.01, 0.01] after each optimizer step (iterate `D.parameters()` and clamp each param's `.data`). Train for 3000 epochs and compare the generated statistics against the original BCE version. Does the Wasserstein formulation produce more stable training? Does it eliminate mode collapse on the 5-cluster distribution from Exercise 1? Report D's output distribution on real vs. fake — in WGAN, *D* outputs an unbounded critic score, not a probability, so the "0.5 equilibrium" diagnostic no longer applies. What replaces it?
+
+## Key Terms
+
+- **Generator (G):** Neural network that maps noise *z* ~ *p(z)* to synthetic samples. Has no access to real data directly — learns only through the discriminator's gradient signal.
+- **Discriminator (D):** Binary classifier trained to distinguish real samples from generated ones. Its loss landscape is the generator's training signal.
+- **Nash Equilibrium (GAN):** The state where *G* has perfectly matched *p_data* and *D* outputs 0.5 for all inputs. Theoretical target; rarely reached exactly in practice.
+- **Non-saturating loss:** Reformulation of the generator objective as maximizing log *D(G(z))* instead of minimizing log(1 - *D(G(z))*). Prevents gradient vanishing when *D* is confidently correct early in training.
+- **Mode collapse:** Failure mode where *G* maps all noise inputs to a single output (or small cluster), covering one mode of *p_data* and ignoring the rest. Caused by the generator exploiting a temporary weakness in *D* rather than learning the full distribution.
+- **Conditional GAN (cGAN):** Extension where both *G* and *D* receive a conditioning label *y*. Enables targeted generation: *G(z, y)* produces a sample from class *y*. Used for class-conditional synthetic data augmentation.
+- **Wasserstein GAN (WGAN):** Variant that replaces Jensen-Shannon divergence with Wasserstein-1 (earth-mover) distance. Provides smoother gradients and more stable training, at the cost of requiring a Lipschitz-constrained critic.
+
+## Sources
+
+- Goodfellow, I. et al. (2014). "Generative Adversarial Nets." *Advances in Neural Information Processing Systems (NeurIPS) 27.*
+- Radford, A., Metz, L., & Chintala, S. (2015). "Unsupervised Representation Learning with Deep Convolutional Generative Adversarial Networks." *arXiv:1511.06434.*
+- Karras, T., Laine, S., & Aila, T. (2018). "A Style-Based Generator Architecture for Generative Adversarial Networks." *arXiv:1812.04948.*
+- Arjovsky, M., Chintala, S., & Bottou, L. (2017). "Wasserstein GAN." *arXiv:1701.07875.*
+- Mirza, M. & Osindero, S. (2014). "Conditional Generative Adversarial Nets." *arXiv:1411.1784.*
+- Miyato, T. et al. (2018). "Spectral Normalization for Generative Adversarial Networks." *arXiv:1802.05957.*
+- [CITATION NEEDED — concept: enrichment waterfall architecture as Clay pipeline pattern (Find → Enrich → Transform → Export)]
+- [CITATION NEEDED — concept: cGAN-based synthetic data augmentation for minority-class oversampling in GTM intent classification]

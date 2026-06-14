@@ -68,8 +68,8 @@ processor = ColPaliProcessor.from_pretrained(model_name)
 page_image = Image.new("RGB", (448, 448), (255, 255, 255))
 
 with torch.no_grad():
-    inputs = processor(images=page_image).to(model.device)
-    embeddings = model(**processed)
+    inputs = processor(images=[page_image]).to(model.device)
+    embeddings = model(**inputs)
 
 print(f"Type: {type(embeddings)}")
 print(f"Shape: {embeddings.shape}")
@@ -117,4 +117,123 @@ Run this and observe: page A scores higher because one of its 1024 patches is de
 
 **Hard: Build a document retriever with latency comparison.**
 
+```bash
+pip install pdf2image
+sudo apt-get install -y poppler-utils
 ```
+
+```python
+import time
+import torch
+from pdf2image import convert_from_path
+from colpali_engine.models import ColPali, ColPaliProcessor
+
+model_name = "vidore/colpali-v1.3"
+model = ColPali.from_pretrained(
+    model_name,
+    torch_dtype=torch.bfloat16,
+    device_map="cuda" if torch.cuda.is_available() else "cpu",
+).eval()
+processor = ColPaliProcessor.from_pretrained(model_name)
+
+pages = convert_from_path("vendor_battlecards.pdf", dpi=150)[:12]
+print(f"Loaded {len(pages)} pages from PDF")
+
+t0 = time.perf_counter()
+with torch.no_grad():
+    page_inputs = processor(images=pages).to(model.device)
+    page_embeds = model(**page_inputs)
+encode_time = time.perf_counter() - t0
+
+query = "Which competitor has the lowest enterprise tier price per seat?"
+t0 = time.perf_counter()
+with torch.no_grad():
+    q_inputs = processor(text=query).to(model.device)
+    q_embeds = model(**q_inputs)
+query_time = time.perf_counter() - t0
+
+scores = []
+with torch.no_grad():
+    for i in range(page_embeds.shape[0]):
+        sim = (q_embeds[0] @ page_embeds[i].T).max(dim=1).values.sum().item()
+        scores.append((i, sim))
+
+scores.sort(key=lambda x: -x[1])
+
+print(f"\nEncoded {len(pages)} pages in {encode_time:.2f}s ({encode_time/len(pages)*1000:.0f}ms/page)")
+print(f"Query encoded in {query_time*1000:.0f}ms")
+print(f"Storage: {page_embeds.shape[0]} pages × {page_embeds.shape[1]} patches × {page_embeds.shape[2]} dims")
+print(f"         = {page_embeds.numel()*4/1024/1024:.1f} MB at fp32")
+print(f"\nTop-5 pages for: '{query}'")
+for rank, (idx, score) in enumerate(scores[:5], 1):
+    print(f"  {rank}. Page {idx+1}: MaxSim = {score:.4f}")
+```
+
+The latency budget is honest: encoding is the dominant cost (~150–400ms/page on a mid-tier GPU), but it happens once at index time. Query encoding is a single forward pass (~50–100ms). Scoring is `query_tokens × patches × pages` dot products — cheap because every vector is 128-dim, not 768. For 1,000 pages with 1024 patches each, full MaxSim scoring against a 32-token query is ~33M dot products of length 128. On GPU, that's a few milliseconds.
+
+Notice we never call OCR. We never chunk. We never extract text. The PDF goes in as images, and the ranking comes out as page indices. Every page that contained a price-comparison table — even if that table was a screenshot, even if the numbers were inside a chart — is retrievable.
+
+## Use It
+
+Late-interaction multi-vector retrieval (MaxSim) over rendered page images is the mechanism that turns a folder of competitor battle cards, RFP PDFs, and pitch decks into a queryable visual knowledge base. [CITATION NEEDED — concept: cluster mapping for vision-native document retrieval in sales enablement / RFP response automation]
+
+```python
+import torch
+from pdf2image import convert_from_path
+from colpali_engine.models import ColPali, ColPaliProcessor
+
+model = ColPali.from_pretrained("vidore/colpali-v1.3", torch_dtype=torch.bfloat16, device_map="cuda").eval()
+processor = ColPaliProcessor.from_pretrained("vidore/colpali-v1.3")
+
+won_rfps = convert_from_path("closed_won_rfps_2024.pdf", dpi=150)
+with torch.no_grad():
+    doc_inputs = processor(images=won_rfps).to(model.device)
+    doc_embeds = model(**doc_inputs)
+
+rfp_line_items = [
+    "What SLA uptime did we commit to for enterprise tier?",
+    "What data residency regions did we agree to?",
+    "What security certifications did we disclose?",
+]
+
+for item in rfp_line_items:
+    with torch.no_grad():
+        q_inputs = processor(text=item).to(model.device)
+        q_embeds = model(**q_inputs)
+    scored = [
+        (i, (q_embeds[0] @ doc_embeds[i].T).max(dim=1).values.sum().item())
+        for i in range(doc_embeds.shape[0])
+    ]
+    scored.sort(key=lambda x: -x[1])
+    best = scored[0]
+    print(f"Q: {item}")
+    print(f"  → Source page {best[0]+1} (MaxSim {best[1]:.3f})\n")
+```
+
+This is the workflow an AE runs the night before a renewal call: dump the customer's original RFP, the signed MSA, and the won-proposal PDFs into one directory, encode them once, and ask natural-language questions about prior commitments. Because the retriever sees rendered pages, it finds the SLA table on page 14 of the MSA even if the table was an embedded image. A text-only RAG pipeline would return null or hallucinate.
+
+## Exercises
+
+1. **Easy — Verify the multi-vector claim.** Encode the same PDF page twice: once at 150 dpi and once at 300 dpi. Print the embedding shape for each. Confirm that patch count changes with resolution but the embedding dimension (128) does not. Then compute MaxSim between the query "summary" and each version — does higher resolution improve the score? Report your findings.
+
+2. **Medium — Build a hybrid retriever.** Run ColPali and a text bi-encoder (e.g., `BAAI/bge-small-en-v1.5` with `pdftotext` extraction) over the same 10-page PDF. For 5 queries, log the top-3 pages from each retriever and compute their overlap (Jaccard). Identify queries where the two retrievers disagree most strongly — those are the cases where layout signal matters. Write a 3-sentence rule for when to prefer ColPali vs. text RAG.
+
+3. **Hard — Hard-negative mining at the patch level.** Take a query that retrieves the wrong page. Modify the MaxSim function to return, in addition to the page score, the indices of the top-5 patches that contributed most to the score. Render those patch regions as highlighted boxes on the source page image. Diagnose whether the retrieval error is (a) a patch that looks like the query but isn't the answer, (b) insufficient visual signal in the relevant patch, or (c) a query-token mismatch. Propose one mitigation per failure mode.
+
+## Key Terms
+
+- **ColPali** — A vision-native document retrieval model that encodes rendered page images directly via a Vision Transformer, skipping OCR. Uses PaliGemma as the backbone in v1.
+- **MaxSim (Late Interaction)** — Scoring function that computes, for each query token, the maximum similarity against all document-side vectors (patches), then sums those per-token maximums. Inherited from ColBERT.
+- **Multi-Vector Representation** — Encoding a document as N separate vectors (one per patch or token) rather than pooling into a single vector. Preserves spatial and positional signal.
+- **Vision Transformer (ViT) Patch Tokenization** — Splitting an image into a fixed-size grid (commonly 16×16 pixels per patch) and producing one embedding per patch.
+- **Page-as-Image Retrieval** — Treating the rendered page, not a text chunk, as the atomic retrieval unit. The page is what gets ranked.
+- **ColBERT** — The 2020 retrieval architecture that introduced late-interaction MaxSim over text token embeddings. ColPali's direct ancestor.
+- **ColQwen2 / ColSmol / VisRAG** — Variant architectures that swap the PaliGemma backbone for Qwen2-VL, SmolVLM, or other VLMs while preserving the page-as-image + MaxSim pattern.
+
+## Sources
+
+- Faysse, M., Serrano, A., Chapuis, J.-C., Santiago, O., Cajal, B., Vano, Y., Caltagirone, F., Coulmy, N., & Andre, C. (2024). *ColPali: Efficient Document Retrieval with Vision Language Models.* arXiv preprint. [Verify at the `vidore/colpali` GitHub repository and HuggingFace model card; exact arXiv ID not cited here to avoid fabrication.]
+- Khattab, O., & Zaharia, M. (2020). *ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT.* Proceedings of SIGIR 2020.
+- HuggingFace model repository: `vidore/colpali-v1.3`, `vidore/colpali` (organization page for variants including ColQwen2 and ColSmol).
+- Lin, X., You, W., Liu, C., Zeng, W., Qu, C., Yang, Z., Chen, W., Tang, J., & Cao, Y. (2024). *VisRAG: Vision-based Retrieval-augmented Generation on Multi-modality Documents.* arXiv preprint. [Verify ID at arXiv search.]
+- [CITATION NEEDED — concept: production deployment latency and storage benchmarks for multi-vector document retrieval systems in enterprise RAG pipelines.]

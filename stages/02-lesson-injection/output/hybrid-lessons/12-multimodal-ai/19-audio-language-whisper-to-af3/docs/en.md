@@ -111,4 +111,132 @@ print(f"Raw audio: {len(audio)} samples at {sr} Hz ({duration:.1f}s)")
 print(f"STFT magnitude: {magnitude.shape[0]} freq bins x {magnitude.shape[1]} frames")
 print(f"Mel filterbank: {filterbank.shape[0]} filters x {filterbank.shape[1]} freq bins")
 print(f"Log-Mel spectrogram: {log_mel.shape[0]} mel bands x {log_mel.shape[1]} frames")
-print(f"Log
+print(f"Log-Mel value range: [{log_mel.min():.1f}, {log_mel.max():.1f}] dB")
+```
+
+Expected output:
+
+```
+Raw audio: 48000 samples at 16000 Hz (3.0s)
+STFT magnitude: 201 freq bins x 298 frames
+Mel filterbank: 80 filters x 201 freq bins
+Log-Mel spectrogram: 80 mel bands x 298 frames
+Log-Mel value range: [-100.0, 13.7] dB
+```
+
+Every number in that output traces a transformation. 48,000 samples: 3 seconds × 16,000 Hz. 298 STFT frames: `(48000 - 400) // 160 + 1` — the signal minus one window, divided by the hop, plus one. 201 frequency bins: `400 // 2 + 1` — the unique outputs of a real-valued FFT of size 400. 80 Mel bands: the filterbank dimension you chose. The log-mel range bottoms out at -100 dB because of the `1e-10` floor in the log — silent frames hit that floor.
+
+This is the exact pipeline Whisper runs internally, with one difference: Whisper uses 128 Mel bands and pads audio to 30 seconds, producing a 128 × 3,000 spectrogram before the encoder's convolutional layers downsample by a factor of 2.
+
+Now run the actual Whisper transcription pipeline:
+
+```python
+# pip install openai-whisper
+import whisper
+
+model = whisper.load_model("base")
+result = model.transcribe("sample.wav")
+
+print(f"Detected language: {result['language']}")
+print(f"Total segments: {len(result['segments'])}")
+print()
+
+for seg in result["segments"]:
+    start = seg["start"]
+    end = seg["end"]
+    text = seg["text"].strip()
+    print(f"[{start:06.2f} -> {end:06.2f}] {text}")
+```
+
+If you do not have a `sample.wav` file, generate one from the synthetic audio above:
+
+```python
+import scipy.io.wavfile as wavfile
+
+normalized = (audio / np.max(np.abs(audio)) * 32767).astype(np.int16)
+wavfile.write("sample.wav", sr, normalized)
+```
+
+This WAV contains three pure tones, not speech, so Whisper will likely detect a language but produce empty or noise-like transcription. That is the correct behavior — the encoder processed the audio, the decoder found no speech tokens to predict. Swap in any real recorded WAV (16 kHz mono recommended) and the pipeline produces segment-level transcription with timestamps, language detection, and confidence-aligned boundaries.
+
+The observable difference between the numpy pipeline and Whisper is what happens after the log-mel spectrogram. In numpy, you stop at a 2D array. In Whisper, that array enters a transformer encoder that learned to extract phonetic and linguistic features, then a decoder that learned to produce text. The spectrogram is the raw material. The encoder-decoder is the value-add.
+
+## Use It
+
+The Whisper encoder-decoder transcribes raw audio into text tokens via cross-attention between the encoder's hidden states and an autoregressive language model decoder — this mechanism is what turns recorded sales calls into structured, searchable CRM records. In GTM engineering, this is the foundation of conversation intelligence pipelines: automatically transcribing call recordings to extract objections, buying signals, and competitor mentions at scale. [CITATION NEEDED — concept: GTM cluster mapping for conversation intelligence call analysis]
+
+The pipeline below wraps Whisper with logging hooks so you can monitor transcription health across batch runs. Run it against any call recording:
+
+```python
+import whisper
+import json
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("gtm.call_pipeline")
+
+def process_sales_call(wav_path, model_size="base"):
+    log.info(f"loading whisper-{model_size}")
+    model = whisper.load_model(model_size)
+
+    log.info(f"transcribing {wav_path}")
+    result = model.transcribe(wav_path)
+
+    segments = [
+        {
+            "start": round(s["start"], 2),
+            "end": round(s["end"], 2),
+            "text": s["text"].strip(),
+            "no_speech_prob": round(s.get("no_speech_prob", 0), 3),
+        }
+        for s in result["segments"]
+    ]
+
+    duration = segments[-1]["end"] if segments else 0
+    log.info(f"done language={result['language']} segments={len(segments)} duration={duration:.1f}s")
+
+    return {
+        "file": wav_path,
+        "language": result["language"],
+        "duration_s": round(duration, 1),
+        "segments": segments,
+    }
+
+output = process_sales_call("sales_call.wav")
+print(json.dumps(output, indent=2))
+```
+
+This produces structured JSON with segment-level timing and no-speech probabilities. The downstream step — feeding the transcript to a text-based LLM to extract objections, buying intent, and competitor mentions — is where the cascade limitation bites. A segment with `no_speech_prob: 0.91` might be a long pause before the prospect said "let me think about it." The transcript records the words and the silence. It does not record whether that pause sounded like calculation or discomfort. An audio-language model like Audio Flamingo 3 would have access to the acoustic representation of that pause and could reason about it directly.
+
+For most GTM use cases — transcribing calls, extracting topics, surfacing competitor mentions, generating follow-up emails — the Whisper cascade is sufficient. The information loss matters when tone, pacing, or speaker dynamics are themselves the signal: qualification scoring, sentiment analysis that distinguishes politeness from genuine interest, detection of multi-speaker dynamics in demo calls. Knowing where that boundary sits is the practical skill.
+
+## Exercises
+
+**Exercise 1 (Medium):** Modify the numpy log-mel pipeline to load a real WAV file using `scipy.io.wavfile.read`. Resample the audio to 16 kHz if needed (use `scipy.signal.resample`). Print the log-mel spectrogram shape and verify the frame count matches `(num_samples - n_fft) // hop_length + 1`. Then change `n_mels` from 80 to 128 and re-run — observe which dimensions change and which do not. Write one sentence explaining why the time dimension is unaffected by `n_mels`.
+
+**Exercise 2 (Hard):** Record two 10-second clips of yourself saying the same sentence — "That's really interesting, tell me more." — once with genuine enthusiasm (rising pitch, faster pace), once with flat dismissal (monotone, slower pace). Run both through the Whisper pipeline and save the transcripts. Then compute the log-mel spectrograms for both clips and compare them visually (`matplotlib.pyplot.imshow`). Identify at least one region in the spectrogram where the two clips diverge significantly despite producing identical or near-identical transcripts. Document: (1) the specific acoustic feature visible in the spectrogram, (2) at what stage of the pipeline that feature is lost if only the transcript is retained, and (3) which GTM decision (objection classification, intent scoring, follow-up prioritization) would be affected by this information loss.
+
+## Key Terms
+
+**Log-Mel Spectrogram**: The standard input representation for Whisper and most audio models. A 2D array produced by applying STFT to windowed audio, filtering through Mel-spaced triangular filters, and log-transforming the result. One axis is time (one frame per hop interval), the other is frequency (one bin per Mel band).
+
+**STFT (Short-Time Fourier Transform)**: The operation of computing a discrete Fourier transform on each overlapping window of a continuous signal, producing a time series of frequency spectra. Window size and hop length control the time-frequency resolution tradeoff.
+
+**Mel Scale**: A perceptual frequency scale (mel = 2595 × log₁₀(1 + f/700)) that approximates human pitch discrimination — finer resolution below 1 kHz, coarser above. The Mel filterbank places triangular filters at equal intervals on this scale.
+
+**Encoder-Decoder (Whisper)**: A transformer architecture where the encoder processes audio spectrograms into hidden states and the decoder generates transcript tokens via cross-attention to those states. Trained exclusively on next-transcript-token prediction — no instruction following, no reasoning.
+
+**Q-Former**: A cross-attention module with learned query tokens that compress variable-length audio representations into a fixed-length sequence of embeddings. Used by Audio Flamingo to bridge the audio encoder and LLM decoder while preserving richer acoustic information than a linear projection.
+
+**Audio-Language Model (ALM)**: An architecture pairing an audio encoder with a general-purpose LLM via a projection layer or Q-Former. The LLM follows arbitrary text instructions conditioned on audio embeddings, enabling QA, reasoning, and classification over audio content — not just transcription.
+
+**Cascade Pipeline**: The two-stage Whisper → text-LLM approach. Whisper transcribes, then a text-based LLM reasons over the transcript. Loses prosody, speaker dynamics, and acoustic context at the transcription boundary. Adequate for content extraction; inadequate when tone or pacing carries the signal.
+
+## Sources
+
+- Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., & Sutskever, I. (2022). *Robust Speech Recognition via Large-Scale Weak Supervision.* arXiv:2212.04356. — Whisper architecture, training data (680k hours), encoder-decoder design, log-mel spectrogram preprocessing (128 Mel bands, 10ms hop, 30-second segments).
+- Tang, C., Yu, W., Sun, G., et al. (2023). *SALMONN: Towards Generic Hearing Abilities for Large Language Models.* arXiv:2310.13289. — Window-level Q-Former and encoder-level Q-Former connecting Whisper encoder to Vicuna LLM.
+- Chu, Y., Xu, Y., Zhou, J., et al. (2023). *Qwen-Audio: Advancing Universal Audio Understanding via Unified Large-Scale Audio-Language Models.* arXiv:2311.07919. — Whisper-large encoder + multi-task training with Qwen LLM decoder.
+- Gong, Y., Liu, A., Liu, H., et al. (2023). *Joint Audio and Speech Understanding (LTU).* arXiv:2309.14405. — Early audio-language model pairing audio encoder with LLaMA for open-ended audio reasoning.
+- Kong, Z., Goel, A., Badlani, R., et al. (2024). *Audio Flamingo: A Novel Audio Language Model with Few-Shot Learning and Dialogue Capabilities.* arXiv:2402.01848. — Audio Q-Former architecture, few-shot audio reasoning, dialogue capabilities.
+- NVIDIA. (2025). *Audio Flamingo 3.* [CITATION NEEDED — concept: Audio Flamingo 3 technical report and architecture details] — Referenced as AF3 (July 2025); architecture claims (Q-Former, audio instruction tuning) based on the Audio Flamingo lineage from Kong et al. (2024). Specific AF3 architectural details pending official technical report.

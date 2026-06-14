@@ -226,197 +226,82 @@ The model is untrained—logits are random. What matters is that every tensor sh
 
 ## Use It
 
-Loading a pretrained ViT checkpoint changes the game entirely. Instead of random logits, you get meaningful predictions trained on 14 million images. The Hugging Face `transformers` library wraps the checkpoint loading, image preprocessing, and forward pass into three function calls. The `ViTImageProcessor` handles resizing, normalization, and tensor conversion. `ViTForImageClassification` loads the model weights and applies the classification head.
-
-In GTM enrichment workflows (Zone 02), the use case is visual document understanding: processing screenshots of company pricing pages, extracting layout features that text scraping misses, and classifying them into structured attributes. A pricing page with a three-column comparison table signals a tiered SaaS model. A page with a "Contact Sales" button and no visible prices signals enterprise-only. A page with a calculator widget signals usage-based pricing. These patterns are visual—the `[CLS]` token from a ViT captures the overall layout structure, and a downstream classifier (or even cosine similarity to reference embeddings) maps that structure to GTM-relevant labels.
+Multi-head self-attention over patch tokens in a pretrained ViT produces a `[CLS]` embedding that captures global visual layout—this is the mechanism that turns a pricing page screenshot into a 768-dimensional fingerprint comparable by cosine similarity. For GTM teams in Zone 02 (firmographic enrichment), this replaces fragile text scraping with visual pattern matching. A three-column comparison table signals tiered SaaS. A lone "Contact Sales" button signals enterprise-only. A calculator widget signals usage-based pricing. The `[CLS]` token aggregates these structural cues through 12 layers of attention. [CITATION NEEDED — concept: ViT-based pricing page classification as a GTM enrichment workflow]
 
 ```python
 from transformers import ViTForImageClassification, ViTImageProcessor
 from PIL import Image
-import torch
-import torch.nn.functional as F
-
-model_name = "google/vit-base-patch16-224"
-processor = ViTImageProcessor.from_pretrained(model_name)
-model = ViTForImageClassification.from_pretrained(model_name)
-model.eval()
-
-img = Image.new("RGB", (224, 224), color=(80, 120, 200))
-inputs = processor(images=img, return_tensors="pt")
-
-with torch.no_grad():
-    outputs = model(**inputs)
-
-probs = F.softmax(outputs.logits, dim=-1)
-top5 = torch.topk(probs, k=5, dim=-1)
-
-id2label = model.config.id2label
-print(f"Model: {model_name}")
-print(f"Patch size: {model.config.patch_size}")
-print(f"Image size: {model.config.image_size}")
-print(f"Hidden size: {model.config.hidden_size}")
-print(f"Num layers: {model.config.num_hidden_layers}")
-print(f"Num attention heads: {model.config.num_attention_heads}")
-print(f"Total params: {sum(p.numel() for p in model.parameters()):,}")
-print(f"\nTop-5 predictions (on blank blue image):")
-for rank, (idx, prob) in enumerate(zip(top5.indices[0], top5.values[0])):
-    label = id2label[idx.item()]
-    print(f"  {rank+1}. {label:40s} {prob.item():.4f}")
-```
-
-The predictions on a blank image are noisy—which is expected. The real value comes from feeding actual screenshots. Extracting the `[CLS]` embedding (rather than the classification logits) gives you a 768-dimensional visual fingerprint of any image. Two pricing pages with similar layouts produce similar embeddings. Two logos from the same company family produce similar embeddings. This is the foundation of visual enrichment without retraining the model:
-
-```python
-def get_cls_embedding(model, processor, image):
-    inputs = processor(images=image, return_tensors="pt")
-    with torch.no_grad():
-        outputs = model(**inputs, output_hidden_states=False)
-    cls_token = outputs.logits.shape
-    hidden = model.vit(**inputs).last_hidden_state[:, 0]
-    return hidden
-
-def cosine_sim(a, b):
-    return F.cosine_similarity(a, b, dim=-1).item()
-
-image_a = Image.new("RGB", (224, 224), color=(200, 50, 50))
-image_b = Image.new("RGB", (224, 224), color=(210, 60, 40))
-image_c = Image.new("RGB", (224, 224), color=(50, 50, 200))
-
-embed_a = get_cls_embedding(model, processor, image_a)
-embed_b = get_cls_embedding(model, processor, image_b)
-embed_c = get_cls_embedding(model, processor, image_c)
-
-print(f"Similarity (red vs red):   {cosine_sim(embed_a, embed_b):.4f}")
-print(f"Similarity (red vs blue):  {cosine_sim(embed_a, embed_c):.4f}")
-print(f"Similarity (red vs red):   {cosine_sim(embed_a, embed_a):.4f}")
-print(f"\nEmbedding dimension: {embed_a.shape}")
-```
-
-For real GTM use, replace the synthetic images with actual screenshots fetched from company websites. The `[CLS]` embeddings let you cluster pricing pages by visual similarity, detect when a competitor redesigned their pricing page (embedding distance exceeds a threshold), or match an unknown company's page to the closest known pricing model template. This is enrichment through visual understanding—no OCR, no text extraction, just raw layout pattern matching through the ViT's attention layers.
-
-## Ship It
-
-Shipping a ViT-based enrichment pipeline means turning the inference code into a repeatable process that handles real images, manages failures gracefully, and outputs structured data your CRM or enrichment table can consume. The pipeline downloads a screenshot from a URL, preprocesses it through `ViTImageExtractor`, runs the forward pass, extracts the `[CLS]` embedding, and compares it against a reference set of labeled pricing page embeddings.
-
-```python
-import torch
-import torch.nn.functional as F
-from transformers import ViTForImageClassification, ViTImageProcessor
-from PIL import Image
-import numpy as np
+import torch, torch.nn.functional as F
 
 processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224")
-model = ViTForImageClassification.from_pretrained(
-    "google/vit-base-patch16-224"
-)
+model = ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
 model.eval()
 
-REFERENCE_LABELS = ["freemium", "tiered_saas", "usage_based", "enterprise_only"]
-np.random.seed(42)
-reference_embeddings = torch.randn(len(REFERENCE_LABELS), 768)
-reference_embeddings = F.normalize(reference_embeddings, dim=-1)
-
-def create_synthetic_screenshot(url, label_hint):
-    color_map = {
-        "freemium": (100, 200, 100),
-        "tiered_saas": (100, 150, 200),
-        "usage_based": (200, 200, 100),
-        "enterprise_only": (50, 50, 80),
-    }
-    color = color_map.get(label_hint, (128, 128, 128))
-    return Image.new("RGB", (224, 224), color=color)
-
-def extract_cls_embedding(image):
+def cls_embed(image):
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
-        outputs = model.vit(**inputs)
-    cls = outputs.last_hidden_state[:, 0]
-    return F.normalize(cls, dim=-1)
+        out = model.vit(**inputs)
+    return F.normalize(out.last_hidden_state[:, 0], dim=-1)
 
-def classify_pricing_page(url, image):
-    embedding = extract_cls_embedding(image)
-    sims = torch.mm(embedding, reference_embeddings.t()).squeeze(0)
-    best_idx = sims.argmax().item()
-    confidence = sims[best_idx].item()
+REF = {
+    "tiered_saas":   cls_embed(Image.new("RGB", (224, 224), (100, 150, 200))),
+    "freemium":      cls_embed(Image.new("RGB", (224, 224), (100, 200, 100))),
+    "enterprise":    cls_embed(Image.new("RGB", (224, 224), (50, 50, 80))),
+}
 
-    ranked = sorted(
-        zip(REFERENCE_LABELS, sims.tolist()),
-        key=lambda x: x[1],
-        reverse=True
-    )
+screenshot = Image.new("RGB", (224, 224), (110, 160, 210))
+emb = cls_embed(screenshot)
+scores = {k: F.cosine_similarity(emb, v, dim=-1).item() for k, v in REF.items()}
+ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    print(f"URL: {url}")
-    print(f"Prediction: {REFERENCE_LABELS[best_idx]}")
-    print(f"Confidence: {confidence:.4f}")
-    print(f"All scores:")
-    for label, score in ranked:
-        bar = "█" * int(score * 40)
-        print(f"  {label:16s} {score:.4f} {bar}")
-    print()
-    return REFERENCE_LABELS[best_idx], confidence
-
-test_cases = [
-    ("acme-corp.com/pricing", "tiered_saas"),
-    ("freetools.io", "freemium"),
-    ("enterprise-platform.com/contact", "enterprise_only"),
-]
-
-print("=" * 65)
-print("PRICING PAGE CLASSIFIER — ViT CLS Embedding Similarity")
-print("=" * 65)
-print()
-
-results = []
-for url, hint in test_cases:
-    screenshot = create_synthetic_screenshot(url, hint)
-    label, conf = classify_pricing_page(url, screenshot)
-    results.append({"url": url, "label": label, "confidence": conf})
-
-print("=" * 65)
-print("BATCH SUMMARY")
-print("=" * 65)
-for r in results:
-    print(f"  {r['url']:40s} → {r['label']:16s} ({r['confidence']:.3f})")
-
-print(f"\nModel: google/vit-base-patch16-224")
-print(f"Embedding dim: 768")
-print(f"Reference set: {len(REFERENCE_LABELS)} templates")
-print(f"Method: cosine similarity on [CLS] token")
-print(f"NOTE: Reference embeddings are random — replace with real")
-print(f"      labeled pricing page screenshots for production use.")
+print("Pricing page classification (ViT [CLS] cosine similarity):")
+for label, score in ranked:
+    print(f"  {label:16s} {score:+.4f}")
+print(f"  Predicted: {ranked[0][0]}")
 ```
 
-This produces structured output:
+The synthetic images produce noisy scores because uniform colors carry minimal layout signal. Replace the reference set with `[CLS]` embeddings extracted from 20–50 real labeled pricing page screenshots per category, average them, and the similarity scores discriminate meaningfully. The ViT backbone stays frozen—no fine-tuning, no GPU training loop. You provide the labeled screenshots; the pretrained model provides the visual feature extraction. This is the same pattern as text embeddings for ICP scoring: pretrained representation, task-specific labels applied downstream.
 
-```
-=================================================================
-PRICING PAGE CLASSIFIER — ViT CLS Embedding Similarity
-=================================================================
+## Exercises
 
-URL: acme-corp.com/pricing
-Prediction: tiered_saas
-Confidence: 0.0034
-All scores:
-  tiered_saas      0.0034 █
-  enterprise_only  -0.0012 
-  freemium         -0.0023 
-  usage_based      -0.0041 
+**Exercise 1 (Easy): Patch arithmetic at 384px**
 
-...
+ViT-L/14 often processes images at 384×384 instead of 224×224. Compute the grid dimensions, patch count, sequence length (with `[CLS]`), flattened patch dimension, and the attention cost ratio versus the 224px configuration. Run this to verify:
 
-=================================================================
-BATCH SUMMARY
-=================================================================
-  acme-corp.com/pricing                   → tiered_saas      (0.003)
-  freetools.io                            → freemium         (0.008)
-  enterprise-platform.com/contact         → enterprise_only  (0.005)
-
-Model: google/vit-base-patch16-224
-Embedding dim: 768
-Reference set: 4 templates
-Method: cosine similarity on [CLS] token
+```python
+img_size = 384
+patch_size = 16
+grid = img_size // patch_size
+num_patches = grid ** 2
+seq_len = num_patches + 1
+flat_dim = patch_size ** 2 * 3
+cost_ratio = (seq_len / 197) ** 2
+print(f"Grid: {grid}x{grid}  Patches: {num_patches}  Seq: {seq_len}")
+print(f"Flat dim: {flat_dim}  Attention cost vs 224px: {cost_ratio:.2f}x")
 ```
 
-The confidence values are low because the reference embeddings are random placeholders. In production, you replace them with real `[CLS]` embeddings extracted from labeled pricing page screenshots. Collect 20-50 screenshots per pricing model type, extract their embeddings, average them (or store all of them and use k-nearest-neighbor), and the similarity scores become meaningful.
+Then repeat for `patch_size=32` at 384px and explain why the cost ratio drops.
 
-For teams operating in Zone 07 (fine-tuning territory), the next step is training a lightweight classification head on top of frozen ViT embeddings. You label 200-500 pricing page screenshots with their model type (freemium, tiered, usage-based, enterprise-only), extract `[CLS]` embeddings for each, and fit a logistic regression or small MLP. The ViT backbone stays frozen—no GPU-intensive fine-tuning needed. This is the same pattern as training a scoring model on your own deal history: the ViT provides the visual feature extraction (pretrained on 14M images), and your labeled GTM data provides the task-specific signal. The
+**Exercise 2 (Hard): Zero-shot layout classifier with real structure**
+
+Build a function that accepts a PIL image, extracts its `[CLS]` embedding from `google/vit-base-patch16-224`, and returns the closest match from a reference library. Instead of solid colors, construct reference images using `PIL.ImageDraw` to approximate real page layouts—draw rectangles for pricing columns, filled shapes for buttons, lines for separators. Create five templates: `tiered_3col`, `freemium_banner`, `enterprise_contact`, `usage_calculator`, `blog_post`. Extract embeddings for all five, then feed a test image and print ranked cosine similarity. The challenge: which template structures produce the most discriminative embeddings, and why does drawing actual geometric structure outperform solid-color references?
+
+## Key Terms
+
+**Patch embedding** — Splitting an image into non-overlapping `P×P` grids, flattening each to a vector of `P²·C` values, and projecting to `d_model` dimensions via a learned linear map (implemented as `Conv2d` with `kernel_size=stride=P`).
+
+**`[CLS]` token** — A learnable parameter prepended to the patch sequence. Through layered self-attention it aggregates global image information; its final output serves as the image-level embedding for classification or similarity tasks.
+
+**Positional embedding** — Learned vectors added to each token before the encoder, encoding spatial coordinates. Required because self-attention is permutation-invariant—without them, the model cannot distinguish top-left from bottom-right patches.
+
+**Inductive bias** — Architectural assumptions a model encodes by design. CNNs bake in locality and translation invariance. ViT has neither prior; it must learn spatial structure entirely from data, explaining its hunger for large pretraining sets.
+
+**Self-attention** — Each token computes query-key dot products against all other tokens, producing attention weights that determine how much of each token's value flows into the output. Scales as `O(N²·d)` in sequence length `N` and model dimension `d`.
+
+## Sources
+
+- Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., et al. (2020). "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale." arXiv:2010.11929. https://arxiv.org/abs/2010.11929
+- Hugging Face Transformers Documentation. "ViTForImageClassification." https://huggingface.co/docs/transformers/model_doc/vit
+- Hugging Face Model Hub. "google/vit-base-patch16-224." https://huggingface.co/google/vit-base-patch16-224
+- Touvron, H., Cord, M., Douze, M., Massa, F., Sablayrolles, A., & Jégou, H. (2021). "Training data-efficient image transformers & distillation through attention." arXiv:2012.12877.
+- [CITATION NEEDED — concept: ViT-based pricing page classification as a GTM enrichment workflow]

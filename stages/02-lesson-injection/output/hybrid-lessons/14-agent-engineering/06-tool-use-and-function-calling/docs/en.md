@@ -239,9 +239,9 @@ for mode in ["auto", "required", "none", {"type": "function", "function": {"name
 
 ## Use It
 
-Tool schemas define the boundary between what the model reasons about and what your code executes. In GTM enrichment workflows, this boundary maps to the waterfall pattern: the model decides which enrichment source to try based on what it already knows, your code calls that source, and the result goes back into context for the next decision. A Clay enrichment waterfall where the system tries Clearbit, then Apollo, then Hunter in sequence until it finds an email is a tool execution loop — the routing logic is deterministic in Clay's native waterfall, but when you add an LLM decision layer on top, the model becomes the router.
+Function calling — the mechanism where a model emits structured JSON instructions that your code parses and executes — is what powers LLM-driven enrichment waterfalls in GTM workflows. The model decides which enrichment source to try based on what it already knows, your code calls that source, and the result goes back into context for the next decision. This is the Clay waterfall pattern — Cluster 1.2, TAM Refinement & ICP Scoring — with an LLM as the routing layer instead of deterministic fallback logic.
 
-Consider an account research agent that needs to enrich a prospect. The tools it has access to are enrichment APIs: company data, contact finder, technographics, news search. The model's job is to decide which tool to call, in what order, based on what's already in context. If it already knows the company domain, it might call `get_company_info` first. If that returns a headcount over 500, it might call `get_technographics` next to check the tech stack. If the headcount is under 50, it might skip technographics entirely and go straight to `find_contact_email`. This is conditional tool chaining — the same pattern BFCL V4 evaluates under its agentic and multi-turn categories.
+Consider an account research agent that needs to enrich a prospect. The tools it has access to are enrichment APIs: company data, contact finder, technographics, news search. The model's job is to decide which tool to call, in what order, based on what's already in context. If it already knows the company domain, it might call `enrich_company` first. If that returns a headcount over 500, it might call `get_technographics` next to check the tech stack. If the headcount is under 50, it might skip technographics entirely and go straight to `find_contact_email`. This is conditional tool chaining — the same pattern BFCL V4 evaluates under its agentic and multi-turn categories.
 
 Here's a simulation of that enrichment waterfall pattern using tool calls:
 
@@ -332,6 +332,90 @@ The output shows a three-step enrichment: company data lookup, a conditional che
 
 The token cost of these tool definitions matters here. In a Clay workflow processing 10,000 prospects, every enrichment step that involves an LLM decision includes the full tool schema in the prompt. A verbose schema with 5 tools at 600 tokens each adds 3,000 tokens per decision. At 10,000 decisions, that's 30 million tokens of overhead just from schema definitions — before any actual reasoning happens.
 
-## Ship It
+## Exercises
 
-Production tool loops fail in three predictable ways. The model emits malformed JSON for arguments. The model calls a function that doesn't exist in your registry. The function itself raises an exception — network timeout, rate limit, bad input. Each failure must return a structured error to the model
+### Exercise 1 (Medium): Error-Resilient Tool Execution
+
+Modify the `execute_tool_call` function from the Build It section to handle three failure modes without crashing:
+
+1. **Malformed JSON arguments** — wrap `json.loads` in a try/except and return `{"error": "invalid JSON", "raw_args": raw_args}`
+2. **Unknown function name** — already handled in the existing code, but verify it returns structured data, not a raised exception
+3. **Runtime exception inside the function** — wrap the function call in try/except and return `{"error": str(e), "tool": name}`
+
+Test all three cases:
+
+```python
+bad_calls = [
+    {"id": "b1", "function": {"name": "get_weather", "arguments": "{not valid json}"}},
+    {"id": "b2", "function": {"name": "nonexistent_function", "arguments": "{}"}},
+    {"id": "b3", "function": {"name": "get_weather", "arguments": json.dumps({"city": 12345})}},
+]
+
+for bc in bad_calls:
+    result = execute_tool_call(bc)
+    print(f"Call {bc['id']}: {json.dumps(result)}")
+```
+
+Confirm every output is a valid dict that could be appended to the conversation as a `role: tool` message. A tool error is not a crash — it is data the model can reason about and recover from.
+
+### Exercise 2 (Hard): Conditional Enrichment Router
+
+Replace the hardcoded `enrichment_flow` list from the Use It example with a dynamic loop. Write a function `model_decides_next_tool(enriched_state, domain)` that inspects what has been enriched so far and returns the next tool call — or `None` when enrichment is complete:
+
+- **No company data yet** → return a call to `enrich_company` with the domain
+- **Company data exists, no tech check yet** → return a call to `should_enrich_tech_stack` using the employee count
+- **Tech check done, no contacts yet** → return a call to `find_decision_maker`
+- **Contacts found** → return `None` (loop terminates)
+
+```python
+def model_decides_next_tool(enriched_state, domain):
+    if "company" not in enriched_state:
+        return {"id": "t1", "function": {"name": "enrich_company",
+                "arguments": json.dumps({"domain": domain})}}
+    if "recommend_tech_lookup" not in enriched_state:
+        return {"id": "t2", "function": {"name": "should_enrich_tech_stack",
+                "arguments": json.dumps({"employee_count": enriched_state["employees"]})}}
+    if "contacts" not in enriched_state:
+        return {"id": "t3", "function": {"name": "find_decision_maker",
+                "arguments": json.dumps({"company": enriched_state["company"]})}}
+    return None
+
+domain = "stripe.com"
+enriched = {}
+while True:
+    next_call = model_decides_next_tool(enriched, domain)
+    if next_call is None:
+        break
+    print(f"Calling: {next_call['function']['name']}")
+    result = execute_tool_call(next_call)
+    print(f"  Result: {json.dumps(result)}")
+    enriched.update(result)
+
+print(f"\nFinal: {json.dumps(enriched, indent=2)}")
+```
+
+Then modify the data so a company has 50 employees. Confirm the tech-stack check runs but recommends `False`. This is the decision logic that a real LLM would make based on tool results in context — you are simulating the model's reasoning with explicit conditionals.
+
+## Key Terms
+
+- **Tool Schema** — A JSON Schema definition of a function's name, description, and parameters. This is the metadata the model sees in context to decide whether and how to call a function. Every tool definition is included in every API request.
+
+- **Tool Registry** — A mapping from function names to their callable implementations and schema definitions. Used by the execution loop to dispatch calls. In production, this is where you also manage tool lifecycle — enabling, disabling, or swapping implementations without changing the loop.
+
+- **Tool Execution Loop** — The cycle of sending messages, checking for tool calls in the response, executing them, appending results as `role: tool` messages, and repeating until the model emits a text-only response. This loop is the structural difference between a chatbot and an agent.
+
+- **`tool_choice`** — API parameter controlling model behavior: `auto` (model decides whether to call), `required` (model must call at least one tool), `none` (tools forbidden), or a specific function object (model must call that exact function). Each mode serves a different control-flow need in agent design.
+
+- **Conditional Tool Chaining** — A pattern where the result of one tool call determines which tool is called next. The model uses the tool result in context to make its next decision. This is what enables multi-step enrichment workflows: company data → tech-stack check → contact lookup, with each step conditioned on the previous result.
+
+- **Enrichment Waterfall** — A GTM pattern (Cluster 1.2) where data providers are tried in sequence, falling back when a source returns null or low confidence. Native waterfalls in Clay are deterministic; adding an LLM decision layer converts the waterfall into a conditional tool chaining loop where the model routes between sources.
+
+## Sources
+
+- Schick, T., Dwivedi-Yu, J., Dessì, R., Raileanu, R., Lomeli, M., Zettlemoyer, L., Cancedda, N., & Scialom, T. (2023). "Toolformer: Language Models Can Teach Themselves to Use Tools." *NeurIPS 2023.* https://arxiv.org/abs/2302.04761
+
+- Patil, S.G., Zhang, T., Wang, X., & Gonzalez, J.E. (2025). "Berkeley Function Calling Leaderboard (BFCL) V4." *Gorilla LLM, UC Berkeley.* [CITATION NEEDED — concept: BFCL V4 evaluation category breakdown (40% agentic, 30% multi-turn, 10% live, 10% non-live, 10% hallucination detection)]
+
+- OpenAI (2024). "Function Calling." *OpenAI Platform Documentation.* https://platform.openai.com/docs/guides/function-calling
+
+- [CITATION NEEDED — concept: Clay enrichment waterfall fallback behavior and provider sequencing]

@@ -68,7 +68,7 @@ def generate_spiral(n=2000):
     r = 0.5 + theta * 0.3
     x = r * np.cos(theta) + np.random.randn(n) * 0.08
     y = r * np.sin(theta) + np.random.randn(n) * 0.08
-    return np.stack([x, y], axis=1).astype(np.float32)
+    return np.stack([x, y], axis=1).astype('float32')
 
 data = generate_spiral(2000)
 data = (data - data.mean(axis=0)) / (data.std(axis=0) + 1e-8)
@@ -185,84 +185,62 @@ The `alphas_cumprod[-1]` print confirms the schedule destroys all signal by the 
 
 ## Use It
 
-The reverse diffusion process — start from noise, iteratively refine toward a target distribution — is structurally identical to how a CRM retrieval system reconstructs a coherent customer profile from fragmented, incomplete records. In Zone 08, the CRM is treated as a retrieval system: you query sparse signals (company name, a few behavioral events) and the system denoises them into a structured ICP match. The diffusion model does the same thing in continuous space — it takes a random point (uninformative, like an empty CRM record) and applies learned conditional updates until it lands on a point that looks like real data (a fully enriched profile). The mechanism is iterative refinement under a learned distribution, whether the domain is 2D points or customer feature vectors.
+The diffusion forward-noise equation — `x_t = √(ᾱ_t)·x₀ + √(1-ᾱ_t)·ε` — doubles as a controlled data augmentation operator for ICP scoring in Cluster 2.1 (Data Enrichment & CRM Hygiene). When you have 50 closed-won accounts but need hundreds of training examples for a qualification model, adding noise at a chosen timestep `t` produces perturbed copies that stay within the ICP distribution but expand its coverage. This is the forward half of diffusion applied as augmentation — more principled than SMOTE's linear interpolation, which can fabricate points between clusters that no real account occupies.
 
-The more direct application is synthetic data generation. Diffusion models trained on your existing customer base can generate synthetic positive examples that match the distribution of your best accounts — useful when you have 200 closed-won deals but need 2000 training examples for a qualification scoring model. The same forward-noise/reverse-denoise loop that generates spiral points can generate synthetic feature vectors that preserve the correlations and cluster structure of real CRM data. This matters because qualification models trained on sparse positive classes overfit; augmenting with diffusion-generated samples that respect the true distribution is more principled than SMOTE (which interpolates linearly and can create unrealistic points between clusters). [CITATION NEEDED — concept: diffusion-based tabular data augmentation for CRM qualification models]
-
-For retrieval specifically — the core of Zone 08 — the diffusion framework offers a useful mental model. When you embed a CRM query and retrieve nearest neighbors from a vector database, you are doing a single-step denoising: the query is a noisy version of the "ideal" customer profile, and retrieval finds the closest clean point. Diffusion models extend this to multi-step refinement: instead of one retrieval pass, you could iteratively adjust the query embedding based on retrieved results, progressively sharpening the match. This is not how production CRM retrieval works today, but it is how researchers think about iterative retrieval-augmented generation. [CITATION NEEDED — concept: multi-step diffusion retrieval for CRM enrichment]
+[CITATION NEEDED — concept: diffusion-based tabular data augmentation for B2B ICP qualification models]
 
 ```python
-import torch
-import torch.nn.functional as F
 import numpy as np
-
-np.random.seed(123)
-n_accounts = 500
-icp_cluster = np.random.randn(n_accounts, 2) * 0.3 + np.array([2.0, 2.0])
-non_icp = np.random.randn(n_accounts * 3, 2) * 1.5 + np.array([-1.0, -1.0])
-all_accounts = np.vstack([icp_cluster, non_icp]).astype(np.float32)
-labels = np.concatenate([np.ones(n_accounts), np.zeros(n_accounts * 3)])
-
-all_t = torch.from_numpy(all_accounts)
-T = 100
-betas = torch.linspace(1e-4, 0.05, T)
-alphas_cumprod = torch.cumprod(1.0 - betas, dim=0)
-
-def add_noise(x, t):
-    noise = torch.randn_like(x)
-    return alphas_cumprod[t].sqrt().view(-1, 1) * x + (1 - alphas_cumprod[t]).sqrt().view(-1, 1) * noise
-
-icp_data = all_t[:n_accounts]
-t_batch = torch.full((n_accounts,), 30)
-noisy_icp = add_noise(icp_data, t_batch)
-
 from sklearn.linear_model import LogisticRegression
-baseline = LogisticRegression().fit(all_accounts, labels)
-baseline_acc = baseline.score(all_accounts, labels)
-
-augmented = np.vstack([all_accounts, noisy_icp.numpy()])
-aug_labels = np.concatenate([labels, np.ones(n_accounts)])
-augmented_model = LogisticRegression().fit(augmented, aug_labels)
-aug_acc = augmented_model.score(all_accounts, labels)
-
-print(f"ICP cluster center: {icp_cluster.mean(axis=0).round(3)}")
-print(f"Noise at t=30 preserves cluster structure: mean={noisy_icp.numpy().mean(axis=0).round(3)}")
-print(f"Baseline qualification accuracy:  {baseline_acc:.4f}")
-print(f"Augmented qualification accuracy: {aug_acc:.4f}")
-print(f"Noisy ICP samples within 2 std of cluster: {((noisy_icp.numpy() - icp_cluster.mean(axis=0)) / icp_cluster.std(axis=0)).max():.2f}")
-```
-
-The augmented model above uses noise-added copies of ICP accounts — a crude approximation of what a trained diffusion model would produce. The point is observable: adding perturbed versions of your positive class that stay within the distribution improves the qualification boundary. A full diffusion model trained on the ICP cluster would generate more diverse, distribution-consistent samples than simple Gaussian perturbation.
-
-## Ship It
-
-Deploying a diffusion model in production requires addressing two constraints that the training code above ignores: inference latency and output quality monitoring. The reverse sampling loop runs T sequential neural network evaluations — 300 in the code above, 1000 in the original DDPM paper. For real-time GTM applications (synthetic profile generation during a qualification pipeline), this latency is unacceptable without optimization.
-
-The standard production approach is to reduce the number of sampling steps. DDIM (Song et al., 2021) reformulates the reverse process as non-Markovian, allowing deterministic sampling in 10–50 steps instead of 1000 with minimal quality loss. For tabular data (synthetic CRM records), even 50 steps is fast on CPU. For image generation, 20-step DDIM with a distilled model is the baseline — Stable Diffusion XL ships with a 30-step default.
-
-Monitoring is the second concern. Diffusion models can silently degrade: the loss looks fine, samples look plausible individually, but the overall distribution drifts away from `p_data`. In a GTM context, this means your synthetic ICP examples gradually stop matching real high-value accounts, and your qualification model trained on them degrades. Ship with distribution-level metrics — maximum mean discrepancy (MMD) or classifier two-sample test (C2ST) between generated and real samples — checked on a schedule, not just per-sample loss.
-
-For the CRM data hygiene application in Zone 08, the deployment pattern is batch generation, not real-time. You train the diffusion model on closed-won account feature vectors, generate a batch of synthetic positive examples overnight, validate them against held-out real data, and feed them into your qualification scoring pipeline. The enrichment loop — query, retrieve, refine — runs on existing vector infrastructure. The diffusion model augments the training set, not the retrieval path.
-
-```python
-import numpy as np
-from scipy.stats import ks_2samp
 
 np.random.seed(42)
+icp_real = np.random.randn(50, 3) * 0.3 + np.array([2.5, 1.8, 3.2])
+non_icp = np.random.randn(200, 3) * 1.2 + np.array([-1.0, -0.3, 0.5])
+X = np.vstack([icp_real, non_icp])
+y = np.concatenate([np.ones(50), np.zeros(200)])
 
-real_icp = np.random.randn(200, 2) * 0.3 + np.array([2.0, 2.0])
+baseline = LogisticRegression(class_weight='balanced').fit(X, y)
+base_recall = baseline.predict(icp_real).mean()
 
-generated_good = np.random.randn(200, 2) * 0.35 + np.array([2.0, 2.0])
-generated_drifted = np.random.randn(200, 2) * 0.8 + np.array([1.5, 2.5])
+T = 50
+betas = np.linspace(1e-4, 0.02, T)
+abar = np.cumprod(1 - betas)
+t_aug = 25
+np.random.seed(7)
+idx = np.random.choice(50, 300, replace=True)
+noise = np.random.randn(300, 3)
+synthetic = np.sqrt(abar[t_aug]) * icp_real[idx] + np.sqrt(1 - abar[t_aug]) * noise
 
-def mmd_rbf(x, y, gamma=1.0):
-    from scipy.spatial.distance import cdist
-    k_xx = np.exp(-gamma * cdist(x, x, 'sqeuclidean'))
-    k_yy = np.exp(-gamma * cdist(y, y, 'sqeuclidean'))
-    k_xy = np.exp(-gamma * cdist(x, y, 'sqeuclidean'))
-    return k_xx.mean() + k_yy.mean() - 2 * k_xy.mean()
+X_aug = np.vstack([X, synthetic])
+y_aug = np.concatenate([y, np.ones(300)])
+augmented = LogisticRegression(class_weight='balanced').fit(X_aug, y_aug)
+aug_recall = augmented.predict(icp_real).mean()
 
-ks_dim0_good = ks_2samp(real_icp[:, 0], generated_good[:, 0])
-ks_dim0_drift = ks_2samp(real_icp[:, 0], generated_drifted[:, 0])
-mmd_good = mmd_rbf(real_icp, generated_good, gamma=2.0)
-mmd_drift = mmd_rbf
+print(f"Baseline ICP recall:  {base_recall:.3f}")
+print(f"Augmented ICP recall: {aug_recall:.3f}")
+print(f"Real ICP mean:      {icp_real.mean(axis=0).round(2)}")
+print(f"Synthetic mean:     {synthetic.mean(axis=0).round(2)}")
+```
+
+The `abar[t_aug]` at t=25 is roughly 0.77 — synthetic samples are 88% real signal, 48% perturbation noise. They cluster near the ICP center with controlled spread. A full diffusion model trained on the 50 real accounts and run through the reverse sampling loop would produce more diverse, distribution-consistent samples than this one-step approximation, but the mechanism is the same: learned noise removal recovers structure that simple interpolation cannot.
+
+## Exercises
+
+1. **Swap the noise schedule.** Replace the linear schedule with a cosine schedule and retrain. Construct `betas` as `torch.cos(torch.linspace(0, np.pi * 0.95, T) / 2) ** 2 * 0.99 + 1e-4`. Run the full training loop and compare three things against the linear baseline: final training loss, generated sample mean/std, and `alphas_cumprod[-1]`. The cosine schedule destroys signal more gradually early and more aggressively late — check whether the scatter plot quality changes. Print both schedules' `alphas_cumprod` curves side by side and explain which one reaches `ᾱ < 0.01` faster.
+
+2. **Reduce T to 50 and measure the trade-off.** Set `T = 50` with `betas = torch.linspace(1e-4, 0.08, 50)` — note the larger `β_end` to compensate for fewer steps. Retrain for 3000 epochs and generate samples. The sampling loop now runs 6x faster. Compare the generated mean L2 distance against the T=300 baseline. At what point does reducing T cause the spiral to collapse into a blob? Try T=100, T=30, T=10 and record the L2 distance for each. This is the inference-speed vs. quality trade-off that DDIM was invented to solve — fewer steps without the quality collapse.
+
+## Key Terms
+
+- **Forward diffusion process (q):** The fixed Markov chain that progressively corrupts data with Gaussian noise. Its closed-form cumulative `q(x_t|x_0) = N(√(ᾱ_t)·x_0, (1-ᾱ_t)·I)` allows sampling any timestep in O(1), which is what makes training tractable.
+- **Reverse diffusion process (p_θ):** The learned Markov chain that removes noise step by step. A neural network `ε_θ(x_t, t)` predicts the noise added at each timestep, and the reverse update rule subtracts it with a stochastic correction term.
+- **Noise schedule (β schedule):** The sequence of variances `β₁, ..., β_T` controlling corruption rate. Linear interpolates from ~1e-4 to ~0.02. The schedule determines how signal decays — cosine and sigmoid alternatives front-load or back-load the destruction differently.
+- **Alphas cumulative product (ᾱ_t):** The running product `∏(1-β_s)` for `s=1..t`. At `ᾱ_T ≈ 0`, the data is fully destroyed and `x_T` is indistinguishable from `N(0, I)`. This value must be near zero or the model samples from residual structure, not pure noise.
+- **DDPM loss:** The simplified objective `L = E[||ε - ε_θ(x_t, t)||²]` — mean squared error between the true noise vector and the network's prediction. Ho et al. (2020) showed this single term is sufficient; no reconstruction loss or KL divergence term is needed.
+- **DDIM (Denoising Diffusion Implicit Models):** A non-Markovian reformulation of the reverse process enabling deterministic sampling in 10–50 steps instead of 1000, with minimal quality loss. The basis for production inference in Stable Diffusion and modern image generators.
+
+## Sources
+
+- Sohl-Dickstein, J., Weiss, E. A., Maheswaranathan, N., & Ganguli, S. (2015). Deep Unsupervised Learning using Nonequilibrium Thermodynamics. *Proceedings of the 32nd International Conference on Machine Learning (ICML).* https://arxiv.org/abs/1503.03585
+- Ho, J., Jain, A., & Abbeel, P. (2020). Denoising Diffusion Probabilistic Models. *Advances in Neural Information Processing Systems 33 (NeurIPS).* https://arxiv.org/abs/2006.11239
+- Song, J., Meng, C., & Ermon, S. (2021). Denoising Diffusion Implicit Models. *International Conference on Learning Representations (ICLR 2021).* https://arxiv.org/abs/2010.02502

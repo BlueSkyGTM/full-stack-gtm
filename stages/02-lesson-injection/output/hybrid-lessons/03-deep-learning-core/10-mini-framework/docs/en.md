@@ -262,9 +262,9 @@ Every line of this framework is visible to you. When a node fails, you see the a
 
 ## Use It
 
-Pipeline orchestration — the `Node`/`Pipeline`/`Context` pattern you just built — maps directly onto the enrichment waterfall used in account intelligence workflows. In a go-to-market context, the pipeline's job is to take a raw company identifier, progressively enrich it with data from multiple sources, apply scoring logic, and output a structured record that a sales team can act on. The handbook puts it bluntly: most outbound fails not because of bad copy but because of a bad list sent with generic positioning. The TAM process is the discipline of building a list worth sending to.
+The composable pipeline pattern — the `Node`/`Pipeline`/`Context` mechanism you just built — is the same directed execution graph that powers enrichment waterfalls in GTM account intelligence workflows (Cluster 1.2, TAM Refinement & ICP Scoring). The pipeline takes a raw company identifier, progressively enriches it, applies ICP scoring logic, and outputs a structured account record a sales team can act on.
 
-Wire three nodes into your framework for a Zone 1 GTM pipeline: fetch company data, score it against an ICP definition, and format the output into a structured account record. The practitioner rule from the handbook is to identify the one or two sources where the density of your target company type is highest. For e-commerce, Storeleads provides that density. For B2B SaaS, a combination of a directory scrape and technographic data serves the same role. Your fetch node is the entry point for that source-specific data. Your scoring node is where TAM refinement happens — filtering the dirty raw list down to companies that genuinely reflect your ICP.
+Wire three nodes into your framework: fetch company data from a source, score it against an ICP definition, and format the output. This is the same skeleton Clay uses for its enrichment waterfall — sequential transforms on a shared context, with fallback routing when a node exhausts retries.
 
 ```python
 class FetchCompanyNode(Node):
@@ -274,30 +274,26 @@ class FetchCompanyNode(Node):
 
     def execute(self, ctx: Context) -> Context:
         mock_directory = {
-            "acme": {
-                "name": "Acme Corp", "employees": 250,
-                "industry": "SaaS", "domain": "acme.com",
-                "funding_stage": "Series B", "tech_stack": ["React", "AWS"],
-            },
-            "globex": {
-                "name": "Globex", "employees": 15,
-                "industry": "Consulting", "domain": "globex.io",
-                "funding_stage": "Bootstrapped", "tech_stack": ["WordPress"],
-            },
+            "acme": {"name": "Acme Corp", "employees": 250,
+                     "industry": "SaaS", "domain": "acme.com",
+                     "funding_stage": "Series B",
+                     "tech_stack": ["React", "AWS"]},
+            "globex": {"name": "Globex", "employees": 15,
+                       "industry": "Consulting", "domain": "globex.io",
+                       "funding_stage": "Bootstrapped",
+                       "tech_stack": ["WordPress"]},
         }
         key = self.company_name.lower()
         if key not in mock_directory:
-            raise KeyError(f"company '{self.company_name}' not in directory")
+            raise KeyError(f"'{self.company_name}' not in directory")
         ctx.set("company_data", mock_directory[key])
         print(f"  → {mock_directory[key]['name']}: "
-              f"{mock_directory[key]['employees']} emp, "
-              f"{mock_directory[key]['funding_stage']}")
+              f"{mock_directory[key]['employees']} emp")
         return ctx
 
 
 class ScoreICPNode(Node):
-    def __init__(self, min_employees: int = 50,
-                 target_industries: list = None):
+    def __init__(self, min_employees=50, target_industries=None):
         super().__init__(name="score_icp", max_retries=1)
         self.min_employees = min_employees
         self.target_industries = target_industries or ["SaaS"]
@@ -311,15 +307,12 @@ class ScoreICPNode(Node):
             signals.append("industry_fit")
         if data["funding_stage"] != "Bootstrapped":
             signals.append("funded")
-        if "React" in data.get("tech_stack", []):
-            signals.append("modern_stack")
-
-        score = len(signals) / 4.0
+        score = len(signals) / 3.0
         ctx.set("icp_signals", signals)
         ctx.set("icp_score", score)
-        ctx.set("icp_qualified", score >= 0.5)
-        print(f"  → score: {score:.0%} ({len(signals)}/4 signals) "
-              f"{'— QUALIFIED' if score >= 0.5 else '— disqualified'}")
+        ctx.set("icp_qualified", score >= 0.6)
+        print(f"  → score: {score:.0%} — "
+              f"{'QUALIFIED' if score >= 0.6 else 'disqualified'}")
         return ctx
 
 
@@ -329,62 +322,54 @@ class FormatAccountRecordNode(Node):
 
     def execute(self, ctx: Context) -> Context:
         data = ctx.get("company_data")
-        record = {
-            "company_name": data["name"],
-            "domain": data["domain"],
-            "employees": data["employees"],
-            "industry": data["industry"],
-            "funding_stage": data["funding_stage"],
+        ctx.set("account_record", {
+            "company": data["name"], "domain": data["domain"],
             "icp_score": ctx.get("icp_score"),
-            "icp_qualified": ctx.get("icp_qualified"),
-            "signals": ctx.get("icp_signals"),
-        }
-        ctx.set("account_record", record)
-        print(f"  → record assembled for {record['company_name']}")
+            "qualified": ctx.get("icp_qualified")})
+        print(f"  → record assembled for {data['name']}")
         return ctx
 
 
-gtm_pipeline = Pipeline("account_intelligence")
-gtm_pipeline.add(FetchCompanyNode("acme"))
-gtm_pipeline.add(ScoreICPNode(min_employees=50, target_industries=["SaaS"]))
-gtm_pipeline.add(FormatAccountRecordNode())
-
-result = gtm_pipeline.run()
+gtm = Pipeline("account_intelligence").set_fallback(
+    FormatAccountRecordNode())
+gtm.add(FetchCompanyNode("acme"))
+gtm.add(ScoreICPNode(min_employees=50, target_industries=["SaaS"]))
+gtm.add(FormatAccountRecordNode())
+result = gtm.run()
 import json
-print("Account Record:")
 print(json.dumps(result.get("account_record"), indent=2))
 ```
 
-This three-node pipeline is the same structure Clay uses in its enrichment waterfall — sequential steps that each read from a shared context, transform the data, and write results back. The difference is ownership. You control the retry policy on each node. You control what gets written to the context. You can add a `ConditionalBranchNode` that routes disqualified companies to a nurture sequence and qualified companies to an outreach queue without learning a library-specific routing DSL.
+The fallback on the pipeline means that if any node exhausts retries — say `FetchCompanyNode` cannot reach the directory API — the pipeline routes to the fallback instead of crashing. In a production GTM context, that fallback would queue the company for manual review or write a partial record with a `_fallback_source` flag. The Zone 3 scraping layer (web scraping, directory crawling, news-led signal detection) feeds this pipeline's fetch node. Your mini-framework is the connective tissue between raw signal collection and structured account intelligence.
 
 [CITATION NEEDED — concept: Clay enrichment waterfall internal architecture]
 
-The Zone 3 row in the GTM mapping — web scraping, HTML parsing, scraping directories, news-led outbound — feeds directly into this pipeline's fetch node. The scraper that detects hiring signals or surfaces funding events in real time becomes the data source that `FetchCompanyNode` pulls from. Your mini-framework is the connective tissue between raw signal collection and structured account intelligence.
-
-## Ship It
-
-These are exercise hooks — specifications without solutions. Build them against your framework and verify behavior with assertions.
-
-**Easy: Add a `RetryNode` subclass.**
-
-Subclass `Node` to create a `RetryNode` that accepts a `should_retry` predicate function. The base `Node.run` method retries on any exception. Your `RetryNode` should additionally inspect the result of `execute` — if `should_retry(result)` returns `True`, treat it as a logical failure and retry. Print the total retry count on success. Test it with a node that returns a sentinel value on the first two calls and a valid value on the third.
-
-**Medium: Implement a `ConditionalBranch` node.**
-
-Build a node that accepts a `predicate` function and two downstream `Node` instances (`if_true` and `if_false`). During `execute`, evaluate the predicate against the current context, run the appropriate downstream node inline, and write the result back to context. This breaks the linear pipeline model — your `ConditionalBranch` is a mini-pipeline within a pipeline. Execute both a qualified and disqualified company through a pipeline that contains a `ConditionalBranch` and print which path each company took.
-
-**Hard: Add an `AsyncPipeline` that runs independent nodes concurrently.**
-
-Extend your framework with an `AsyncPipeline` class that uses `asyncio.gather` to run nodes with no input dependencies on each other simultaneously. This requires a dependency resolver: inspect each node's `inputs` list, build a dependency graph, identify nodes whose inputs are already satisfied by the context, and run them in parallel. Print total execution time and compare it to sequential execution of the same nodes. A realistic test case: three independent fetch nodes (company data, news articles, technographic data) that all feed into a single scoring node. The three fetches should run concurrently; the scoring node waits for all three.
-
 ## Exercises
 
-1. **Retry assertion**: Write a test that instantiates a `FlakyNode(fail_until=2)` with `max_retries=4`, runs it through a pipeline, and asserts that `attempts_taken == 3`. Then change `fail_until=5` and assert that the pipeline raises `RuntimeError`.
+**1. Context isolation under failure.** Build a three-node pipeline where node 2 writes `"mid_state"` to the context and node 3 always raises an exception (no fallback set). Capture `ctx.snapshot()` after node 2 completes — you will need to modify `Pipeline.run` to accept a callback or inspect the context object after the exception propagates. Assert that the snapshot contains `"mid_state"` and that its value is unchanged. The point: a downstream node's failure must not corrupt upstream context state. This matters in GTM pipelines where you have already paid for an enrichment API call and need to preserve its result even if a later formatting step fails.
 
-2. **Context isolation**: Write a test that runs a three-node pipeline, captures the context snapshot after node 2, then forces node 3 to raise an exception. Assert that the context snapshot from after node 2 is unchanged — earlier context state must not be corrupted by a later node's failure.
+**2. Conditional branch for ICP routing.** Subclass `Node` to create a `ConditionalBranchNode` that accepts a `predicate(ctx) -> bool` function and two downstream `Node` instances (`if_true_node`, `if_false_node`). During `execute`, evaluate the predicate against the current context, run the appropriate downstream node inline by calling its `run(ctx)` method, and return the context. Wire it into the GTM pipeline after `ScoreICPNode` so that qualified companies route to an `EnqueueForOutreachNode` and disqualified companies route to a `MarkForNurtureNode`. Run both `"acme"` (qualified) and `"globex"` (disqualified) through the pipeline. Print which path each company took. This is the routing mechanism that separates an enrichment pipeline from a linear data transform — it turns your framework into a decision engine.
 
-3. **Fallback verification**: Build a pipeline with `set_fallback` configured. Force the second node to always fail. Assert that the fallback node executed, that `ctx.get("_fallback_source")` equals the failed node's name, and that the pipeline completed without raising.
+## Key Terms
 
-4. **Framework comparison**: Write a short analysis (in comments or a markdown cell) that lists three concrete scenarios where your mini-framework is sufficient and three where you would reach for LangChain or Prefect instead. Criteria to evaluate: distributed execution, serialization, observability, plugin ecosystem, team familiarity.
+**Node** — A unit of work that declares its inputs and outputs, implements an `execute(ctx)` method, and owns its own retry policy including max retries and exponential backoff.
 
-5. **ICP scoring pipeline**: Extend the `ScoreICPNode` to accept a weighted scoring model instead of equal-weight signals. Pass a `weights` dict like `{"size_fit": 0.3, "industry_fit": 0.4, "funded":
+**Pipeline** — An ordered collection of Nodes that resolves execution sequence and propagates a shared Context between them. Optionally holds a fallback Node for exhausted-retry routing.
+
+**Context** — A mutable state container (dictionary wrapper) that accumulates results as each Node runs. One Node writes its output to the Context; the next Node reads from it.
+
+**Exponential backoff** — A retry strategy where the wait between attempts doubles each time (1s, 2s, 4s, ...), giving transient failures time to resolve without overwhelming the upstream service.
+
+**Fallback node** — A Node executed by the Pipeline when a primary Node exhausts all retries. The fallback receives the current Context plus `_fallback_source` and `_fallback_error` metadata.
+
+**Directed execution graph** — A graph structure where Nodes are vertices and data dependencies (declared inputs/outputs) define edges. The Pipeline runner resolves the execution order from this graph.
+
+**Composable pipeline** — A pipeline built by chaining Nodes where each reads from and writes to a shared Context, allowing nodes to be added, removed, or reordered without modifying individual Node implementations.
+
+## Sources
+
+- LangChain RunnableSequence (LCEL): https://python.langchain.com/docs/expression_language/ — confirms that each `Runnable` receives a dict input and returns a dict output fed to the next step, the same pattern as `Node`/`Context`.
+- Prefect task graphs: https://docs.prefect.io/latest/concepts/task-runners/ — confirms that `@task` functions receive upstream results and the runtime resolves dependency order.
+- PyTorch `nn.Module` and `nn.Sequential`: https://pytorch.org/docs/stable/generated/torch.nn.Module.html — confirms the forward/backward contract and the compositional pattern that inspired the Node/Pipeline analogy.
+- [CITATION NEEDED — concept: Clay enrichment waterfall internal architecture]
+- [CITATION NEEDED — concept: 80/20 GTM Engineering Playbook reference to TAM source density by company type]
