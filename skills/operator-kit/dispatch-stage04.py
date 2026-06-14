@@ -233,7 +233,7 @@ Lesson ID: {phase}/{lesson}
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": user_prompt},
                 ],
-                max_tokens=2500,
+                max_tokens=8000,  # raised from 2500 — the 40% JSON-parse failures were truncation
                 stream=True,
                 timeout=120,
             )

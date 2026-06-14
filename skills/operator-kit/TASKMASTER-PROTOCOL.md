@@ -1,108 +1,105 @@
-# Taskmaster Protocol — How the Conductor Spawns Sub-Agents
+# Taskmaster Protocol — GLM-5.2 Orchestrator Pattern
 
-Taskmasters are Claude sub-agents spawned by the Conductor via the Agent tool. They are **thin launchers**, not heavy orchestrators. Their job is to read a CONTEXT.md, launch a Python subprocess, monitor it via status.json polling, and report back to the Conductor when done.
+**Changed 2026-06-14.** Taskmasters are no longer Claude sub-agents spawned via the Agent tool. They are **GLM-5.2 orchestration processes** the Conductor launches via Bash. The oversight that used to cost Claude context now runs inside the GLM ecosystem.
 
-A Taskmaster should never accumulate lesson content or tool call history in its context. The moment it does, it risks context overflow and becomes unreliable. Keep Taskmasters stateless.
+Old pattern (deprecated): Conductor → Agent tool → Claude sub-agent (thin launcher) → polls status.json → reports back.
+New pattern: Conductor → `run.ps1 <stage>` → GLM-5.2 orchestrator → oversees GLM-5.1 Handlers → writes manifest → exits.
+
+---
+
+## Why It Changed
+
+A Claude sub-agent was the Taskmaster because GLM-5.1 couldn't hold a batch plan + the manifest + handler outputs + the spec to judge against — its context was too small to *oversee*. GLM-5.2's 1M-token window removes that limit. The overseer can now be GLM. Result: one GLM ecosystem (no hybrid handoff), Claude's context freed, 85% of spend on plan-covered GLM.
 
 ---
 
 ## The Pattern
 
 ```
-Conductor reads: skills/operator-kit/taskmasters/<role>/CONTEXT.md
-Conductor tells Agent tool: "You are a Taskmaster. Read CONTEXT.md at <path> and execute it."
+Conductor (Bash):  .\run.ps1 stage02      # or: python skills/operator-kit/dispatch-stage02.py
+                   └─ launches the GLM-5.2 orchestrator for that stage's CONTEXT.md
 
-Taskmaster (Claude sub-agent):
-  1. Reads CONTEXT.md → knows exactly what to run and where outputs go
-  2. Launches Python dispatcher as a subprocess (detached on Windows, background on Unix)
-  3. Polls status.json every 60s (not accumulating output in context)
-  4. When status.json shows "finished: true" OR all rows are done/failed:
-     - Reports summary to Conductor (done count, failed count, any blocked rows)
-     - Exits
+GLM-5.2 Taskmaster (one process, large-context):
+  1. Reads taskmasters/<role>/CONTEXT.md  → what to run, spec to judge against, output paths
+  2. Reads manifest.json                  → all pending/failed rows (holds them in 1M context)
+  3. Plans the batch                      → order, retry budget, concurrency (≤5 handlers)
+  4. Loop until pending = 0:
+       a. Dispatch ≤5 GLM-5.1 Handler calls (text) / GLM-5.1v (vision)
+       b. Judge each returned output against the lean spec — the TWO-TIER GATE:
+            structure-complete (fences balanced, required headers, per-section min-chars)
+            ship-ready        (zero [CITATION NEEDED], weave names the AI mechanism)
+       c. done → write output + mark done | reject → re-prompt (≤3) | exhausted → mark failed
+       d. Update manifest.json + status.json
+  5. pending = 0 → write finished:true → exit
 ```
+
+The Conductor does **not** sit in this loop. It launches and monitors `manifest.json` at conversation breaks (per ICM active-monitoring cadence).
 
 ---
 
-## Conductor Prompt Template
+## Conductor Launch (replaces the Agent-tool prompt)
 
-When spawning a Taskmaster, the Conductor uses this Agent tool prompt:
-
+```powershell
+# Foreground gate sample:
+.\run.ps1 stage02 --sample 5
+# Full run, background, Conductor monitors the manifest:
+python skills/operator-kit/dispatch-stage02.py --workers 5    # run_in_background
 ```
-You are a Taskmaster for the BlueSkyGTM curriculum pipeline.
 
-Your CONTEXT.md is at: skills/operator-kit/taskmasters/<role>/CONTEXT.md
+There is no Agent-tool sub-agent prompt anymore. The CONTEXT.md + the manifest are the full instruction set for the GLM-5.2 orchestrator.
 
-Read it now. It tells you exactly what to run, where outputs go, and how to monitor progress.
+---
 
-RULES:
-- You are a thin launcher. Do NOT read lesson output files into your context.
-- Do NOT accumulate GLM responses in your context.
-- Poll status.json every 60 seconds. Read only the "done", "failed", "pending" fields.
-- Report back when finished: total done, total failed, any rows with >3 failures.
-- If subprocess exits with non-zero code: retry once, then report BLOCKED to Conductor.
+## GLM-5.2 Orchestrator — Reference Implementation (build target)
+
+The orchestrator wraps the existing handler-dispatch loop with a GLM-5.2 oversight layer:
+
+```python
+# skills/operator-kit/orchestrator.py  (Phase-B build target)
+#
+# config: { stage, manifest_path, spec_path, output_root, workers<=5 }
+#
+# TASKMASTER_MODEL = "glm-5.2"        # 1M context, 131K output, max-effort reasoning
+# HANDLER_MODEL    = "glm-5.1"        # text;  "glm-5.1v" for vision
+# ENDPOINT         = "https://api.z.ai/api/coding/paas/v4"
+#
+# 1. load manifest + lean spec (spec held in the 5.2 system context for every judge call)
+# 2. while pending:
+#      batch = next <=5 pending rows
+#      outputs = parallel_handler_calls(batch, HANDLER_MODEL, max_tokens=32000)  # log finish_reason
+#      verdicts = glm52_judge(outputs, spec)        # one large-context 5.2 call judges the batch
+#      for row, verdict in verdicts:
+#          if verdict.ship_ready:      write(row); mark(row,"done")
+#          elif verdict.retryable and row.attempts<3:  mark(row,"pending")   # re-prompt with verdict notes
+#          else:                       mark(row,"failed", reason=verdict.gap)
+#      save_manifest(); save_status()
+# 3. write finished:true; exit
 ```
+
+Two design rules:
+- **The 5.2 judge call is batched, not per-item** — judge ≤5 outputs in one large-context call. That keeps oversight to one call per cycle and uses the 1M window for what it's for.
+- **The spec lives in the 5.2 system context, not in each handler prompt.** Handlers stay on the governed-maze ≤500-token extract; the *judge* holds the full spec. Oversight knowledge concentrates in the overseer.
 
 ---
 
 ## Worker Budget
 
-The global Z.ai worker budget is **5 concurrent GLM calls across all Taskmasters**.
-
-If the Conductor runs two Taskmasters in parallel, each must use `--workers 2` or `--workers 3` (not 5). The Conductor sets this based on how many Taskmasters are active:
-
-| Active Taskmasters | Workers per Taskmaster |
-|--------------------|----------------------|
-| 1 | 5 |
-| 2 | 2 |
-| 3 | 1 |
-| 4+ | 1 (serialize where possible) |
+**≤5 concurrent GLM-5.1 Handler calls.** The GLM-5.2 Taskmaster oversight call is separate (one per batch cycle) and does not count against the 5. Running two stages' orchestrators in parallel still shares the 5-handler ceiling — split workers (e.g. 2+3) or serialize.
 
 ---
 
-## Per-Taskmaster Manifests
+## Re-entrancy (ICL guarantee)
 
-Each Taskmaster writes to its own status.json. It does NOT write to the shared stage manifest during the run — only on completion merge.
-
-On completion, the Taskmaster reports:
-- How many rows it processed
-- Which rows are `done`, which are `failed`
-- The Conductor updates the main manifest by merging the Taskmaster's results
-
-This prevents cross-process write contention.
-
----
-
-## Folder Structure
-
-```
-skills/operator-kit/taskmasters/
-  stage02-injector/
-    CONTEXT.md        ← Taskmaster reads this on launch
-    status.json       ← written by the subprocess; Taskmaster polls this
-  stage03-exercises/
-    CONTEXT.md
-    status.json
-  stage04-quizzes/
-    CONTEXT.md
-    status.json
-```
-
----
-
-## When to Use Multiple Taskmasters in Parallel
-
-Taskmasters can run in parallel when their stages are independent. The current pipeline is sequential (Stage 03 requires Stage 02 done rows), so Taskmasters run one at a time. Future use cases for parallel Taskmasters:
-
-- Running the same stage across different phase slices simultaneously (e.g., Taskmaster A handles phases 00-05, Taskmaster B handles phases 06-12)
-- Running a quality check Taskmaster in parallel with a generation Taskmaster
+Kill the orchestrator mid-run. Relaunch it. It reads the manifest, finds the surviving `pending`/`failed` rows, and continues — no session memory needed. The manifest is the loop counter; the 5.2 orchestrator is stateless across restarts. This is ICL working inside a single GLM ecosystem.
 
 ---
 
 ## Escalation
 
-| Event | Taskmaster does |
-|-------|----------------|
-| Subprocess exits non-zero | Retry once; if still fails, report BLOCKED |
-| status.json absent >2 min | Report stall to Conductor; Conductor runs watchdog.py |
-| >20% rows failed | Complete normally; flag high failure rate in report |
-| Scope drift (unexpected output) | Stop; report SCOPE_DRIFT to Conductor with details |
+| Event | Orchestrator does |
+|-------|-------------------|
+| Handler output rejected 3x | Mark row `failed` with the gap reason from the 5.2 judge |
+| 429 / rate limit | Global backoff 30s, all handlers pause |
+| >30% failure in 10 jobs | Circuit breaker, pause 60s |
+| Batch unresolvable | Write `BLOCKED` + reason to status.json; Conductor reads it |
+| Stall (no manifest progress 5 min) | Watchdog graceful-stops and relaunches `--retry-failed` |

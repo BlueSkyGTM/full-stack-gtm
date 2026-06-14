@@ -1,6 +1,8 @@
-# Handler Registry — Chain of Command
+# Handler Registry — Chain of Command (GLM-native, 2026-06-14)
 
-Every agent in this system is documented here. If you're an agent reading this file, you are in the right place. Find your tier, understand your scope, and follow your escalation path.
+Every agent in this system is documented here. Find your tier, understand your scope, follow your escalation path.
+
+**Architecture change (2026-06-14):** the Taskmaster tier is now **GLM-5.2**, not Claude sub-agents. The Conductor launches a GLM-native orchestrator and monitors the manifest. See `TASKMASTER-PROTOCOL.md` for the new pattern.
 
 ---
 
@@ -8,118 +10,89 @@ Every agent in this system is documented here. If you're an agent reading this f
 
 ```
 Director (User)
-  — intent, quality gates, stage advancement only
-  — never types terminal commands
+  — intent, quality gates, stage advancement only. Never types terminal commands.
 
   └─ Conductor (Claude Code)
-       — reads Director intent, plans execution, spawns Taskmasters
-       — owns: vault/plan-*.md, run.ps1, this file
-       — escalates to Director: stage advancement, billing decisions, quality failures
+       — reads Director intent, plans execution, launches the GLM orchestrator
+       — owns: vault/plan-*.md, run.ps1, this file, the ICM artifacts
+       — monitors manifest.json / status.json (no per-stage sub-agent)
+       — escalates to Director: stage advancement, quality failures
+       — ~15% of token spend
 
-       └─ Taskmasters (Claude sub-agents via Agent tool)
-            — thin launchers: read CONTEXT.md folder, spawn detached Python subprocess
-            — monitor: status.json polling only (never accumulate lesson content in context)
-            — exit when subprocess completes; report summary to Conductor
-            — escalate to Conductor: subprocess fails 3x, scope drift detected
+       └─ GLM-5.2 Taskmaster (in-loop overseer — single GLM ecosystem)
+            — reads the full manifest + batch plan + handler outputs in 1M context
+            — dispatches Handler calls (≤5 concurrent), judges each output against the
+              lean-lesson-spec, decides done / retry / failed, updates the manifest
+            — IS the two-tier quality gate (structure-complete + ship-ready), reasoning-judged
+            — escalates to Conductor: writes BLOCKED to status.json when a batch can't resolve
 
-            └─ Handlers (GLM-5.1 — primary content writers)
-                 — write curriculum content: lessons, exercises, quizzes
-                 — delegate menial interrupts to Peons via dispatch-peon.py
-                 — continue writing after Peon resolves the interrupt
-                 — escalate to Taskmaster: output rejected 3x, ambiguous instructions
+            └─ GLM-5.1 / GLM-5.1v Handlers (content writers)
+                 — 5.1: lessons, exercises, quizzes (text)
+                 — 5.1v: illustrations, diagrams (vision)
+                 — write to spec; a rejected output is re-prompted by the Taskmaster
+                 — escalate: rejected 3x → Taskmaster marks the row failed
 
-                 └─ Peons (GLM-5-Turbo / GLM-Flash — interrupt resolvers)
-                      — resolve a specific blocking subtask and return
-                      — called synchronously by Handlers mid-work
-                      — exit immediately after returning result
-                      — never hold state; never run in background
+                 └─ Peons (GLM-5-Turbo — OPTIONAL, mostly absorbed)
+                      — GLM-5.2's reasoning now handles most interrupt resolution inline
+                      — keep only for cheapest high-volume synchronous lookups
 ```
 
-**Key principle:** Agents are invoked in stages, not all active simultaneously. A Peon call happens inside a Handler call. A Taskmaster call scopes one batch of Handler calls. Worker budget (max 5 concurrent GLM API calls) is enforced by the Python dispatcher, not by the agents themselves.
+**Key principle:** the GLM-5.2 Taskmaster is one large-context oversight process per batch cycle; the Handlers are ≤5 concurrent worker calls. The worker budget applies to Handlers, not to the Taskmaster.
+
+---
+
+## Model & Config Matrix
+
+| Tier | Model string | Context | max_tokens (output) | Role |
+|------|-------------|---------|---------------------|------|
+| Taskmaster | `glm-5.2` (`glm-5.2[1m]` for max-context oversight) | up to 1,000,000 | up to 131,072 | Oversee, dispatch, judge, update manifest |
+| Text Handler | `glm-5.1` | standard | **32,000** (was 8,000 — truncation fix) | Write lessons / exercises / quizzes |
+| Vision Handler | `glm-5.1v` | standard | 32,000 | Illustrations, diagrams |
+| Peon (optional) | `glm-5-turbo` | small | 1,000 | Cheap synchronous lookups |
+
+**Endpoint (all tiers):** `https://api.z.ai/api/coding/paas/v4` — unify here. The touch-up dispatcher's old `open.bigmodel.cn` endpoint with no token cap is deprecated; repoint it.
+
+**Every Handler call now logs `finish_reason`.** `finish_reason == "length"` means a genuine output-cap truncation (should never happen at 32K/131K); anything else that stops short is a timeout/disconnect. This turns "is it truncated?" from a content heuristic into an API fact.
 
 ---
 
 ## Existing Handlers
 
 ### Stage 02 — Lesson Injection Handler
-**File:** `skills/operator-kit/dispatch-stage02.py`  
-**Invoked by:** Taskmaster or Conductor directly via `run.ps1 stage02`  
-**Reads:** `stages/02-lesson-injection/output/manifest.json` (510 rows)  
-**Writes:** `stages/02-lesson-injection/output/hybrid-lessons/<phase>/<lesson>/docs/en.md`  
-**Model:** GLM-5.1 (`max_tokens=8000`, `timeout=120`, `stream=True`)  
-**Brief source:** `stages/00-c-agent-setup/output/agent-briefs/lyra-content-brief.md` (governed maze — ≤500 tokens extracted)  
-**Worker default:** 3 | **Safe max:** 5 | **Hard limit:** 6  
-**Failure modes:**
-- Output < 500 chars → retry (up to 3x) → mark `failed`
-- 429 → global_rate_pause(30) → all workers pause → exponential backoff
-- Circuit breaker → >30% failure in 10 jobs → global_rate_pause(60)
-- Timeout → 120s hard limit → mark `failed`
+**File:** `skills/operator-kit/dispatch-stage02.py`
+**Reads:** `stages/02-lesson-injection/output/manifest.json`
+**Writes:** `stages/02-lesson-injection/output/hybrid-lessons/<phase>/<lesson>/docs/en.md`
+**Model:** `glm-5.1`, `max_tokens=32000`, `timeout=180`, `stream=True`, logs `finish_reason`
+**Overseen by:** GLM-5.2 Taskmaster (judges output against `shared/lean-lesson-spec.md`)
 **Recovery:** `run.ps1 stage02 --retry-failed`
 
----
-
 ### Stage 03 — Exercise Design Handler
-**File:** `skills/operator-kit/dispatch-stage03.py`  
-**Invoked by:** Taskmaster or Conductor via `run.ps1 stage03`  
-**Reads:** Stage 02 manifest (done rows) + `hybrid-lessons/.../docs/en.md` per lesson  
-**Writes:** `stages/03-exercise-design/output/exercise-specs/<phase>/<lesson>/exercises.md`  
-**Model:** GLM-5.1 (`max_tokens=2000`, `timeout=120`, `stream=True`)  
-**Worker default:** 3 | **Safe max:** 5  
-**Failure modes:** Same as Stage 02. Strips `## GTM Redirect Rules` bleed automatically.  
+**File:** `skills/operator-kit/dispatch-stage03.py`
+**Model:** `glm-5.1`, `max_tokens=8000` (raised from 2000), logs `finish_reason`
 **Recovery:** `run.ps1 stage03 --retry-failed`
 
----
-
 ### Stage 04 — Quiz Bank Handler
-**File:** `skills/operator-kit/dispatch-stage04.py`  
-**Invoked by:** Taskmaster or Conductor via `run.ps1 stage04`  
-**Reads:** Stage 02 manifest (done rows) + Stage 03 exercise specs  
-**Writes:** `stages/04-quiz-recall/output/quiz-bank/<phase>/<lesson>/cards.json`  
-**Model:** GLM-5.1 (`max_tokens=2500`, `timeout=120`, `stream=True`)  
-**Output validation:** Must be valid JSON with exactly 6 questions. Markdown fences stripped automatically.  
-**Worker default:** 3 | **Safe max:** 5  
+**File:** `skills/operator-kit/dispatch-stage04.py`
+**Model:** `glm-5.1`, `max_tokens=8000` (raised from 2500 — the 40% JSON-parse failures were truncation), `response_format=json` where supported, logs `finish_reason`
+**Output validation:** valid JSON, exactly 6 questions
 **Recovery:** `run.ps1 stage04 --retry-failed`
 
----
-
-## New Handlers (built in this session)
-
 ### Watchdog — Stall Monitor
-**File:** `skills/operator-kit/watchdog.py`  
-**Invoked by:** Conductor (not Director)  
-**Reads:** `stages/<N>-*/output/status.json` (any active stage)  
-**Writes:** `skills/operator-kit/watchdog-recovery.log`  
-**Behavior:** Polls every 60s. Detects stall (no progress in 5min or absent status.json after 2min). Graceful stop via PAUSE_SENTINEL before kill. Restarts with `--retry-failed`.  
-**Escalates to Conductor:** When auto-recovery fails 3x in a row.
-
-### Peon Dispatcher
-**File:** `skills/operator-kit/dispatch-peon.py`  
-**Invoked by:** GLM-5.1 Handlers mid-generation (synchronous call)  
-**Task types:** citation lookup, format validation, metadata generation, text extraction, diagram generation  
-**Models:** GLM-5-Turbo (all peon tasks including diagram SVG generation) · GLM-5.1 (Handlers — content writing)  
-**Returns:** Validated result string or raises PeonError after 2 retries  
-**Escalation:** PeonError returned to Handler → Handler marks subtask [CITATION NEEDED], [METADATA PENDING], or [DIAGRAM PENDING] and continues
+**File:** `skills/operator-kit/watchdog.py`
+**Behavior:** polls status.json every 60s; stall = no manifest progress in 5 min; graceful stop → restart `--retry-failed`. Escalates to Conductor after 3 failed auto-recoveries.
 
 ---
 
 ## Taskmaster Folder Structure
 
-Each Taskmaster role has its own folder under `skills/operator-kit/taskmasters/`:
-
 ```
 skills/operator-kit/taskmasters/
-  stage02-injector/
-    CONTEXT.md          — Taskmaster brief: what to run, where outputs go
-    status.json         — written on launch, updated by subprocess
-  stage03-exercises/
-    CONTEXT.md
-    status.json
-  stage04-quizzes/
-    CONTEXT.md
-    status.json
+  stage02-injector/  CONTEXT.md  status.json
+  stage03-exercises/ CONTEXT.md  status.json
+  stage04-quizzes/   CONTEXT.md  status.json
 ```
 
-The Conductor reads `CONTEXT.md` to brief the sub-agent. The sub-agent reads `CONTEXT.md` on launch and knows everything it needs. The trigger from the Conductor IS the instruction.
+Each `CONTEXT.md` now briefs the **GLM-5.2 orchestrator** (what to run, the spec to judge against, where outputs go), not a Claude sub-agent. The launch trigger IS the instruction.
 
 ---
 
@@ -127,22 +100,33 @@ The Conductor reads `CONTEXT.md` to brief the sub-agent. The sub-agent reads `CO
 
 | Constraint | Value | Reason |
 |------------|-------|--------|
-| Max concurrent GLM calls | 5 | Z.ai safe ceiling; 63% failure at 8 workers (observed) |
-| API timeout per call | 120s | GLM-5.1 reasoning model can hang on dropped connections |
-| Global backoff on 429 | 30s | All workers pause, not just the hit thread |
-| Circuit breaker threshold | 30% failure in 10 jobs | Catches sustained Z.ai degradation |
-| Circuit breaker pause | 60s | All workers via global_rate_pause(60) |
-| Output min length | 500 chars (lessons) | Rejects thinking-only GLM output |
-| Peon max retries | 2 | Handler continues with fallback on PeonError |
+| Max concurrent GLM **Handler** calls | 5 | Z.ai safe ceiling; 63% failure at 8 (observed) |
+| Taskmaster oversight calls | 1 per batch cycle | Large-context, not per-item; outside the worker budget |
+| API timeout per call | 180s | Reasoning models hang on dropped connections |
+| Global backoff on 429 | 30s | All workers pause |
+| Circuit breaker | 30% failure in 10 jobs → pause 60s | Catches sustained Z.ai degradation |
+| Handler max_tokens | 32,000 | 131K headroom available; 32K is generous for a lean lesson |
+| finish_reason logging | always | Truncation becomes an API fact, not a guess |
 
 ---
 
 ## Escalation Quick Reference
 
-| Who sees the problem | Who to tell | How |
-|---------------------|-------------|-----|
-| Peon fails 2x | Handler | raise PeonError (caught in Handler) |
-| Handler fails 3x | Taskmaster | mark row `failed`; Taskmaster sees it in status.json |
-| Taskmaster subprocess fails 3x | Conductor | Taskmaster reports in Agent tool result |
-| Conductor blocked | Director | Single message: what's blocked, what was tried |
-| Watchdog auto-recovery fails 3x | Conductor | watchdog-recovery.log entry + Conductor polls it |
+| Who sees the problem | Tells | How |
+|---------------------|-------|-----|
+| Handler output rejected | GLM-5.2 Taskmaster | re-prompt; 3x → mark row `failed` |
+| Taskmaster can't resolve batch | Conductor | write BLOCKED to status.json |
+| Conductor blocked | Director | one message: what's blocked, what was tried |
+| Watchdog auto-recovery fails 3x | Conductor | watchdog-recovery.log entry |
+
+---
+
+## Token-Spend Split (target: 85% GLM / 15% Conductor)
+
+| Work | Tier | Share |
+|------|------|-------|
+| Lesson/exercise/quiz generation | GLM-5.1 Handlers | majority |
+| Batch oversight, quality judging, retry decisions | GLM-5.2 Taskmaster | the share that used to be Claude sub-agents |
+| Architecture, gates, chaining, commits, Director comms | Conductor (Claude) | ~15% |
+
+The Taskmaster migration is what moves the line to 85/15: oversight tokens shifted from Claude to GLM-5.2 (plan-covered, $0).

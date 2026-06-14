@@ -212,7 +212,7 @@ Follow the EXERCISE FORMAT exactly. Output only the ## Exercises section — not
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": user_prompt},
                 ],
-                max_tokens=2000,
+                max_tokens=8000,  # raised from 2000 — exercise specs were truncating
                 stream=True,
                 timeout=120,
             )

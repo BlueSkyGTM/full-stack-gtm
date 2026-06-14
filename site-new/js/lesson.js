@@ -84,7 +84,7 @@
     if (!lesson.url) { renderArticle(lesson, '# ' + lesson.name + '\n\nThis lesson has no published material yet.'); return; }
     let base = lesson.url
       .replace('://github.com/', '://raw.githubusercontent.com/')
-      .replace('/tree/main/', '/main/').replace('/blob/main/', '/main/');
+      .replace(/\/(?:tree|blob)\/([^/]+)\//, '/$1/');  // any branch (main, master, ...), not hardcoded main
     if (!/\/$/.test(base)) base += '/';
     const candidates = ['README.md', 'readme.md', 'docs/en.md', 'index.md'];
     for (const c of candidates) {

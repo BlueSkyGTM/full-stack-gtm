@@ -262,7 +262,7 @@ End with:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": user_prompt},
                 ],
-                max_tokens=8000,  # full lesson needs more room
+                max_tokens=32000,  # GLM-5.2-era headroom (131K cap); 8000 guillotined 270 lessons
                 stream=True,
                 timeout=180,
             )
