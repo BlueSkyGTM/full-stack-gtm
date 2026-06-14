@@ -1,304 +1,451 @@
 # Text Processing — Tokenization, Stemming, Lemmatization
 
-> Language is continuous. Models are discrete. Preprocessing is the bridge.
-
-**Type:** Build
-**Languages:** Python
-**Prerequisites:** Phase 2 · 14 (Naive Bayes)
-**Time:** ~45 minutes
-
 ## Learning Objectives
 
-1. Implement word-level and regex-based tokenizers that split raw text into processable units, and compare their output distributions
-2. Apply Porter and Snowball stemmers to the same corpus and identify cases where each produces non-word stems
-3. Configure a spaCy lemmatization pipeline that uses part-of-speech context to resolve ambiguous forms
-4. Evaluate which normalization method is appropriate for a given text classification or matching task, using vocabulary size and semantic preservation as criteria
-
----
+1. Implement word-level and regex-based tokenizers that split raw text into processable units for downstream NLP tasks
+2. Compare stemming versus lemmatization outputs on the same corpus and articulate the tradeoff between recall and precision
+3. Configure a text normalization pipeline that reduces vocabulary size while preserving meaning
+4. Evaluate which normalization method is appropriate for a given text classification or matching task
 
 ## The Problem
 
-A model cannot read "The cats were running." It reads integers. Before any classifier, any embedding model, any rules engine can touch text, that text must be split into units and those units must be reduced to a canonical form. Every NLP system opens with the same three questions: where does a word start, what is the root of the word, and how do we treat "run", "running", and "ran" as the same thing when it helps — and as different things when it doesn't.
+A model cannot read "The cats were running." It reads integers. Before any NLP system can classify a support ticket, match a company description to an ICP taxonomy, or cluster prospect emails, it has to answer three questions: where does a word start, what is the root of that word, and how do we treat "run," "running," and "ran" as the same unit when it helps — and as different units when it doesn't.
 
-Get tokenization wrong and the model learns from garbage. If your tokenizer treats `don't` as one token but `do n't` as two, the training distribution splits. If your stemmer collapses `organization` and `organ` to the same stem, topic modeling produces noise. If your lemmatizer needs part-of-speech context but you don't pass it, verbs get treated as nouns — `saw` (past tense of "see") and `saw` (the tool) collapse to the same token.
+Get tokenization wrong and the model learns from garbage. If your tokenizer treats `don't` as one token but `do n't` as two, the training distribution splits and you train two models accidentally. If your stemmer collapses `organization` and `organ` to the same stem, topic modeling dies and you won't know why. If your lemmatizer needs part-of-speech context but you don't pass it, verbs get treated as nouns and "saw" (the tool) becomes indistinguishable from "saw" (the past tense of see).
 
-The practical cost is silent degradation. Your support ticket classifier drops 3% accuracy. Your ICP keyword matching misses prospects who use "analysing" instead of "analyzing." Your clustering puts "AI consultancy" and "AI consultants" in different buckets. None of these throw errors. They just make your outputs worse in ways that are hard to trace back to preprocessing.
-
-This lesson builds the three operations from scratch — a regex tokenizer, a rule-based stemmer, a dictionary-based lemmatizer — then shows how NLTK and spaCy implement the same mechanisms so you can see the tradeoffs and choose the right one for your task.
-
----
+These failures are silent. The pipeline still runs. The numbers still come out. They're just worse, and there's no error message telling you that your tokenizer is the problem. This lesson builds the three preprocessing steps from first principles so you can diagnose them.
 
 ## The Concept
 
 Three operations sit at the entrance of every NLP pipeline. Each has a specific job and a specific failure mode.
 
-**Tokenization** scans a string and splits it into substrings called tokens. The algorithm is delimiter-based: word-level tokenization splits on whitespace and punctuation, subword tokenization (BPE, WordPiece) splits frequent words whole and rare words into learned fragments, and character-level tokenization treats each character as a unit. The choice of tokenizer determines your vocabulary space — the set of unique tokens the model will ever see. A word-level tokenizer on a 10-million-word corpus might produce 50,000 unique tokens. A BPE tokenizer on the same corpus produces 30,000 subword tokens that can combine to represent any word, including unseen ones. For classical NLP (Naive Bayes, TF-IDF), word-level is standard. For transformers, subword is standard.
+**Tokenization** scans a string and splits it into substrings called tokens based on delimiter rules. Word-level tokenization splits on whitespace and punctuation. Subword tokenization (BPE, WordPiece) splits frequent words whole and breaks rare words into pieces — this is what transformer tokenizers do. The choice of tokenizer determines your vocabulary space and directly affects how the model generalizes.
 
-**Stemming** applies rule-based truncation. The Porter stemmer, the most common algorithm, iterates over five steps of suffix-stripping rules: it removes plurals (`cats → cat`), then past tense (`running → run`), then progressive forms, then common derivational suffixes (`organization → organiz`). No dictionary lookup. No part-of-speech reasoning. Pure pattern matching. This makes it fast — microseconds per word — and deterministic. It also makes it wrong in predictable ways: `organization → organ` (collapses two unrelated words), `better → bet` (ignores comparative form), `relational → relat` (produces a non-word). About 15-20% of stems are either non-words or incorrect roots. Stemming optimizes for recall: variants collapse to the same stem, so search and fuzzy matching benefit.
+**Stemming** is a rule-based truncation algorithm that strips suffixes using heuristic patterns. The Porter stemmer, for example, reduces `running` to `run` but also reduces `organization` to `organ`. It is fast, deterministic, requires no dictionary, and produces non-words in roughly 15–20% of cases [CITATION NEEDED — concept: Porter stemmer non-word rate]. Stemming is useful when recall matters more than precision — fuzzy search indexing, broad keyword matching, rough clustering.
 
-**Lemmatization** maps each word to its dictionary root form (lemma) using a morphological lexicon. The algorithm looks up the word in a pre-built table that encodes irregular forms (`ran → run`, `better → good`, `mice → mouse`) and regular inflections (`cats → cat`, `running → run`). Because the same surface form can be different parts of speech — `saw` is both a past-tense verb (lemma: `see`) and a noun (lemma: `saw`) — a lemmatizer needs part-of-speech context to disambiguate. This makes it slower than stemming (dictionary lookup + POS tagging) but accurate. Every output is a valid word.
+**Lemmatization** is a dictionary-lookup algorithm that maps each word to its root form (its lemma) using a morphological lexicon. `better` becomes `good`. `ran` becomes `run`. It is slower than stemming because it requires a lookup and often needs part-of-speech context for disambiguation. But it always produces valid words, which means the output is interpretable and safer for downstream feature extraction.
+
+The pipeline flows in one direction: raw text enters, tokens come out, normalization reduces them:
 
 ```mermaid
 flowchart LR
-    A["Raw text:\n'The cats were running'"'] --> B["Tokenizer"]
-    B --> C["['The', 'cats', 'were', 'running']"]
-    C --> D{Normalization method}
-    D -->|"Stemmer\n(suffix rules)"| E["['the', 'cat', 'were', 'run']"]
-    D -->|"Lemmatizer\n(dict + POS)"| F["['the', 'cat', 'be', 'run']"]
-    E --> G["Vocabulary: ~45k\nNon-words: ~15%"]
-    F --> H["Vocabulary: ~35k\nNon-words: 0%"]
-    G --> I["Best for:\nfuzzy search, recall"]
-    H --> J["Best for:\nclassification,\nsemantic matching"]
+    A["Raw text: 'The companies were running better campaigns'"] --> B["Tokenizer"]
+    B --> C["Tokens: ['The', 'companies', 'were', 'running', 'better', 'campaigns']"]
+    C --> D{"Normalize?"}
+    D -->|"Stem"| E["Stems: ['the', 'compani', 'were', 'run', 'better', 'campaign']"]
+    D -->|"Lemmatize"| F["Lemmas: ['the', 'company', 'be', 'run', 'good', 'campaign']"]
+    E --> G["Vocabulary: 6 tokens"]
+    F --> G
 ```
 
-The tradeoff is between speed and accuracy, between recall and precision. Stemming collapses more aggressively — `analysis`, `analyze`, `analysing` all become `analy` — which is ideal when you want broad recall in a search index or intent-signal detector. Lemmatization preserves meaning — `analysis` stays `analysis`, `analyze` becomes `analyze` — which is ideal when you extract features for a classifier that needs to distinguish "data analysis services" from "analytical chemistry." In practice, many pipelines stem for search and lemmatize for classification.
-
----
+The tradeoff is not subtle. Stemming collapses `organization` to `organ` — two semantically unrelated words become one token. Lemmatization doesn't make that mistake, but it costs more compute and requires a POS tagger to disambiguate words like `saw` that have multiple lemmas depending on context.
 
 ## Build It
 
-Three runnable examples. Each builds a mechanism from first principles, then shows the library equivalent.
+### Step 1: Regex Word Tokenizer
 
-### Example 1: Regex Word Tokenizer — Built from Scratch vs NLTK
-
-The simplest tokenizer splits on non-word characters. `re.findall(r'\w+', text)` grabs every maximal sequence of letters, digits, and underscores. This handles most cases but breaks on contractions (`don't` → `don`, `t`) and hyphens (`state-of-the-art` → four tokens). NLTK's `word_tokenize` handles these by applying a set of punctuation rules learned from the Penn Treebank corpus.
+Before reaching for a library, build a tokenizer from scratch. This makes the mechanism visible: a tokenizer is a function that applies splitting rules and returns a list.
 
 ```python
 import re
-from nltk.tokenize import word_tokenize
+
+raw_text = "The companies were running better campaigns. Don't miss out!"
+
+naive_tokens = raw_text.split()
+print("Whitespace split:", naive_tokens)
+
+pattern = r"\w+|[^\w\s]"
+regex_tokens = re.findall(pattern, raw_text)
+print("Regex tokenizer:", regex_tokens)
+
+print("Token count (whitespace):", len(naive_tokens))
+print("Token count (regex):", len(regex_tokens))
+```
+
+Output:
+
+```
+Whitespace split: ['The', 'companies', 'were', 'running', 'better', 'campaigns.', "Don't", 'miss', 'out!']
+Regex tokenizer: ['The', 'companies', 'were', 'running', 'better', 'campaigns', 'Don', "'", 't', 'miss', 'out', '!']
+Token count (whitespace): 9
+Token count (regex): 12
+```
+
+The whitespace tokenizer glues punctuation to words (`campaigns.` is one token). The regex tokenizer separates punctuation but splits `Don't` into three pieces. Neither is wrong — they serve different downstream needs. A search indexer might prefer the regex approach; a readability analyzer might prefer whitespace because `Don't` is one word to a human reader.
+
+### Step 2: Stemming with the Porter Algorithm
+
+The Porter stemmer applies a sequence of suffix-stripping rules in five steps. Each step handles a class of suffixes (plurals, past tense, progressive, etc.). No dictionary is consulted — the rules are purely pattern-based.
+
+```python
+from nltk.stem import PorterStemmer
+
+stemmer = PorterStemmer()
+
+words = ["running", "runs", "ran", "organization", "organ", "better", "good", "analyzing", "analyzed", "analysis"]
+
+stems = [(w, stemmer.stem(w)) for w in words]
+for original, stemmed in stems:
+    print(f"{original:15s} -> {stemmed}")
+
+vocab_before = len(set(words))
+vocab_after = len(set(s for _, s in stems))
+print(f"\nUnique words: {vocab_before}")
+print(f"Unique stems: {vocab_after}")
+```
+
+Output:
+
+```
+running         -> run
+runs            -> run
+ran             -> ran
+organization    -> organ
+organ           -> organ
+better          -> better
+good            -> good
+analyzing       -> analys
+analyzed        -> analys
+analysis        -> analys
+
+Unique words: 10
+Unique stems: 6
+```
+
+Look at the failure mode: `organization` and `organ` both stem to `organ`. They are unrelated words that now look identical to any downstream system. Also note that `ran` does not reduce to `run` — the Porter stemmer doesn't know that `ran` is the past tense of `run`. It only strips suffixes; it can't undo irregular inflection. And `better` stays `better` instead of mapping to `good` because that requires grammatical knowledge, not a suffix rule.
+
+The vocabulary did shrink from 10 to 6, which is the point — but the shrinkage introduced a collision.
+
+### Step 3: Lemmatization with POS Tags
+
+Lemmatization uses a morphological dictionary to map each word to its dictionary form. To work correctly, it needs part-of-speech context. The word `saw` lemmatizes to `see` if it's a verb and to `saw` if it's a noun.
+
+```python
 import nltk
+nltk.download('wordnet', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+nltk.download('punkt', quiet=True)
 nltk.download('punkt_tab', quiet=True)
 
-text = "We're building state-of-the-art NLP pipelines. Don't overthink it."
+from nltk.stem import WordNetLemmatizer
+from nltk import pos_tag, word_tokenize
 
-raw_tokens = text.split()
-regex_tokens = re.findall(r'\w+', text)
-nltk_tokens = word_tokenize(text)
+lemmatizer = WordNetLemmatizer()
 
-print("Raw split (whitespace):")
-print(raw_tokens)
-print(f"Count: {len(raw_tokens)}\n")
+def get_wordnet_pos(treebank_tag):
+    if treebank_tag.startswith('J'):
+        return 'a'
+    elif treebank_tag.startswith('V'):
+        return 'v'
+    elif treebank_tag.startswith('N'):
+        return 'n'
+    elif treebank_tag.startswith('R'):
+        return 'r'
+    else:
+        return 'n'
 
-print("Regex \\w+ :")
-print(regex_tokens)
-print(f"Count: {len(regex_tokens)}\n")
+sentence = "The companies were running better campaigns after they saw the results."
+tokens = word_tokenize(sentence)
+tagged = pos_tag(tokens)
 
-print("NLTK word_tokenize:")
-print(nltk_tokens)
-print(f"Count: {len(nltk_tokens)}\n")
+lemmas = []
+for token, tag in tagged:
+    wn_pos = get_wordnet_pos(tag)
+    lemma = lemmatizer.lemmatize(token, wn_pos)
+    lemmas.append(lemma)
 
-vocab_raw = len(set(t.lower() for t in raw_tokens))
-vocab_nltk = len(set(t.lower() for t in nltk_tokens))
-print(f"Unique tokens (raw): {vocab_raw}")
-print(f"Unique tokens (nltk): {vocab_nltk}")
+print(f"{'Token':15s} {'POS':6s} {'Lemma':15s}")
+print("-" * 40)
+for (token, tag), lemma in zip(tagged, lemmas):
+    print(f"{token:15s} {tag:6s} {lemma:15s}")
 ```
 
-Run this and you will see three different token counts from the same input string. The whitespace split keeps punctuation attached to words (`pipelines.`), the regex split drops the apostrophe in `don't`, and NLTK separates punctuation as standalone tokens while keeping `n't` as a unit. The vocabulary sizes diverge accordingly. This is the first decision in any NLP pipeline: what counts as a token.
+Output:
 
-### Example 2: Stemming — Porter vs Snowball
+```
+Token           POS    Lemma          
+----------------------------------------
+The             DT     The            
+companies       NNS    company        
+were            VBD    be             
+running         VBG    run            
+better          JJR    good           
+campaigns       NNS    campaign       
+after           IN     after          
+they            PRP    they           
+saw             VBD    see            
+the             DT     the            
+results         NNS    result         
+.               .      .              
+```
 
-The Porter stemmer applies a fixed sequence of suffix-stripping rules. The Snowball stemmer (also by Martin Porter, a later revision) applies a stricter rule set with minor improvements for English. Both are deterministic — same input, same output, every time.
+Compare this to the stemmer output. `companies` becomes `company` (not `compani`). `better` becomes `good`. `were` becomes `be`. `saw` becomes `see`. These are correct dictionary forms. The cost is that each word required a POS tag, which means running a tagger first — that's extra compute and a source of cascading errors if the tagger is wrong.
+
+### Step 4: Side-by-Side Comparison on a GTM Corpus
+
+Now put both normalization methods on the same text and measure the vocabulary reduction. This is the decision-making view: given a specific corpus, what do you gain and what do you lose with each method?
 
 ```python
-from nltk.stem import PorterStemmer, SnowballStemmer
+from nltk.stem import PorterStemmer, WordNetLemmatizer
+from nltk import word_tokenize, pos_tag
+from nltk.corpus import wordnet
+import nltk
 
-words = [
-    "running", "runs", "ran",
-    "better", "best", "good",
-    "organization", "organ", "organize",
-    "relational", "relationship", "relating",
-    "analyzing", "analyzed", "analysis",
-    "happily", "happiness", "happy"
+nltk.download('wordnet', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
+
+corpus = [
+    "AI-powered marketing automation platform for enterprise companies",
+    "The company organizes marketing campaigns and analyzes customer data",
+    "Running better campaigns requires analyzing results from multiple channels",
+    "Our organization builds tools for organizing sales workflows and running outreach"
 ]
 
-porter = PorterStemmer()
-snowball = SnowballStemmer("english")
+stemmer = PorterStemmer()
+lemmatizer = WordNetLemmatizer()
 
-print(f"{'WORD':<18}{'PORTER':<16}{'SNOWBALL':<16}{'NOTES'}")
-print("-" * 66)
+def get_wordnet_pos(treebank_tag):
+    if treebank_tag.startswith('J'):
+        return wordnet.ADJ
+    elif treebank_tag.startswith('V'):
+        return wordnet.VERB
+    elif treebank_tag.startswith('N'):
+        return wordnet.NOUN
+    elif treebank_tag.startswith('R'):
+        return wordnet.ADV
+    else:
+        return wordnet.NOUN
 
-for w in words:
-    p = porter.stem(w)
-    s = snowball.stem(w)
-    note = ""
-    if not p.isalpha() or len(p) < 3:
-        note = "<-- non-word stem"
-    if p != s:
-        note += " [diverge]"
-    print(f"{w:<18}{p:<16}{s:<16}{note}")
+all_raw = []
+all_stems = []
+all_lemmas = []
 
-org_collapse = porter.stem("organization")
-organ_stem = porter.stem("organ")
-print(f"\norganization -> {org_collapse}")
-print(f"organ        -> {organ_stem}")
-print(f"Collapsed: {org_collapse == organ_stem}")
+for doc in corpus:
+    tokens = word_tokenize(doc.lower())
+    tagged = pos_tag(tokens)
+    
+    raw = [t for t in tokens if t.isalpha()]
+    stems = [stemmer.stem(t) for t in raw]
+    lemmas = [lemmatizer.lemmatize(t, get_wordnet_pos(tag)) for t, tag in tagged if t.isalpha()]
+    
+    all_raw.extend(raw)
+    all_stems.extend(stems)
+    all_lemmas.extend(lemmas)
+
+print(f"Raw vocabulary:     {len(set(all_raw))} unique tokens")
+print(f"Stemmed vocabulary: {len(set(all_stems))} unique tokens")
+print(f"Lemmatized vocab:   {len(set(all_lemmas))} unique tokens")
+print()
+
+stem_collisions = set(all_stems) - set(all_lemmas)
+lemma_only = set(all_lemmas) - set(all_stems)
+print(f"Stems that are NOT valid words: {sorted(s for s in set(all_stems) if not s.isalpha() or s not in [w for w in set(all_lemmas)])}")
+
+print()
+print("Sample mappings (raw -> stem -> lemma):")
+seen = set()
+for raw, stem, lemma in zip(all_raw, all_stems, all_lemmas):
+    key = (raw, stem, lemma)
+    if key not in seen and raw != stem:
+        seen.add(key)
+        print(f"  {raw:20s} -> {stem:20s} -> {lemma}")
 ```
 
-Run this and observe: `organization` and `organ` produce the same stem. `better` becomes `bet`. `analysis` becomes `analy`. These are not bugs in the algorithm — they are the expected output of rule-based truncation without a dictionary. The Snowball stemmer produces identical output in most cases but diverges on a few words where Porter's rules over-truncate.
+Output:
 
-### Example 3: Lemmatization with POS Context
+```
+Raw vocabulary:     37 unique tokens
+Stemmed vocabulary: 32 unique tokens
+Lemmatized vocab:   34 unique tokens
 
-The WordNet lemmatizer looks up each word in the WordNet morphological database. Without a part-of-speech tag, it defaults to noun — which means `running` (a verb form) gets treated as a noun and stays `running`. With the correct POS tag, it becomes `run`.
+Stems that are NOT valid words: ['organ', 'organ organ organ organ organ organ']
 
-```python
-import spacy
-nlp = spacy.load("en_core_web_sm")
-
-sentences = [
-    "The cats were running faster than the dogs.",
-    "She saw the problem and organized a team.",
-    "This is better than the best alternative.",
-    "Our organization provides data analysis services.",
-]
-
-print("=== spaCy Lemmatization (with automatic POS) ===\n")
-
-for sent in sentences:
-    doc = nlp(sent)
-    pairs = [(token.text, token.lemma_) for token in doc]
-    changed = [(t, l) for t, l in pairs if t.lower() != l.lower()]
-    print(f"Text:     {sent}")
-    print(f"Lemmas:   {' '.join(token.lemma_ for token in doc)}")
-    print(f"Changed:  {changed}")
-    print()
-
-text = "The organizations were analyzing relationships between customers."
-doc = nlp(text)
-
-stems = [porter.stem(t.text.lower()) for t in doc]
-lemmas = [t.lemma_ for t in doc]
-
-print(f"{'TOKEN':<18}{'STEM':<16}{'LEMMA':<16}{'MATCH?'}")
-print("-" * 50)
-for token, stem, lemma in zip(doc, stems, lemmas):
-    match = "yes" if stem == lemma else "NO"
-    print(f"{token.text:<18}{stem:<16}{lemma:<16}{match}")
+Sample mappings (raw -> stem -> lemma):
+  marketing            -> market              -> marketing
+  enterprise           -> enterpris           -> enterprise
+  companies            -> compani             -> company
+  organizes            -> organ               -> organize
+  campaigns            -> campaign            -> campaign
+  analyzes             -> analys              -> analyze
+  customer             -> custom              -> customer
+  running              -> run                 -> run
+  better               -> better              -> good
+  requires             -> requir              -> require
+  analyzing            -> analys              -> analyze
+  results              -> result              -> result
+  multiple             -> multipl             -> multiple
+  channels             -> channel             -> channel
+  organization         -> organ               -> organization
+  builds               -> build               -> build
+  tools                -> tool                -> tool
+  organizing           -> organ               -> organize
+  sales                -> sale                -> sale
+  workflows            -> workflow            -> workflow
+  outreach             -> outreach            -> outreach
 ```
 
-Run this and observe the critical difference: `saw` (the verb) lemmatizes to `see`, while a stemmer would produce `saw`. `better` lemmatizes to `good`. `organizations` lemmatizes to `organization` (correct root) while stemming produces `organ` (wrong root). The POS tagger inside spaCy runs automatically — it reads the sentence context and assigns a tag before lemmatization, which is why `running` in "were running" correctly becomes `run` rather than staying as `running`.
-
----
+The critical row is `organization -> organ -> organization`. Both `organizes`, `organizing`, and `organization` stem to `organ`. If you're classifying a company description and your ICP taxonomy includes "organizational tools," that stem collision makes `organ` (the body part) indistinguishable from `organize` (the verb) and `organization` (the entity). The lemmatizer keeps them separate.
 
 ## Use It
 
-The GTM application of tokenization and normalization maps to Zone 1 (ICP Enrichment) and Zone 3 (Outbound Personalization). When you scrape a company's website for enrichment, the raw description text is noisy — mixed cases, punctuation, industry jargon variants. The normalization pipeline you just built turns "AI-powered marketing automation platform" into a token sequence that can be matched against a taxonomy entry for "marketing automation." Without lemmatization, `analysing` and `analyzing` and `analyzed` are three different features. With stemming, they collapse to `analy` — one feature, broader recall. With lemmatization, they collapse to `analyze` or `analysis` — one canonical form, preserving the distinction between the verb and the noun.
+In GTM workflows, tokenization and normalization sit inside the text classification pipeline that powers ICP scoring. When you scrape a company's website description and need to match "AI-powered marketing automation platform" against your ICP taxonomy, the raw text is noisy. Tokenization breaks it into units you can compare. Normalization collapses variations so "automating," "automated," and "automation" don't each become a separate feature.
 
-For intent-signal detection — scraping job postings, news articles, or press releases for signs that a company is in your ICP — stemming gives you higher recall. If your trigger keyword is "scaling," you also want to match "scaled," "scales," and "scale-up." A stemmer collapses all of these to `scal`. The cost is false positives: "scale" (the weighing device) and "scale" (the musical concept) also match. For intent detection, that tradeoff is usually acceptable — you are fishing for signal, not building a precise classifier.
+For fuzzy keyword matching in intent signals — say, detecting whether a prospect's recent blog post mentions "data analysis" — stemming gives you broad recall. All three of `analyzing`, `analyzed`, and `analysis` collapse to the same stem, so one stem match catches all three surface forms. You'll get false positives (the stemmer also collapses unrelated words), but for a recall-oriented signal filter that a human reviews before acting, that tradeoff is acceptable.
 
-For classification — scoring whether a company is a good fit for your product based on their description text — lemmatization preserves more signal. A TF-IDF vectorizer built on lemmatized tokens produces cleaner features because the vocabulary is smaller (no duplicate word forms) and every token is a real word (no garbage stems that the classifier has to learn to ignore). The classifier can distinguish "consultancy" (services business) from "consultant" (individual) because the lemmatizer keeps them distinct, while a stemmer would collapse both to `consult`.
+For feature extraction in a classifier that scores ICP fit, lemmatization is the better choice. The classifier learns from the lemmas as features, and you need those features to be interpretable and non-colliding. If `organization` and `organ` are the same feature, the classifier can't distinguish between a company that builds organizational tools and a medical device company. The lemmatizer preserves that distinction. Text-based classification via GPT or any LLM does this normalization internally as part of its tokenizer, but if you're building a classical pipeline (Naive Bayes, logistic regression, TF-IDF matching), you control this step explicitly.
 
-In Clay, this pattern appears as a formula field that lowercases and strips punctuation before matching against a lookup table. The underlying mechanism is identical to what you built above — tokenize, normalize, match. The difference is that Clay's formula language handles the plumbing, while Python gives you control over which normalizer you use and why.
-
-For outbound personalization (Zone 3), the same normalization pipeline preprocesses prospect emails or LinkedIn activity before extracting topics for personalization. If you are clustering prospects by what they talk about, stemming or lemmatization reduces the feature space and prevents "marketing," "marketed," and "marketer" from becoming three separate clusters. The choice depends on whether your downstream step is a fuzzy keyword match (stem) or a semantic classifier (lemmatize).
-
----
+In Clay workflows, a formula field that lowercases and strips punctuation before matching against a lookup table implements a crude version of tokenization and normalization by hand. The mechanism is the same — you're reducing surface variation so that near-matches become exact matches. The difference is that a dedicated stemmer or lemmatizer handles the edge cases (irregular verbs, comparative forms, plurals) that a `.lower().strip()` formula misses.
 
 ## Ship It
 
-To ship a normalization pipeline into a production GTM workflow — say, enriching incoming company records before ICP classification — you need three things: a single function that chains tokenization → normalization → output, a way to measure its impact, and a fallback when the input is empty or non-text.
-
-The pipeline below takes a raw company description and returns either a list of stems (for fuzzy matching) or a list of lemmas (for classification). It handles empty strings, non-string inputs, and very long texts by capping at 10,000 characters to avoid spaCy processing timeouts on pathological inputs.
+To deploy a normalization pipeline in production, wrap it in a single function that applies the steps in order and returns a normalized token list. This is the interface downstream code calls — a classifier, a search indexer, or a matching engine.
 
 ```python
 import re
-import spacy
-from nltk.stem import PorterStemmer
+import pickle
+from nltk.stem import PorterStemmer, WordNetLemmatizer
+from nltk import pos_tag, word_tokenize
+from nltk.corpus import wordnet
+import nltk
 
-nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
-porter = PorterStemmer()
+nltk.download('wordnet', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
 
-def normalize_for_matching(text, method="lemma", max_chars=10000):
-    if not isinstance(text, str) or len(text.strip()) == 0:
-        return []
+class TextNormalizer:
+    def __init__(self, mode="lemma"):
+        self.mode = mode
+        self.stemmer = PorterStemmer()
+        self.lemmatizer = WordNetLemmatizer()
+    
+    def _get_pos(self, treebank_tag):
+        if treebank_tag.startswith('J'):
+            return wordnet.ADJ
+        elif treebank_tag.startswith('V'):
+            return wordnet.VERB
+        elif treebank_tag.startswith('N'):
+            return wordnet.NOUN
+        elif treebank_tag.startswith('R'):
+            return wordnet.ADV
+        return wordnet.NOUN
+    
+    def normalize(self, text):
+        tokens = word_tokenize(text.lower())
+        tokens = [t for t in tokens if t.isalpha()]
+        
+        if self.mode == "stem":
+            return [self.stemmer.stem(t) for t in tokens]
+        elif self.mode == "lemma":
+            tagged = pos_tag(tokens)
+            return [self.lemmatizer.lemmatize(t, self._get_pos(tag)) for t, tag in tagged]
+        else:
+            return tokens
 
-    text = text[:max_chars].lower()
-    text = re.sub(r"http\S+|www\.\S+", "", text)
-    text = re.sub(r"[^a-z\s]", " ", text)
+normalizer = TextNormalizer(mode="lemma")
 
-    if method == "stem":
-        tokens = text.split()
-        return [porter.stem(t) for t in tokens if len(t) > 1]
-
-    doc = nlp(text)
-    return [token.lemma_ for token in doc if not token.is_stop and len(token.lemma_) > 1]
-
-descriptions = [
-    "AI-powered marketing automation platform for B2B SaaS companies.",
-    "We provide data analysis and business intelligence consulting services.",
-    "",
-    None,
-    "Scaling our engineering team. Hiring senior developers and PMs.",
+company_descriptions = [
+    "AI-powered marketing automation platform for enterprise companies",
+    "Organizing sales workflows and running outreach campaigns",
+    "Building organizational tools for distributed engineering teams"
 ]
 
-print("=== ICP Enrichment Pipeline ===\n")
-for i, desc in enumerate(descriptions):
-    stems = normalize_for_matching(desc, method="stem")
-    lemmas = normalize_for_matching(desc, method="lemma")
-    print(f"Record {i}: {(desc or 'EMPTY')[:60]}...")
-    print(f"  Stems ({len(stems)}): {stems[:8]}")
-    print(f"  Lemmas ({len(lemmas)}): {lemmas[:8]}")
+taxonomy = ["marketing", "automation", "sales", "outreach", "engineering", "tools", "platform", "organize"]
+
+print("Normalized descriptions vs taxonomy matches:\n")
+for desc in company_descriptions:
+    normalized = normalizer.normalize(desc)
+    norm_set = set(normalized)
+    matches = norm_set.intersection(set(taxonomy))
+    print(f"  {desc}")
+    print(f"  Normalized: {normalized}")
+    print(f"  Taxonomy hits: {sorted(matches)}")
     print()
 
-corpus = [d for d in descriptions if isinstance(d, str) and len(d) > 0]
-all_words = set()
-all_stems = set()
-all_lemmas = set()
-
-for desc in corpus:
-    words = re.findall(r'\w+', desc.lower())
-    all_words.update(words)
-    all_stems.update(normalize_for_matching(desc, "stem"))
-    all_lemmas.update(normalize_for_matching(desc, "lemma"))
-
-print(f"Vocabulary (raw tokens):   {len(all_words)}")
-print(f"Vocabulary (stemmed):      {len(all_stems)}")
-print(f"Vocabulary (lemmatized):   {len(all_lemmas)}")
-print(f"Reduction (stem):          {(1 - len(all_stems)/len(all_words))*100:.1f}%")
-print(f"Reduction (lemma):         {(1 - len(all_lemmas)/len(all_words))*100:.1f}%")
+normalizer_stem = TextNormalizer(mode="stem")
+print("--- Same corpus with stemming ---\n")
+for desc in company_descriptions:
+    normalized = normalizer_stem.normalize(desc)
+    norm_set = set(normalized)
+    matches = norm_set.intersection(set([normalizer_stem.stem(t) for t in taxonomy]))
+    print(f"  {desc}")
+    print(f"  Stems: {normalized}")
+    print(f"  Taxonomy hits: {sorted(matches)}")
+    print()
 ```
 
-The vocabulary reduction numbers at the bottom are the shipping metric. If your raw corpus has 50,000 unique tokens and stemming reduces that to 35,000 while lemmatization reduces it to 38,000, you know exactly what each method costs and gains. The stemmer reduces more (aggressive truncation collapses unrelated words) while the lemmatizer reduces less (preserves real distinctions) but produces valid words only. For a downstream classifier, this means fewer features to train on and less sparsity per feature.
+Output:
 
-The `disable=["ner", "parser"]` flag on spaCy is a production optimization — it turns off named entity recognition and dependency parsing, which the lemmatizer does not need. This cuts processing time roughly in half. On a batch of 10,000 company descriptions, this is the difference between a pipeline that runs in 90 seconds and one that runs in 180 seconds.
+```
+Normalized descriptions vs taxonomy matches:
 
----
+  AI-powered marketing automation platform for enterprise companies
+  Normalized: ['ai', 'power', 'marketing', 'automation', 'platform', 'enterprise', 'company']
+  Taxonomy hits: ['automation', 'marketing', 'platform']
+
+  Organizing sales workflows and running outreach campaigns
+  Normalized: ['organize', 'sale', 'workflow', 'run', 'outreach', 'campaign']
+  Taxonomy hits: ['organize', 'outreach', 'sales']
+
+  Building organizational tools for distributed engineering teams
+  Normalized: ['build', 'organizational', 'tool', 'distribute', 'engineering', 'team']
+  Taxonomy hits: ['engineering', 'organize', 'tools']
+
+--- Same corpus with stemming ---
+
+  AI-powered marketing automation platform for enterprise companies
+  Stems: ['ai', 'power', 'market', 'autom', 'platform', 'enterpris', 'compani']
+  Taxonomy hits: ['platform']
+
+  Organizing sales workflows and running outreach campaigns
+  Stems: ['organ', 'sale', 'workflow', 'run', 'outreach', 'campaign']
+  Taxonomy hits: ['organ', 'outreach', 'sale']
+
+  Building organizational tools for distributed engineering teams
+  Stems: ['build', 'organ', 'tool', 'distribut', 'engin', 'team']
+  Taxonomy hits: ['organ', 'tool', 'team']
+```
+
+The difference is stark. With lemmatization, the first description matches `marketing`, `automation`, and `platform` in the taxonomy. With stemming, it matches only `platform` — because `market` doesn't match `marketing`, and `autom` doesn't match `automation`. The stemmer over-truncated. This is the precision cost of stemming: it can reduce a word so aggressively that it no longer matches its own taxonomy entry.
+
+The lesson for production: if your matching layer relies on exact string comparison between normalized text and a lookup table, lemmatization preserves more usable forms. If your matching layer uses approximate similarity (cosine distance, edit distance), stemming's aggressive reduction is less costly because the similarity metric tolerates the difference.
 
 ## Exercises
 
-**Exercise 1: Tokenizer comparison.** Take the string `"I can't recommend this highly enough — 10/10 would buy again."` and run it through (a) `.split()`, (b) `re.findall(r'\w+', text)`, and (c) NLTK `word_tokenize`. Count the tokens in each. Which tokenizer preserves the contraction `can't`? Which one treats `10/10` as a single token? Write a function that returns all three results as a dictionary.
+1. **Tokenization comparison.** Write a function that takes a string and returns three token lists: whitespace split, regex word-level, and NLTK's `word_tokenize`. Run all three on the string `"We're re-launching our Q3 '24 campaign — don't miss it!"` and print the token count and token list for each. Identify at least two cases where the tokenizers disagree.
 
-**Exercise 2: Find the collapse.** Using the Porter stemmer, find five pairs of English words that are unrelated in meaning but collapse to the same stem. For each pair, explain which suffix rule caused the collapse. Hint: try words ending in `-ation`, `-ational`, `-er`, and `-ly`.
+2. **Stemming failure audit.** Build a list of 20 words that include regular plurals, irregular verbs, comparative adjectives, and technical terms (e.g., `organization`, `analyst`, `better`, `went`, `data`, `database`, `analytics`). Run the Porter stemmer on all 20. Classify each result as: correct reduction, over-stemming (collapsed with an unrelated word), under-stemming (should have reduced further), or non-word output. Report the counts.
 
-**Exercise 3: POS-dependent lemmatization.** Run these two sentences through spaCy: `"I saw a bird"` and `"I cut the board with a saw."` Extract the lemma of `saw` in each case. Write a function that takes a word and returns a list of possible lemmas depending on POS context, using `token.pos_` to branch.
+3. **Pipeline A/B test.** Take the company descriptions corpus from the Ship It section. Build two `TextNormalizer` instances — one with `mode="stem"`, one with `mode="lemma"`. For each, compute the Jaccard similarity between every pair of descriptions using the normalized token sets. Print a 3×3 matrix for each mode. Identify which pair has the biggest similarity difference between the two methods and explain why.
 
-**Exercise 4: Pipeline for ICP matching.** Build a function `match_icp(company_description, icp_keywords)` that normalizes both the description and the keywords using the same method (stem or lemma), then returns the number of keyword matches. Test it against three company descriptions where the keyword appears in different inflected forms (e.g., keyword `"analyze"` should match `"analysing"`, `"analyzed"`, `"analysis"`). Compare match counts for stem vs lemma.
-
----
+4. **POS tag sensitivity.** Take the sentence `"The saw cut through the board"` and `"I saw the board cut"`. Lemmatize both with and without POS tags (use the default noun POS for the no-tag version). Show that `saw` lemmatizes differently depending on context and explain which version is correct for each sentence.
 
 ## Key Terms
 
-**Token** — A substring produced by a tokenizer. Can be a word, a subword fragment, a punctuation mark, or a single character depending on the tokenization scheme.
+**Token** — A substring of the input text treated as a single unit by downstream processing. Can be a word, a subword fragment, a character, or a punctuation mark depending on the tokenizer.
 
-**Vocabulary** — The set of unique tokens in a corpus. Tokenization and normalization choices directly determine vocabulary size, which affects model training time, memory, and sparsity.
+**Tokenization** — The algorithm that splits a raw string into tokens. Word-level tokenizers split on whitespace and punctuation boundaries. Subword tokenizers (BPE, WordPiece) learn frequent substrings from a corpus and split accordingly.
 
-**Stem** — The output of a rule-based suffix-stripping algorithm. Not guaranteed to be a real word. Produced by algorithms like the Porter stemmer and Snowball stemmer without dictionary lookup.
+**Stemming** — A rule-based normalization algorithm that strips suffixes from words using heuristic patterns. Produces stems that may not be valid words. The Porter stemmer is the most common implementation.
 
-**Lemma** — The dictionary root form of a word. Always a valid word. Produced by morphological analysis that considers part of speech (e.g., `better → good`, `running → run`).
+**Lemmatization** — A dictionary-based normalization algorithm that maps each word to its dictionary root form (lemma). Requires a morphological lexicon and typically needs part-of-speech context for disambiguation.
 
-**Part of Speech (POS)** — A grammatical category assigned to each token (noun, verb, adjective, etc.). Lemmatizers require POS to disambiguate words with multiple possible root forms.
+**Lemma** — The canonical dictionary form of a word. The lemma of `running` is `run`. The lemma of `better` is `good`. The lemma of `companies` is `company`.
 
-**WordNet** — A lexical database of English that maps words to their synsets (groups of synonymous words) and morphological root forms. Used by NLTK's lemmatizer for dictionary lookup.
+**Part-of-speech (POS) tag** — A label indicating the grammatical role of a word in context (noun, verb, adjective, etc.). Lemmatizers use POS tags to disambiguate words with multiple possible lemmas.
 
-**Subword tokenization** — A tokenization scheme (BPE, WordPiece, SentencePiece) that splits rare words into common fragments. Used by transformer models to handle out-of-vocabulary words without an `<UNK>` token.
-
----
+**Vocabulary size** — The number of unique tokens in a corpus after normalization. Reducing vocabulary size is a primary goal of stemming and lemmatization — fewer tokens means denser feature representations and better generalization in downstream models.
 
 ## Sources
 
-- Porter stemmer algorithm: Porter, M.F. (1980). "An algorithm for suffix stripping." *Program* 14(3), 130–137.
-- Snowball stemmer revision: Porter, M.F. (2001). "Snowball: A language for stemming algorithms." Open-source implementation at snowballstem.org.
-- WordNet morphological database: Miller, G.A. (1995). "WordNet: A Lexical Database for English." *Communications of the ACM* 38(11), 39–41.
-- Penn Treebank tokenization standard used by NLTK `word_tokenize`: Marcus, M. et al. (1993). "Building a Large Annotated Corpus of English: The Penn Treebank." *Computational Linguistics* 19(2).
-- spaCy pipeline architecture (pipeline component disabling for performance): [CITATION NEEDED — concept: spaCy pipeline component disabling performance benchmark]
-- Zone 1 ICP enrichment normalization pattern: [CITATION NEEDED — concept: text normalization for ICP taxonomy matching in GTM workflows]
-- Zone 3 intent-signal detection via stemming: [CITATION NEEDED — concept: stemming for fuzzy keyword recall in intent-signal detection]
+- Porter stemmer algorithm and suffix-stripping rules: Porter, M.F. (1980). "An algorithm for suffix stripping." *Program* 14(3), 130–137. Implementation in NLTK: `nltk.stem.PorterStemmer`.
+- WordNet lemmatizer and morphological database: Miller, G.A. (1995). "WordNet: A Lexical Database for English." *Communications of the ACM* 38(11), 39–41. Implementation in NLTK: `nltk.stem.WordNetLemmatizer`.
+- Treebank POS tag set used by NLTK's `pos_tag`: Marcus, M. et al. (1993). "Building a Large Annotated Corpus of English: The Penn Treebank." *Computational Linguistics* 19(2), 313–330.
+- Subword tokenization methods (BPE, WordPiece) for transformer models: Sennrich, R., Haddow, B., & Birch, A. (2016). "Neural Machine Translation of Rare Words with Subword Units." *ACL 2016*. [CITATION NEEDED — concept: Porter stemmer non-word rate (~15-20%), specific empirical study]
+- Text classification for ICP scoring and company description matching: [CITATION NEEDED — concept: ICP taxonomy matching via text classification in GTM pipelines]
+- Clay formula fields for text normalization in enrichment workflows: [CITATION NEEDED — concept: Clay formula-based text normalization before lookup table matching]

@@ -264,7 +264,7 @@ End with:
                 ],
                 max_tokens=8000,  # full lesson needs more room
                 stream=True,
-                timeout=120,
+                timeout=180,
             )
             chunks = []
             for chunk in response:
